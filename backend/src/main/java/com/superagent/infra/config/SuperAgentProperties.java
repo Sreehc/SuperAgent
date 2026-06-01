@@ -1,0 +1,217 @@
+package com.superagent.infra.config;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
+
+@Validated
+@ConfigurationProperties(prefix = "super-agent")
+public class SuperAgentProperties {
+
+    @Valid
+    private final App app = new App();
+
+    @Valid
+    private final Storage storage = new Storage();
+
+    @Valid
+    private final Messaging messaging = new Messaging();
+
+    @Valid
+    private final Ai ai = new Ai();
+
+    @Valid
+    private final Security security = new Security();
+
+    public App getApp() {
+        return app;
+    }
+
+    public Storage getStorage() {
+        return storage;
+    }
+
+    public Messaging getMessaging() {
+        return messaging;
+    }
+
+    public Ai getAi() {
+        return ai;
+    }
+
+    public Security getSecurity() {
+        return security;
+    }
+
+    public static class App {
+
+        @NotBlank
+        private String name;
+
+        @NotBlank
+        private String apiBasePath;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getApiBasePath() {
+            return apiBasePath;
+        }
+
+        public void setApiBasePath(String apiBasePath) {
+            this.apiBasePath = apiBasePath;
+        }
+    }
+
+    public static class Storage {
+
+        @NotBlank
+        private String minioEndpoint;
+
+        @NotBlank
+        private String minioBucket;
+
+        public String getMinioEndpoint() {
+            return minioEndpoint;
+        }
+
+        public void setMinioEndpoint(String minioEndpoint) {
+            this.minioEndpoint = minioEndpoint;
+        }
+
+        public String getMinioBucket() {
+            return minioBucket;
+        }
+
+        public void setMinioBucket(String minioBucket) {
+            this.minioBucket = minioBucket;
+        }
+    }
+
+    public static class Messaging {
+
+        @NotBlank
+        private String bootstrapServers;
+
+        @NotBlank
+        private String documentTaskTopic;
+
+        @NotNull
+        private Boolean kafkaEnabled;
+
+        public String getBootstrapServers() {
+            return bootstrapServers;
+        }
+
+        public void setBootstrapServers(String bootstrapServers) {
+            this.bootstrapServers = bootstrapServers;
+        }
+
+        public String getDocumentTaskTopic() {
+            return documentTaskTopic;
+        }
+
+        public void setDocumentTaskTopic(String documentTaskTopic) {
+            this.documentTaskTopic = documentTaskTopic;
+        }
+
+        public Boolean getKafkaEnabled() {
+            return kafkaEnabled;
+        }
+
+        public void setKafkaEnabled(Boolean kafkaEnabled) {
+            this.kafkaEnabled = kafkaEnabled;
+        }
+    }
+
+    public static class Ai {
+
+        @NotBlank
+        private String openaiCompatibleBaseUrl;
+
+        @NotBlank
+        private String chatModel;
+
+        @NotBlank
+        private String embeddingModel;
+
+        @NotNull
+        private Boolean rerankEnabled;
+
+        public String getOpenaiCompatibleBaseUrl() {
+            return openaiCompatibleBaseUrl;
+        }
+
+        public void setOpenaiCompatibleBaseUrl(String openaiCompatibleBaseUrl) {
+            this.openaiCompatibleBaseUrl = openaiCompatibleBaseUrl;
+        }
+
+        public String getChatModel() {
+            return chatModel;
+        }
+
+        public void setChatModel(String chatModel) {
+            this.chatModel = chatModel;
+        }
+
+        public String getEmbeddingModel() {
+            return embeddingModel;
+        }
+
+        public void setEmbeddingModel(String embeddingModel) {
+            this.embeddingModel = embeddingModel;
+        }
+
+        public Boolean getRerankEnabled() {
+            return rerankEnabled;
+        }
+
+        public void setRerankEnabled(Boolean rerankEnabled) {
+            this.rerankEnabled = rerankEnabled;
+        }
+    }
+
+    public static class Security {
+
+        @NotBlank
+        private String jwtSecret;
+
+        @Min(1)
+        private long accessTokenTtlSeconds;
+
+        @Min(1)
+        private long refreshTokenTtlSeconds;
+
+        public String getJwtSecret() {
+            return jwtSecret;
+        }
+
+        public void setJwtSecret(String jwtSecret) {
+            this.jwtSecret = jwtSecret;
+        }
+
+        public long getAccessTokenTtlSeconds() {
+            return accessTokenTtlSeconds;
+        }
+
+        public void setAccessTokenTtlSeconds(long accessTokenTtlSeconds) {
+            this.accessTokenTtlSeconds = accessTokenTtlSeconds;
+        }
+
+        public long getRefreshTokenTtlSeconds() {
+            return refreshTokenTtlSeconds;
+        }
+
+        public void setRefreshTokenTtlSeconds(long refreshTokenTtlSeconds) {
+            this.refreshTokenTtlSeconds = refreshTokenTtlSeconds;
+        }
+    }
+}

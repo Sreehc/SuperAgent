@@ -1,22 +1,63 @@
-# Backend Baseline
+# Backend Scaffold
 
-阶段 0 只保留后端目录骨架，不提前生成 Spring Boot 工程或业务模块。
+当前目录已完成阶段 1 的 Spring Boot 基线初始化，统一使用 Java 21 目标版本。
 
-当前约定：
+## 已完成内容
 
-- 运行时统一使用 Java 21。
-- 后端将在阶段 1 按模块化单体方式初始化。
-- 本地依赖通过 `../infra/README.md` 中定义的 PostgreSQL、Redis、MinIO、Kafka 连接方式接入。
-- 环境变量模板见 `./.env.example`，字段名与 [docs/06-local-development.md](/Users/cheers/Desktop/workspace/SuperAgent/docs/06-local-development.md) 保持一致。
+- Spring Boot + Maven 工程和 Maven Wrapper。
+- 模块化单体包结构：`api`、`auth`、`chat`、`rag`、`knowledge`、`observability`、`infra`、`common`。
+- 统一响应和统一异常处理。
+- 基础系统接口：`/api/v1/system/bootstrap`、`/api/v1/system/modules/{module}`。
+- Actuator 健康检查：`/actuator/health`。
+- OpenAPI/Swagger 基础配置：`/v3/api-docs`、`/swagger-ui.html`。
+- Flyway 迁移框架，以及 PostgreSQL 扩展、基础表结构、索引和 `updated_at` 触发器迁移。
 
-已预留目录：
+## 启动前提
 
-- `src/main/java`
-- `src/main/resources`
-- `src/test/java`
+- JDK 21
+- 本地 PostgreSQL 容器可用
+- 数据库存在：`superagent`
 
-下一阶段从这里继续：
+如果本机 Maven 默认不使用 Java 21，启动和测试时显式指定：
 
-1. 初始化 Spring Boot 3 + Maven/Gradle 工程。
-2. 接入配置加载和数据库迁移框架。
-3. 实现健康检查、统一响应和统一异常处理。
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+```
+
+## 本地启动
+
+当前 PostgreSQL 容器实际密码需要以容器环境变量为准。当前机器可通过：
+
+```bash
+docker inspect PostgreSQL --format '{{range .Config.Env}}{{println .}}{{end}}'
+```
+
+示例启动命令：
+
+```bash
+POSTGRES_USER=postgres \
+POSTGRES_PASSWORD=root \
+POSTGRES_URL=jdbc:postgresql://localhost:5432/superagent \
+./mvnw spring-boot:run
+```
+
+## 验证命令
+
+```bash
+TEST_POSTGRES_PASSWORD=root ./mvnw test
+curl http://localhost:8080/actuator/health
+curl http://localhost:8080/api/v1/system/bootstrap
+```
+
+## 范围边界
+
+当前阶段只完成基础工程、配置和迁移，不包含：
+
+- 认证逻辑
+- 会话逻辑
+- RAG 业务逻辑
+- 文档处理业务逻辑
+
+## 下一阶段入口
+
+阶段 2 从认证、多租户上下文、权限拦截和相关数据访问层开始。
