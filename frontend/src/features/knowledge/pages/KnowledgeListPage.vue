@@ -7,8 +7,8 @@
         <p>管理员管理知识库，成员查看已发布知识库。</p>
       </div>
       <form v-if="isAdmin" class="create-form" @submit.prevent="createKnowledgeBase">
-        <input v-model="draftName" type="text" placeholder="新知识库名称" />
-        <button class="pill-button" type="submit" :disabled="knowledgeStore.creatingKnowledgeBase || !draftName.trim()">
+        <input v-model="draftName" data-testid="knowledge-create-name" type="text" placeholder="新知识库名称" />
+        <button class="pill-button" data-testid="knowledge-create-submit" type="submit" :disabled="knowledgeStore.creatingKnowledgeBase || !draftName.trim()">
           {{ knowledgeStore.creatingKnowledgeBase ? '创建中...' : '+ 新建知识库' }}
         </button>
       </form>

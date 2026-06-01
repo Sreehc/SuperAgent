@@ -1,31 +1,41 @@
-# Frontend Stage 3
+# Frontend
 
-当前前端已经完成阶段 3 的脚手架与登录态基线：
+前端基于 `Vue 3 + Vite + TypeScript + Pinia + Vue Router`，当前已经接通登录、知识库、文档详情、会话、Trace 和设置页。
 
-- 技术栈固定为 `Vue 3 + Vite + TypeScript + Pinia + Vue Router`
-- 已接入统一 API Client、`Authorization` 注入和 `401` 清理
-- 已完成 `/login`、受保护路由、基础工作台布局和 `/chat` 占位页
-- 已完成基于当前租户角色的菜单裁剪，`MEMBER` 不显示管理入口
+## 页面范围
 
-本地开发：
+- `/login`
+- `/chat`
+- `/knowledge`
+- `/documents/:documentId`
+- `/traces`
+- `/traces/:exchangeId`
+- `/settings`
+
+## 本地开发
 
 1. 复制 `./.env.example` 为 `.env.local`
-2. 在 `frontend/` 下执行 `npm install`
+2. 执行 `npm install`
 3. 执行 `npm run dev`
-4. 默认访问 `http://localhost:5173`
-5. 如果未提供 `.env.local`，开发环境会回退到 `http://localhost:8080/api/v1`
+4. 打开 `http://localhost:5173`
 
-环境变量：
+默认会调用 `VITE_API_BASE_URL`，未配置时回退到 `http://localhost:8080/api/v1`
 
-- `VITE_API_BASE_URL`：后端 API 基地址，默认 `http://localhost:8080/api/v1`
-- `VITE_SSE_TIMEOUT_SECONDS`：当前统一请求超时秒数
-- `VITE_APP_NAME`：页面标题和品牌名称
+## 常用命令
 
-当前目录重点：
+```bash
+npm run build
+VITE_API_BASE_URL=http://127.0.0.1:18080/api/v1 npm run dev -- --host 127.0.0.1 --port 4173
+npm run e2e
+```
 
-- `src/app`：应用入口、路由和主 Shell
-- `src/api`：HTTP Client、响应类型和本地存储
-- `src/features/auth`：登录页、认证类型、认证状态管理
-- `src/features/placeholders`：阶段 3 占位页
+## E2E 说明
 
-下一阶段建议直接从 `/chat` 的会话列表、消息时间线和流式响应接入开始。
+- 先手动启动后端 `18080` 和前端 `4173`。
+- Playwright 使用本机已安装的 `Google Chrome`。
+- 当前 E2E 覆盖登录守卫、设置页可见性、文档上传、会话发起和 Trace 查看。
+
+## 已知问题
+
+- 对话页还没有直接选择知识库的控件，测试通过后端 API 先创建带知识库的会话。
+- 当后端未消费文档任务时，上传后的文档会停留在 `uploaded` 或 `pending` 状态。

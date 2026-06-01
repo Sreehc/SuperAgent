@@ -14,7 +14,7 @@ class RagSupportServiceTest {
 
     @Test
     void shouldFuseWithRrfAndApplyBudget() {
-        RagSupportService service = new RagSupportService(new SuperAgentProperties());
+        RagSupportService service = new RagSupportService(new SuperAgentProperties(), null);
 
         List<RetrievalResult> vectorResults = List.of(
                 new RetrievalResult("vector", 1L, 10L, 100L, "文档A", 1, "chunk A1", null, 0.8d, Map.of()),
@@ -37,7 +37,7 @@ class RagSupportServiceTest {
 
     @Test
     void shouldFilterOutIrrelevantEvidenceAndApplyTotalBudget() {
-        RagSupportService service = new RagSupportService(new SuperAgentProperties());
+        RagSupportService service = new RagSupportService(new SuperAgentProperties(), null);
 
         List<RagEvidence> evidences = List.of(
                 new RagEvidence("hybrid", 1L, 10L, 100L, "文档A", 1, "退款规则：7日内申请", null, 0.9d, Map.of("channels", List.of("vector", "keyword"))),

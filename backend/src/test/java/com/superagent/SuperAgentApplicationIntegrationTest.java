@@ -38,11 +38,11 @@ class SuperAgentApplicationIntegrationTest {
                 String.class
         );
         List<String> tables = jdbcTemplate.queryForList(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('tenant', 'user_account', 'knowledge_document', 'conversation_exchange', 'audit_log') ORDER BY table_name",
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('tenant', 'user_account', 'knowledge_document', 'conversation_exchange', 'audit_log', 'tenant_runtime_setting') ORDER BY table_name",
                 String.class
         );
 
         assertThat(extensions).containsExactly("pg_trgm", "vector");
-        assertThat(tables).containsExactly("audit_log", "conversation_exchange", "knowledge_document", "tenant", "user_account");
+        assertThat(tables).containsExactly("audit_log", "conversation_exchange", "knowledge_document", "tenant", "tenant_runtime_setting", "user_account");
     }
 }

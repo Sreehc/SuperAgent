@@ -38,15 +38,16 @@ public class RagOrchestrationService {
             ConversationService.RagOptions ragOptions
     ) {
         String memoryContext = ragSupportService.assembleMemory(recentMessages, question);
-        String rewrittenQuestion = ragSupportService.rewriteQuestion(question, recentMessages, ragOptions);
-        List<String> subQuestions = ragSupportService.splitSubQuestions(rewrittenQuestion, ragOptions);
+        RagSupportService.EffectiveRagSettings effectiveSettings = ragSupportService.resolveEffectiveSettings(ragOptions);
+        String rewrittenQuestion = ragSupportService.rewriteQuestion(question, recentMessages, effectiveSettings);
+        List<String> subQuestions = ragSupportService.splitSubQuestions(rewrittenQuestion, effectiveSettings);
         RagSearchQuery rootQuery = ragSupportService.resolveSearchQuery(
                 question,
                 rewrittenQuestion,
                 rewrittenQuestion,
                 1,
                 knowledgeBaseId,
-                ragOptions
+                effectiveSettings
         );
         int perQuestionBudget = Math.max(1, rootQuery.evidenceLimit() / Math.max(1, subQuestions.size()));
 
@@ -59,7 +60,7 @@ public class RagOrchestrationService {
                     subQuestions.get(index),
                     index + 1,
                     knowledgeBaseId,
-                    ragOptions
+                    effectiveSettings
             );
             List<RetrievalResult> vectorResults = retrievalService.searchVector(query);
             List<RetrievalResult> keywordResults = retrievalService.searchKeyword(query);

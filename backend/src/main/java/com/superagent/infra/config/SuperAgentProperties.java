@@ -397,6 +397,12 @@ public class SuperAgentProperties {
         @Min(1)
         private int evidenceLimit = 8;
 
+        @Min(1)
+        private int perQuestionEvidenceCharLimit = 4000;
+
+        @Min(1)
+        private int totalEvidenceCharLimit = 12000;
+
         @Min(0)
         private double minRelevanceScore = 0.35d;
 
@@ -449,6 +455,22 @@ public class SuperAgentProperties {
 
         public void setEvidenceLimit(int evidenceLimit) {
             this.evidenceLimit = evidenceLimit;
+        }
+
+        public int getPerQuestionEvidenceCharLimit() {
+            return perQuestionEvidenceCharLimit;
+        }
+
+        public void setPerQuestionEvidenceCharLimit(int perQuestionEvidenceCharLimit) {
+            this.perQuestionEvidenceCharLimit = perQuestionEvidenceCharLimit;
+        }
+
+        public int getTotalEvidenceCharLimit() {
+            return totalEvidenceCharLimit;
+        }
+
+        public void setTotalEvidenceCharLimit(int totalEvidenceCharLimit) {
+            this.totalEvidenceCharLimit = totalEvidenceCharLimit;
         }
 
         public double getMinRelevanceScore() {

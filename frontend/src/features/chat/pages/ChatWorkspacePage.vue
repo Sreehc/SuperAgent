@@ -6,7 +6,7 @@
           <p class="eyebrow">会话</p>
           <h2>对话工作台</h2>
         </div>
-        <button class="pill-button" :disabled="chatStore.creatingConversation" type="button" @click="newConversation">
+        <button class="pill-button" data-testid="chat-new-conversation" :disabled="chatStore.creatingConversation" type="button" @click="newConversation">
           {{ chatStore.creatingConversation ? '创建中...' : '+ 新建会话' }}
         </button>
       </div>
@@ -88,6 +88,7 @@
 
         <textarea
           v-model="chatStore.composerMessage"
+          data-testid="chat-composer"
           class="composer-card__input"
           placeholder="输入问题，开始最小可用流式对话..."
           rows="4"
@@ -100,6 +101,7 @@
             <button
               v-if="chatStore.streaming"
               class="ghost-button"
+              data-testid="chat-stop"
               type="button"
               @click="chatStore.stopStreaming"
             >
@@ -107,6 +109,7 @@
             </button>
             <button
               class="pill-button"
+              data-testid="chat-send"
               type="button"
               :disabled="chatStore.streaming || !chatStore.composerMessage.trim()"
               @click="sendMessage"

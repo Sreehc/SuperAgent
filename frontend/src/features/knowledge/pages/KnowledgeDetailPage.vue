@@ -22,11 +22,11 @@
         <p>阶段 5 仅接通文件上传、MinIO 写入和初始任务落库。</p>
       </div>
       <form class="upload-form__grid" @submit.prevent="submitUpload">
-        <input ref="fileInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
+        <input ref="fileInput" data-testid="document-upload-file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
         <input v-model="uploadTitle" type="text" placeholder="文档标题（可选）" />
         <input v-model="uploadCategory" type="text" placeholder="业务分类（可选）" />
         <input v-model="uploadTags" type="text" placeholder="标签，逗号分隔" />
-        <button class="pill-button" type="submit" :disabled="knowledgeStore.uploadingDocument || !selectedFile">
+        <button class="pill-button" data-testid="document-upload-submit" type="submit" :disabled="knowledgeStore.uploadingDocument || !selectedFile">
           {{ knowledgeStore.uploadingDocument ? '上传中...' : '上传文档' }}
         </button>
       </form>
@@ -73,6 +73,7 @@
             v-for="document in knowledgeStore.documents"
             :key="document.id"
             class="table-row"
+            :data-testid="`document-row-${document.id}`"
             @click="openDocument(document.id)"
           >
             <td>{{ document.title }}</td>

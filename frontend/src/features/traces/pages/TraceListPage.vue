@@ -22,7 +22,7 @@
         <option value="CLARIFICATION">CLARIFICATION</option>
       </select>
       <input v-model="traceStore.userIdFilter" type="search" placeholder="按用户 ID 筛选" @keyup.enter="traceStore.fetchTraces" />
-      <button class="ghost-button" type="button" @click="traceStore.fetchTraces">刷新</button>
+      <button class="ghost-button" data-testid="trace-refresh" type="button" @click="traceStore.fetchTraces">刷新</button>
     </section>
 
     <p v-if="traceStore.errorMessage" class="error-banner">{{ traceStore.errorMessage }}</p>
@@ -49,6 +49,7 @@
             v-for="trace in traceStore.traces"
             :key="trace.exchangeId"
             class="table-row"
+            :data-testid="`trace-row-${trace.exchangeId}`"
             @click="openTrace(trace.exchangeId)"
           >
             <td>#{{ trace.exchangeId }}</td>

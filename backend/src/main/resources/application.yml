@@ -98,5 +98,7 @@ super-agent:
     keyword-top-k: ${RAG_KEYWORD_TOP_K:20}
     rrf-k: ${RAG_RRF_K:60}
     evidence-limit: ${RAG_EVIDENCE_LIMIT:8}
+    per-question-evidence-char-limit: ${RAG_PER_QUESTION_EVIDENCE_CHAR_LIMIT:4000}
+    total-evidence-char-limit: ${RAG_TOTAL_EVIDENCE_CHAR_LIMIT:12000}
     min-relevance-score: ${RAG_MIN_RELEVANCE_SCORE:0.35}
     max-sub-questions: ${RAG_MAX_SUB_QUESTIONS:4}

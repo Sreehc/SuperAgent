@@ -5,6 +5,8 @@ import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.rag.domain.RagEvidence;
 import com.superagent.rag.domain.RagSearchQuery;
 import com.superagent.rag.domain.RetrievalResult;
+import com.superagent.settings.domain.RagSettings;
+import com.superagent.settings.service.RuntimeSettingsService;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -18,9 +20,11 @@ import org.springframework.stereotype.Service;
 public class RagSupportService {
 
     private final SuperAgentProperties properties;
+    private final RuntimeSettingsService runtimeSettingsService;
 
-    public RagSupportService(SuperAgentProperties properties) {
+    public RagSupportService(SuperAgentProperties properties, RuntimeSettingsService runtimeSettingsService) {
         this.properties = properties;
+        this.runtimeSettingsService = runtimeSettingsService;
     }
 
     public String assembleMemory(List<String> recentMessages, String question) {
@@ -37,10 +41,25 @@ public class RagSupportService {
         return builder.toString().trim();
     }
 
-    public String rewriteQuestion(String question, List<String> recentMessages, ConversationService.RagOptions ragOptions) {
-        boolean enabled = ragOptions == null || ragOptions.rewriteEnabled() == null
-                ? properties.getRag().getRewriteEnabled()
-                : ragOptions.rewriteEnabled();
+    public EffectiveRagSettings resolveEffectiveSettings(ConversationService.RagOptions ragOptions) {
+        RagSettings base = runtimeSettingsService == null
+                ? defaultRagSettings()
+                : runtimeSettingsService.resolveRagSettingsForCurrentTenant();
+        return new EffectiveRagSettings(
+                ragOptions == null || ragOptions.rewriteEnabled() == null ? base.rewriteEnabled() : ragOptions.rewriteEnabled(),
+                ragOptions == null || ragOptions.subQuestionEnabled() == null ? base.subQuestionEnabled() : ragOptions.subQuestionEnabled(),
+                ragOptions == null || ragOptions.vectorTopK() == null ? base.vectorTopK() : ragOptions.vectorTopK(),
+                ragOptions == null || ragOptions.keywordTopK() == null ? base.keywordTopK() : ragOptions.keywordTopK(),
+                ragOptions == null || ragOptions.rrfK() == null ? base.rrfK() : ragOptions.rrfK(),
+                ragOptions == null || ragOptions.rerankEnabled() == null ? base.rerankEnabled() : ragOptions.rerankEnabled(),
+                ragOptions == null || ragOptions.evidenceLimit() == null ? base.evidenceLimit() : ragOptions.evidenceLimit(),
+                ragOptions == null || ragOptions.minRelevanceScore() == null ? base.minRelevanceScore() : ragOptions.minRelevanceScore(),
+                base.maxSubQuestions()
+        );
+    }
+
+    public String rewriteQuestion(String question, List<String> recentMessages, EffectiveRagSettings settings) {
+        boolean enabled = settings.rewriteEnabled();
         List<String> sanitizedMessages = sanitizeRecentMessages(recentMessages, question);
         if (!enabled || sanitizedMessages.isEmpty()) {
             return question.trim();
@@ -53,11 +72,9 @@ public class RagSupportService {
         return "结合上下文[" + context + "]的问题：" + question.trim();
     }
 
-    public List<String> splitSubQuestions(String rewrittenQuestion, ConversationService.RagOptions ragOptions) {
-        boolean enabled = ragOptions == null || ragOptions.subQuestionEnabled() == null
-                ? properties.getRag().getSubQuestionEnabled()
-                : ragOptions.subQuestionEnabled();
-        int maxSubQuestions = properties.getRag().getMaxSubQuestions();
+    public List<String> splitSubQuestions(String rewrittenQuestion, EffectiveRagSettings settings) {
+        boolean enabled = settings.subQuestionEnabled();
+        int maxSubQuestions = settings.maxSubQuestions();
         if (!enabled) {
             return List.of(rewrittenQuestion);
         }
@@ -84,7 +101,7 @@ public class RagSupportService {
             String subQuestion,
             int subQuestionNo,
             Long knowledgeBaseId,
-            ConversationService.RagOptions ragOptions
+            EffectiveRagSettings settings
     ) {
         return new RagSearchQuery(
                 originalQuestion,
@@ -92,12 +109,12 @@ public class RagSupportService {
                 subQuestion,
                 subQuestionNo,
                 knowledgeBaseId,
-                ragOptions == null || ragOptions.vectorTopK() == null ? properties.getRag().getVectorTopK() : ragOptions.vectorTopK(),
-                ragOptions == null || ragOptions.keywordTopK() == null ? properties.getRag().getKeywordTopK() : ragOptions.keywordTopK(),
-                ragOptions == null || ragOptions.rrfK() == null ? properties.getRag().getRrfK() : ragOptions.rrfK(),
-                ragOptions == null || ragOptions.evidenceLimit() == null ? properties.getRag().getEvidenceLimit() : ragOptions.evidenceLimit(),
-                ragOptions == null || ragOptions.minRelevanceScore() == null ? properties.getRag().getMinRelevanceScore() : ragOptions.minRelevanceScore(),
-                ragOptions != null && Boolean.TRUE.equals(ragOptions.rerankEnabled())
+                settings.vectorTopK(),
+                settings.keywordTopK(),
+                settings.rrfK(),
+                settings.evidenceLimit(),
+                settings.minRelevanceScore(),
+                settings.rerankEnabled()
         );
     }
 
@@ -140,6 +157,22 @@ public class RagSupportService {
                 return existing;
             });
         }
+    }
+
+    private RagSettings defaultRagSettings() {
+        return new RagSettings(
+                properties.getRag().getRewriteEnabled(),
+                properties.getRag().getSubQuestionEnabled(),
+                properties.getRag().getMaxSubQuestions(),
+                properties.getRag().getVectorTopK(),
+                properties.getRag().getKeywordTopK(),
+                properties.getRag().getRrfK(),
+                properties.getAi().getRerankEnabled(),
+                properties.getRag().getEvidenceLimit(),
+                properties.getRag().getPerQuestionEvidenceCharLimit(),
+                properties.getRag().getTotalEvidenceCharLimit(),
+                properties.getRag().getMinRelevanceScore()
+        );
     }
 
     private RagEvidence adjustRelevance(String query, RagEvidence evidence) {
@@ -273,5 +306,18 @@ public class RagSupportService {
                     resolvedMetadata
             );
         }
+    }
+
+    public record EffectiveRagSettings(
+            boolean rewriteEnabled,
+            boolean subQuestionEnabled,
+            int vectorTopK,
+            int keywordTopK,
+            int rrfK,
+            boolean rerankEnabled,
+            int evidenceLimit,
+            double minRelevanceScore,
+            int maxSubQuestions
+    ) {
     }
 }

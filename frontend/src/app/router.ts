@@ -5,7 +5,8 @@ import { useAuthStore } from '../features/auth/store/auth'
 import { LoginPage } from '../features/auth/pages'
 import { ChatWorkspacePage } from '../features/chat/pages'
 import { DocumentDetailPage, KnowledgeDetailPage, KnowledgeListPage } from '../features/knowledge/pages'
-import { PermissionDeniedPage, SettingsPlaceholderPage } from '../features/placeholders/pages'
+import { PermissionDeniedPage } from '../features/placeholders/pages'
+import { SettingsPage } from '../features/settings/pages'
 import { TraceDetailPage, TraceListPage } from '../features/traces/pages'
 
 declare module 'vue-router' {
@@ -108,7 +109,7 @@ export function createRouter(pinia: Pinia) {
           {
             path: '/settings',
             name: 'settings',
-            component: SettingsPlaceholderPage,
+            component: SettingsPage,
             meta: {
               requiresAuth: true,
               roles: ['OWNER', 'ADMIN'],

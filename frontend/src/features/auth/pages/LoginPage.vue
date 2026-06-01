@@ -26,13 +26,14 @@
 
         <label class="field">
           <span>用户名</span>
-          <input v-model.trim="form.username" name="username" autocomplete="username" placeholder="admin" />
+          <input v-model.trim="form.username" data-testid="login-username" name="username" autocomplete="username" placeholder="admin" />
         </label>
 
         <label class="field">
           <span>密码</span>
           <input
             v-model="form.password"
+            data-testid="login-password"
             name="password"
             type="password"
             autocomplete="current-password"
@@ -42,7 +43,7 @@
 
         <p v-if="errorMessage" class="login-form__error">{{ errorMessage }}</p>
 
-        <button class="login-form__submit" :disabled="submitting" type="submit">
+        <button class="login-form__submit" data-testid="login-submit" :disabled="submitting" type="submit">
           {{ submitting ? '登录中...' : '登录并进入 /chat' }}
         </button>
 

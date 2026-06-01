@@ -47,6 +47,7 @@ class RetrievalIntegrationTest {
 
     @BeforeEach
     void cleanTables() {
+        jdbcTemplate.execute("DELETE FROM tenant_runtime_setting");
         jdbcTemplate.execute("DELETE FROM conversation_reference");
         jdbcTemplate.execute("DELETE FROM retrieval_trace_item");
         jdbcTemplate.execute("DELETE FROM rerank_trace");

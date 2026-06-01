@@ -1,78 +1,57 @@
-# Backend Scaffold
+# Backend
 
-当前目录已完成阶段 2 的后端基础认证能力，统一使用 Java 21 目标版本。
+后端基于 `Spring Boot 3.3 + Java 21 + Flyway + PostgreSQL/pgvector`，当前已经包含认证、知识库、文档处理、会话、Trace 和运行时设置接口。
 
-## 已完成内容
+## 当前能力
 
-- Spring Boot + Maven 工程和 Maven Wrapper。
-- 模块化单体包结构：`api`、`auth`、`chat`、`rag`、`knowledge`、`observability`、`infra`、`common`。
-- 统一响应和统一异常处理。
-- 基础系统接口：`/api/v1/system/bootstrap`、`/api/v1/system/modules/{module}`。
-- 认证与租户接口：`/api/v1/auth/login`、`/api/v1/auth/refresh`、`/api/v1/auth/logout`、`/api/v1/auth/me`、`/api/v1/tenants`。
-- JWT Access Token、Refresh Token 轮换、`X-Tenant-Id` 解析和租户角色拦截。
-- Actuator 健康检查：`/actuator/health`。
-- OpenAPI/Swagger 基础配置：`/v3/api-docs`、`/swagger-ui.html`。
-- Flyway 迁移框架，以及 PostgreSQL 扩展、基础表结构、索引和 `updated_at` 触发器迁移。
-- 启动时自动补充本地种子账号和默认租户。
+- 认证与租户：`/api/v1/auth/*`、`/api/v1/tenants`
+- 知识库与文档：`/api/v1/knowledge-bases/*`、`/api/v1/documents/*`
+- 会话与流式回答：`/api/v1/conversations/*`
+- Trace 管理：`/api/v1/admin/traces/*`
+- 运行时设置：`/api/v1/admin/settings/model|rag|rerank`
+- 健康检查与 Swagger：`/actuator/health`、`/swagger-ui.html`
 
 ## 启动前提
 
 - JDK 21
-- 本地 PostgreSQL 容器可用
-- 数据库存在：`superagent`
+- PostgreSQL/pgvector
+- MinIO
+- Kafka 可选；默认 `KAFKA_ENABLED=false`
 
-如果本机 Maven 默认不使用 Java 21，启动和测试时显式指定：
+如需显式切换 Java 21：
 
 ```bash
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 ```
 
-## 本地启动
+## 启动方式
 
-当前 PostgreSQL 容器实际密码需要以容器环境变量为准。当前机器可通过：
-
-```bash
-docker inspect PostgreSQL --format '{{range .Config.Env}}{{println .}}{{end}}'
-```
-
-示例启动命令：
+1. 复制 `./.env.example`
+2. 准备 `superagent` 数据库，并启用 `vector`、`pg_trgm`
+3. 执行：
 
 ```bash
-POSTGRES_USER=postgres \
-POSTGRES_PASSWORD=root \
-POSTGRES_URL=jdbc:postgresql://localhost:5432/superagent \
 ./mvnw spring-boot:run
 ```
 
-## 本地种子账号
+默认端口：`8080`
+
+## 种子账号
 
 - `admin / password123`
 - `member / password123`
 
-默认租户：
-
-- `默认租户`
-- 租户 code：`default`
+默认租户：`默认租户`
 
 ## 验证命令
 
 ```bash
-TEST_POSTGRES_PASSWORD=root ./mvnw test
+./mvnw -q -DskipTests compile
+./mvnw -q test
 curl http://localhost:8080/actuator/health
-curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"password123"}'
 ```
 
-## 范围边界
+## 已知问题
 
-当前阶段只完成基础工程、配置和迁移，不包含：
-
-- 会话逻辑
-- RAG 业务逻辑
-- 文档处理业务逻辑
-- 前端业务页面
-
-## 下一阶段入口
-
-阶段 3 可以基于现有认证接口和租户上下文进入前端登录态、路由守卫和 `/chat` 占位页接入。
+- 文档自动解析依赖 Kafka；关闭 Kafka 时，上传动作只会创建任务，不会自动消费。
+- 设置页的模型配置已经可持久化并写审计，但真实模型调用热更新仍受当前客户端装配方式限制。
