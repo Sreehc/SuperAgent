@@ -15,7 +15,7 @@
           :key="item.to"
           :to="item.to"
           class="nav-list__item"
-          :class="{ 'nav-list__item--active': route.path === item.to }"
+          :class="{ 'nav-list__item--active': route.path === item.to || route.path.startsWith(`${item.to}/`) }"
         >
           <span>{{ item.label }}</span>
           <small>{{ item.caption }}</small>

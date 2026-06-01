@@ -4,7 +4,8 @@ import AppShell from './shells/AppShell.vue'
 import { useAuthStore } from '../features/auth/store/auth'
 import { LoginPage } from '../features/auth/pages'
 import { ChatWorkspacePage } from '../features/chat/pages'
-import { KnowledgePlaceholderPage, PermissionDeniedPage, SettingsPlaceholderPage, TracePlaceholderPage } from '../features/placeholders/pages'
+import { KnowledgeDetailPage, KnowledgeListPage } from '../features/knowledge/pages'
+import { PermissionDeniedPage, SettingsPlaceholderPage, TracePlaceholderPage } from '../features/placeholders/pages'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -59,7 +60,16 @@ export function createRouter(pinia: Pinia) {
           {
             path: '/knowledge',
             name: 'knowledge',
-            component: KnowledgePlaceholderPage,
+            component: KnowledgeListPage,
+            meta: {
+              requiresAuth: true,
+              menuLabel: '知识库',
+            },
+          },
+          {
+            path: '/knowledge/:knowledgeBaseId',
+            name: 'knowledge-detail',
+            component: KnowledgeDetailPage,
             meta: {
               requiresAuth: true,
               menuLabel: '知识库',

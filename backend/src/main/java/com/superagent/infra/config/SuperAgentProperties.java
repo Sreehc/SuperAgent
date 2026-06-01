@@ -87,7 +87,22 @@ public class SuperAgentProperties {
         private String minioEndpoint;
 
         @NotBlank
+        private String minioAccessKey;
+
+        @NotBlank
+        private String minioSecretKey;
+
+        @NotBlank
         private String minioBucket;
+
+        @NotNull
+        private Boolean minioAutoCreateBucket;
+
+        @Min(1)
+        private long uploadMaxFileSizeBytes;
+
+        @NotNull
+        private List<@NotBlank String> uploadAllowedExtensions = new ArrayList<>();
 
         public String getMinioEndpoint() {
             return minioEndpoint;
@@ -97,12 +112,52 @@ public class SuperAgentProperties {
             this.minioEndpoint = minioEndpoint;
         }
 
+        public String getMinioAccessKey() {
+            return minioAccessKey;
+        }
+
+        public void setMinioAccessKey(String minioAccessKey) {
+            this.minioAccessKey = minioAccessKey;
+        }
+
+        public String getMinioSecretKey() {
+            return minioSecretKey;
+        }
+
+        public void setMinioSecretKey(String minioSecretKey) {
+            this.minioSecretKey = minioSecretKey;
+        }
+
         public String getMinioBucket() {
             return minioBucket;
         }
 
         public void setMinioBucket(String minioBucket) {
             this.minioBucket = minioBucket;
+        }
+
+        public Boolean getMinioAutoCreateBucket() {
+            return minioAutoCreateBucket;
+        }
+
+        public void setMinioAutoCreateBucket(Boolean minioAutoCreateBucket) {
+            this.minioAutoCreateBucket = minioAutoCreateBucket;
+        }
+
+        public long getUploadMaxFileSizeBytes() {
+            return uploadMaxFileSizeBytes;
+        }
+
+        public void setUploadMaxFileSizeBytes(long uploadMaxFileSizeBytes) {
+            this.uploadMaxFileSizeBytes = uploadMaxFileSizeBytes;
+        }
+
+        public List<String> getUploadAllowedExtensions() {
+            return uploadAllowedExtensions;
+        }
+
+        public void setUploadAllowedExtensions(List<String> uploadAllowedExtensions) {
+            this.uploadAllowedExtensions = uploadAllowedExtensions;
         }
     }
 
