@@ -221,6 +221,12 @@ public class SuperAgentProperties {
         @NotNull
         private Boolean rerankEnabled;
 
+        @NotBlank
+        private String embeddingProvider = "openai-compatible";
+
+        @Min(1)
+        private int embeddingDimension = 1536;
+
         public String getOpenaiCompatibleBaseUrl() {
             return openaiCompatibleBaseUrl;
         }
@@ -259,6 +265,22 @@ public class SuperAgentProperties {
 
         public void setRerankEnabled(Boolean rerankEnabled) {
             this.rerankEnabled = rerankEnabled;
+        }
+
+        public String getEmbeddingProvider() {
+            return embeddingProvider;
+        }
+
+        public void setEmbeddingProvider(String embeddingProvider) {
+            this.embeddingProvider = embeddingProvider;
+        }
+
+        public int getEmbeddingDimension() {
+            return embeddingDimension;
+        }
+
+        public void setEmbeddingDimension(int embeddingDimension) {
+            this.embeddingDimension = embeddingDimension;
         }
     }
 

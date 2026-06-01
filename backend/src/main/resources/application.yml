@@ -74,6 +74,8 @@ super-agent:
     api-key: ${OPENAI_API_KEY:local-dev-openai-key}
     chat-model: ${CHAT_MODEL:gpt-4.1-mini}
     embedding-model: ${EMBEDDING_MODEL:text-embedding-3-small}
+    embedding-provider: ${EMBEDDING_PROVIDER:openai-compatible}
+    embedding-dimension: ${EMBEDDING_DIMENSION:1536}
     rerank-enabled: ${RERANK_ENABLED:false}
   security:
     jwt-secret: ${JWT_SECRET:replace-with-local-dev-secret-1234567890}

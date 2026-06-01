@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.service.DocumentProcessingService;
+import com.superagent.rag.TestEmbeddingClientConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,6 +32,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 @SpringBootTest
+@Import(TestEmbeddingClientConfiguration.class)
 class KnowledgeIntegrationTest {
 
     @Autowired
@@ -47,6 +50,7 @@ class KnowledgeIntegrationTest {
     @BeforeEach
     void cleanKnowledgeTables() {
         jdbcTemplate.execute("DELETE FROM document_task");
+        jdbcTemplate.execute("DELETE FROM document_embedding");
         jdbcTemplate.execute("DELETE FROM document_chunk");
         jdbcTemplate.execute("DELETE FROM knowledge_document");
         jdbcTemplate.execute("DELETE FROM knowledge_base");
@@ -248,11 +252,17 @@ class KnowledgeIntegrationTest {
                 .getContentAsString(StandardCharsets.UTF_8));
         assertThat(tasks.path("data").toString()).contains("parse");
         assertThat(tasks.path("data").toString()).contains("chunk");
+        assertThat(tasks.path("data").toString()).contains("embed");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM knowledge_document WHERE id = ?",
                 String.class,
                 documentId
         )).isEqualTo("ready");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM document_embedding WHERE document_id = ?",
+                Integer.class,
+                documentId
+        )).isGreaterThan(0);
 
         int originalChunkCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM document_chunk WHERE document_id = ?",
@@ -289,6 +299,12 @@ class KnowledgeIntegrationTest {
                 ) duplicated
                 """, Integer.class, documentId);
         assertThat(duplicateChunkNoCount).isEqualTo(0);
+        Integer embeddingCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM document_embedding WHERE document_id = ?",
+                Integer.class,
+                documentId
+        );
+        assertThat(embeddingCount).isEqualTo(processedChunkCount);
     }
 
     private long createKnowledgeBase(LoginSession owner, String name, String status) throws Exception {

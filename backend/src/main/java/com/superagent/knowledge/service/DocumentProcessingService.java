@@ -3,12 +3,15 @@ package com.superagent.knowledge.service;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.infra.storage.ObjectStorageService;
+import com.superagent.knowledge.domain.DocumentChunk;
 import com.superagent.knowledge.domain.DocumentTask;
+import com.superagent.knowledge.domain.DocumentTaskStatus;
 import com.superagent.knowledge.domain.DocumentTaskType;
 import com.superagent.knowledge.domain.KnowledgeDocument;
 import com.superagent.knowledge.domain.KnowledgeDocumentStatus;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.repository.KnowledgeRepository;
+import com.superagent.rag.service.EmbeddingClient;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -26,6 +29,7 @@ public class DocumentProcessingService {
     private final ObjectStorageService objectStorageService;
     private final DocumentParserService documentParserService;
     private final RecursiveChunker recursiveChunker;
+    private final EmbeddingClient embeddingClient;
     private final TransactionTemplate transactionTemplate;
 
     public DocumentProcessingService(
@@ -33,12 +37,14 @@ public class DocumentProcessingService {
             ObjectStorageService objectStorageService,
             DocumentParserService documentParserService,
             RecursiveChunker recursiveChunker,
+            EmbeddingClient embeddingClient,
             TransactionTemplate transactionTemplate
     ) {
         this.knowledgeRepository = knowledgeRepository;
         this.objectStorageService = objectStorageService;
         this.documentParserService = documentParserService;
         this.recursiveChunker = recursiveChunker;
+        this.embeddingClient = embeddingClient;
         this.transactionTemplate = transactionTemplate;
     }
 
@@ -86,7 +92,7 @@ public class DocumentProcessingService {
                     message.tenantId(),
                     document.id(),
                     DocumentTaskType.chunk,
-                    com.superagent.knowledge.domain.DocumentTaskStatus.pending,
+                    DocumentTaskStatus.pending,
                     "Chunk parsed content from task " + parseTask.id()
             );
             processChunkTask(message.tenantId(), document, parsed.content(), chunkTask.id());
@@ -119,10 +125,49 @@ public class DocumentProcessingService {
                         .toList();
                 knowledgeRepository.replaceDocumentChunks(tenantId, document.id(), inserts);
                 knowledgeRepository.markTaskSuccess(tenantId, chunkTaskId, "Generated " + inserts.size() + " chunks");
-                knowledgeRepository.updateDocumentStatus(tenantId, document.id(), KnowledgeDocumentStatus.ready, inserts.size(), null);
+                knowledgeRepository.updateDocumentStatus(tenantId, document.id(), KnowledgeDocumentStatus.embedding, inserts.size(), null);
             });
+            DocumentTask embedTask = knowledgeRepository.createDocumentTask(
+                    tenantId,
+                    document.id(),
+                    DocumentTaskType.embed,
+                    DocumentTaskStatus.pending,
+                    "Embed chunks from task " + chunkTaskId
+            );
+            processEmbedTask(tenantId, document, embedTask.id());
         } catch (Exception exception) {
             failDocument(tenantId, document.id(), chunkTaskId, exception);
+            throw wrapIfNecessary(exception);
+        }
+    }
+
+    protected void processEmbedTask(long tenantId, KnowledgeDocument document, long embedTaskId) {
+        knowledgeRepository.markTaskRunning(tenantId, embedTaskId);
+        try {
+            List<DocumentChunk> chunks = knowledgeRepository.listAllDocumentChunks(tenantId, document.id());
+            EmbeddingClient.EmbeddingResult embeddingResult = embeddingClient.embed(
+                    chunks.stream().map(DocumentChunk::content).toList()
+            );
+            List<KnowledgeRepository.EmbeddingInsert> embeddings = java.util.stream.IntStream.range(0, chunks.size())
+                    .mapToObj(index -> new KnowledgeRepository.EmbeddingInsert(
+                            chunks.get(index).id(),
+                            embeddingResult.vectors().get(index)
+                    ))
+                    .toList();
+            transactionTemplate.executeWithoutResult(status -> {
+                knowledgeRepository.replaceDocumentEmbeddings(
+                        tenantId,
+                        document.id(),
+                        embeddingResult.provider(),
+                        embeddingResult.model(),
+                        embeddingResult.dimension(),
+                        embeddings
+                );
+                knowledgeRepository.markTaskSuccess(tenantId, embedTaskId, "Embedded " + embeddings.size() + " chunks");
+                knowledgeRepository.updateDocumentStatus(tenantId, document.id(), KnowledgeDocumentStatus.ready, chunks.size(), null);
+            });
+        } catch (Exception exception) {
+            failDocument(tenantId, document.id(), embedTaskId, exception);
             throw wrapIfNecessary(exception);
         }
     }

@@ -11,6 +11,7 @@ import com.superagent.knowledge.domain.KnowledgeBaseStatus;
 import com.superagent.knowledge.domain.KnowledgeBaseVisibility;
 import com.superagent.knowledge.domain.KnowledgeDocument;
 import com.superagent.knowledge.domain.KnowledgeDocumentStatus;
+import com.superagent.rag.domain.RetrievalResult;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -553,6 +554,14 @@ public class KnowledgeRepository {
     }
 
     public int deleteDocumentChunks(long tenantId, long documentId) {
+        jdbcTemplate.update("""
+                        DELETE FROM document_embedding
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                        """,
+                tenantId,
+                documentId
+        );
         return jdbcTemplate.update("""
                         DELETE FROM document_chunk
                         WHERE tenant_id = ?
@@ -614,6 +623,140 @@ public class KnowledgeRepository {
                 });
     }
 
+    public void replaceDocumentEmbeddings(
+            long tenantId,
+            long documentId,
+            String provider,
+            String model,
+            int dimension,
+            List<EmbeddingInsert> embeddings
+    ) {
+        jdbcTemplate.update("""
+                        DELETE FROM document_embedding
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                          AND provider = ?
+                          AND model = ?
+                        """,
+                tenantId,
+                documentId,
+                provider,
+                model
+        );
+        if (embeddings.isEmpty()) {
+            return;
+        }
+        jdbcTemplate.batchUpdate("""
+                        INSERT INTO document_embedding (
+                            tenant_id,
+                            document_id,
+                            chunk_id,
+                            provider,
+                            model,
+                            dimension,
+                            embedding
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?::vector)
+                        """,
+                new BatchPreparedStatementSetter() {
+                    @Override
+                    public void setValues(java.sql.PreparedStatement ps, int index) throws SQLException {
+                        EmbeddingInsert embedding = embeddings.get(index);
+                        ps.setLong(1, tenantId);
+                        ps.setLong(2, documentId);
+                        ps.setLong(3, embedding.chunkId());
+                        ps.setString(4, provider);
+                        ps.setString(5, model);
+                        ps.setInt(6, dimension);
+                        ps.setString(7, toVectorLiteral(embedding.vector()));
+                    }
+
+                    @Override
+                    public int getBatchSize() {
+                        return embeddings.size();
+                    }
+                });
+    }
+
+    public List<DocumentChunk> listAllDocumentChunks(long tenantId, long documentId) {
+        return jdbcTemplate.query("""
+                        SELECT id,
+                               tenant_id,
+                               document_id,
+                               parent_chunk_id,
+                               chunk_no,
+                               section_title,
+                               content,
+                               content_hash,
+                               char_count,
+                               token_count,
+                               metadata,
+                               created_at,
+                               updated_at
+                        FROM document_chunk
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                        ORDER BY chunk_no ASC
+                        """,
+                documentChunkRowMapper,
+                tenantId,
+                documentId
+        );
+    }
+
+    public List<RetrievalResult> findTopKByVector(long tenantId, Long knowledgeBaseId, List<Double> vector, int topK) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    kd.knowledge_base_id,
+                    kd.id AS document_id,
+                    dc.id AS chunk_id,
+                    kd.title AS document_title,
+                    dc.chunk_no,
+                    dc.content,
+                    dc.section_title,
+                    dc.metadata,
+                    1 - (de.embedding <=> ?::vector) AS score
+                FROM document_embedding de
+                JOIN knowledge_document kd ON kd.id = de.document_id
+                JOIN document_chunk dc ON dc.id = de.chunk_id
+                JOIN knowledge_base kb ON kb.id = kd.knowledge_base_id
+                WHERE de.tenant_id = ?
+                  AND kd.tenant_id = ?
+                  AND dc.tenant_id = ?
+                  AND kd.status = 'ready'
+                  AND kd.deleted_at IS NULL
+                  AND kb.deleted_at IS NULL
+                  AND kb.status = 'published'
+                """);
+        ArrayList<Object> args = new ArrayList<>();
+        String vectorLiteral = toVectorLiteral(vector);
+        args.add(vectorLiteral);
+        args.add(tenantId);
+        args.add(tenantId);
+        args.add(tenantId);
+        if (knowledgeBaseId != null) {
+            sql.append(" AND kd.knowledge_base_id = ?");
+            args.add(knowledgeBaseId);
+        }
+        sql.append(" ORDER BY de.embedding <=> ?::vector ASC LIMIT ?");
+        args.add(vectorLiteral);
+        args.add(topK);
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new RetrievalResult(
+                        "vector",
+                        rs.getLong("knowledge_base_id"),
+                        rs.getLong("document_id"),
+                        rs.getLong("chunk_id"),
+                        rs.getString("document_title"),
+                        rs.getInt("chunk_no"),
+                        rs.getString("content"),
+                        rs.getString("section_title"),
+                        rs.getDouble("score"),
+                        readMetadata(rs.getString("metadata"))
+                ),
+                args.toArray()
+        );
+    }
+
     public record ChunkInsert(
             Long parentChunkId,
             int chunkNo,
@@ -624,6 +767,9 @@ public class KnowledgeRepository {
             Integer tokenCount,
             Map<String, Object> metadata
     ) {
+    }
+
+    public record EmbeddingInsert(long chunkId, List<Double> vector) {
     }
 
     private KnowledgeBase mapKnowledgeBase(ResultSet rs) throws SQLException {
@@ -718,6 +864,13 @@ public class KnowledgeRepository {
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to deserialize metadata", exception);
         }
+    }
+
+    private String toVectorLiteral(List<Double> vector) {
+        return "[" + vector.stream()
+                .map(value -> java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString())
+                .reduce((left, right) -> left + "," + right)
+                .orElse("") + "]";
     }
 
     private static class DocumentFilterAppender {
