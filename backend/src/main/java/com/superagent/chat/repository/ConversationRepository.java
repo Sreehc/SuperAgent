@@ -1,5 +1,7 @@
 package com.superagent.chat.repository;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.superagent.chat.domain.ConversationExchange;
 import com.superagent.chat.domain.ConversationMessage;
 import com.superagent.chat.domain.ConversationReference;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.BeanPropertySqlParameterSource;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -93,9 +96,11 @@ public class ConversationRepository {
     );
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
-    public ConversationRepository(NamedParameterJdbcTemplate jdbcTemplate) {
+    public ConversationRepository(NamedParameterJdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public ConversationSession createSession(long tenantId, long ownerId, String title, MemoryStrategy memoryStrategy, Long knowledgeBaseId) {
@@ -273,6 +278,47 @@ public class ConversationRepository {
         );
     }
 
+    public ConversationMessage createMessageWithMetadata(
+            long tenantId,
+            long sessionId,
+            MessageRole role,
+            String content,
+            String status,
+            Integer tokenCount,
+            Map<String, Object> metadata
+    ) {
+        return jdbcTemplate.queryForObject("""
+                        INSERT INTO conversation_message (
+                            tenant_id,
+                            session_id,
+                            role,
+                            content,
+                            status,
+                            token_count,
+                            metadata
+                        ) VALUES (
+                            :tenantId,
+                            :sessionId,
+                            :role,
+                            :content,
+                            :status,
+                            :tokenCount,
+                            CAST(:metadata AS jsonb)
+                        )
+                        RETURNING id, tenant_id, session_id, role, content, status, token_count, created_at, updated_at
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("sessionId", sessionId)
+                        .addValue("role", role.name())
+                        .addValue("content", content)
+                        .addValue("status", status)
+                        .addValue("tokenCount", tokenCount)
+                        .addValue("metadata", toJson(metadata)),
+                MESSAGE_ROW_MAPPER
+        );
+    }
+
     public ConversationExchange createExchange(
             long tenantId,
             long sessionId,
@@ -411,6 +457,232 @@ public class ConversationRepository {
         );
     }
 
+    public void createModelCallTrace(
+            long tenantId,
+            long exchangeId,
+            Long stageId,
+            String provider,
+            String model,
+            String callType,
+            String promptSummary,
+            String outputSummary,
+            Integer inputTokens,
+            Integer outputTokens,
+            Integer latencyMs,
+            String status,
+            String errorMessage,
+            Map<String, Object> metadata
+    ) {
+        jdbcTemplate.update("""
+                        INSERT INTO model_call_trace (
+                            tenant_id,
+                            exchange_id,
+                            stage_id,
+                            provider,
+                            model,
+                            call_type,
+                            prompt_summary,
+                            output_summary,
+                            input_tokens,
+                            output_tokens,
+                            latency_ms,
+                            status,
+                            error_message,
+                            metadata
+                        ) VALUES (
+                            :tenantId,
+                            :exchangeId,
+                            :stageId,
+                            :provider,
+                            :model,
+                            :callType,
+                            :promptSummary,
+                            :outputSummary,
+                            :inputTokens,
+                            :outputTokens,
+                            :latencyMs,
+                            :status,
+                            :errorMessage,
+                            CAST(:metadata AS jsonb)
+                        )
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("exchangeId", exchangeId)
+                        .addValue("stageId", stageId)
+                        .addValue("provider", provider)
+                        .addValue("model", model)
+                        .addValue("callType", callType)
+                        .addValue("promptSummary", promptSummary)
+                        .addValue("outputSummary", outputSummary)
+                        .addValue("inputTokens", inputTokens)
+                        .addValue("outputTokens", outputTokens)
+                        .addValue("latencyMs", latencyMs)
+                        .addValue("status", status)
+                        .addValue("errorMessage", errorMessage)
+                        .addValue("metadata", toJson(metadata))
+        );
+    }
+
+    public long createRetrievalTrace(
+            long tenantId,
+            long exchangeId,
+            Long stageId,
+            int subQuestionNo,
+            String channel,
+            String queryText,
+            Map<String, Object> filters,
+            int resultCount,
+            int selectedCount,
+            Integer latencyMs
+    ) {
+        return jdbcTemplate.queryForObject("""
+                        INSERT INTO retrieval_trace (
+                            tenant_id,
+                            exchange_id,
+                            stage_id,
+                            sub_question_no,
+                            channel,
+                            query_text,
+                            filters,
+                            result_count,
+                            selected_count,
+                            latency_ms
+                        ) VALUES (
+                            :tenantId,
+                            :exchangeId,
+                            :stageId,
+                            :subQuestionNo,
+                            :channel,
+                            :queryText,
+                            CAST(:filters AS jsonb),
+                            :resultCount,
+                            :selectedCount,
+                            :latencyMs
+                        )
+                        RETURNING id
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("exchangeId", exchangeId)
+                        .addValue("stageId", stageId)
+                        .addValue("subQuestionNo", subQuestionNo)
+                        .addValue("channel", channel)
+                        .addValue("queryText", queryText)
+                        .addValue("filters", toJson(filters))
+                        .addValue("resultCount", resultCount)
+                        .addValue("selectedCount", selectedCount)
+                        .addValue("latencyMs", latencyMs),
+                Long.class
+        );
+    }
+
+    public void createRetrievalTraceItem(
+            long tenantId,
+            long retrievalTraceId,
+            long documentId,
+            long chunkId,
+            int rankNo,
+            BigDecimal rawScore,
+            BigDecimal fusedScore,
+            boolean selected,
+            Map<String, Object> metadata
+    ) {
+        jdbcTemplate.update("""
+                        INSERT INTO retrieval_trace_item (
+                            tenant_id,
+                            retrieval_trace_id,
+                            document_id,
+                            chunk_id,
+                            rank_no,
+                            raw_score,
+                            fused_score,
+                            selected,
+                            metadata
+                        ) VALUES (
+                            :tenantId,
+                            :retrievalTraceId,
+                            :documentId,
+                            :chunkId,
+                            :rankNo,
+                            :rawScore,
+                            :fusedScore,
+                            :selected,
+                            CAST(:metadata AS jsonb)
+                        )
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("retrievalTraceId", retrievalTraceId)
+                        .addValue("documentId", documentId)
+                        .addValue("chunkId", chunkId)
+                        .addValue("rankNo", rankNo)
+                        .addValue("rawScore", rawScore)
+                        .addValue("fusedScore", fusedScore)
+                        .addValue("selected", selected)
+                        .addValue("metadata", toJson(metadata))
+        );
+    }
+
+    public void createRerankTrace(
+            long tenantId,
+            long exchangeId,
+            String provider,
+            String model,
+            boolean enabled,
+            String skippedReason,
+            int inputCount,
+            int outputCount,
+            Integer latencyMs,
+            String status,
+            String errorMessage,
+            Map<String, Object> metadata
+    ) {
+        jdbcTemplate.update("""
+                        INSERT INTO rerank_trace (
+                            tenant_id,
+                            exchange_id,
+                            provider,
+                            model,
+                            enabled,
+                            skipped_reason,
+                            input_count,
+                            output_count,
+                            latency_ms,
+                            status,
+                            error_message,
+                            metadata
+                        ) VALUES (
+                            :tenantId,
+                            :exchangeId,
+                            :provider,
+                            :model,
+                            :enabled,
+                            :skippedReason,
+                            :inputCount,
+                            :outputCount,
+                            :latencyMs,
+                            :status,
+                            :errorMessage,
+                            CAST(:metadata AS jsonb)
+                        )
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("exchangeId", exchangeId)
+                        .addValue("provider", provider)
+                        .addValue("model", model)
+                        .addValue("enabled", enabled)
+                        .addValue("skippedReason", skippedReason)
+                        .addValue("inputCount", inputCount)
+                        .addValue("outputCount", outputCount)
+                        .addValue("latencyMs", latencyMs)
+                        .addValue("status", status)
+                        .addValue("errorMessage", errorMessage)
+                        .addValue("metadata", toJson(metadata))
+        );
+    }
+
     public ConversationReference createReference(
             long tenantId,
             long exchangeId,
@@ -534,6 +806,14 @@ public class ConversationRepository {
     private static Long getNullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private String toJson(Map<String, Object> value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? Map.of() : value);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("Failed to serialize trace metadata", exception);
+        }
     }
 
     public record ReferenceCandidate(

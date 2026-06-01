@@ -1,8 +1,11 @@
 import { apiGet, apiPost, http } from '../../api/http'
 import type {
   CreateKnowledgeBaseRequest,
+  DocumentChunkItem,
+  DocumentTaskItem,
   KnowledgeBaseDetail,
   KnowledgeBaseListItem,
+  KnowledgeDocumentDetail,
   PagedResult,
   UpdateKnowledgeBaseRequest,
   UploadDocumentResponse,
@@ -60,6 +63,25 @@ export async function uploadKnowledgeDocument(
     formData,
   )
   return response.data
+}
+
+export function getKnowledgeDocument(documentId: number) {
+  return apiGet<KnowledgeDocumentDetail>(`/documents/${documentId}`)
+}
+
+export function listKnowledgeDocumentChunks(documentId: number, params?: Record<string, string | number | undefined>) {
+  return apiGet<PagedResult<DocumentChunkItem>>(`/documents/${documentId}/chunks${buildQuery(params)}`)
+}
+
+export function listKnowledgeDocumentTasks(documentId: number) {
+  return apiGet<DocumentTaskItem[]>(`/documents/${documentId}/tasks`)
+}
+
+export function reprocessKnowledgeDocument(documentId: number, reason?: string) {
+  return apiPost<{ documentId: number; taskId: number; status: string }, { reason?: string }>(
+    `/documents/${documentId}/reprocess`,
+    reason ? { reason } : {},
+  )
 }
 
 function buildQuery(params?: Record<string, string | number | undefined>) {

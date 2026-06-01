@@ -4,8 +4,9 @@ import AppShell from './shells/AppShell.vue'
 import { useAuthStore } from '../features/auth/store/auth'
 import { LoginPage } from '../features/auth/pages'
 import { ChatWorkspacePage } from '../features/chat/pages'
-import { KnowledgeDetailPage, KnowledgeListPage } from '../features/knowledge/pages'
-import { PermissionDeniedPage, SettingsPlaceholderPage, TracePlaceholderPage } from '../features/placeholders/pages'
+import { DocumentDetailPage, KnowledgeDetailPage, KnowledgeListPage } from '../features/knowledge/pages'
+import { PermissionDeniedPage, SettingsPlaceholderPage } from '../features/placeholders/pages'
+import { TraceDetailPage, TraceListPage } from '../features/traces/pages'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -76,9 +77,28 @@ export function createRouter(pinia: Pinia) {
             },
           },
           {
+            path: '/documents/:documentId',
+            name: 'document-detail',
+            component: DocumentDetailPage,
+            meta: {
+              requiresAuth: true,
+              menuLabel: '知识库',
+            },
+          },
+          {
             path: '/traces',
             name: 'traces',
-            component: TracePlaceholderPage,
+            component: TraceListPage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: 'Trace',
+            },
+          },
+          {
+            path: '/traces/:exchangeId',
+            name: 'trace-detail',
+            component: TraceDetailPage,
             meta: {
               requiresAuth: true,
               roles: ['OWNER', 'ADMIN'],

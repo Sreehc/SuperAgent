@@ -6,6 +6,7 @@ public record RagResponse(
         String rewrittenQuestion,
         List<String> subQuestions,
         List<RagEvidence> evidences,
-        RagAnswer answer
+        RagAnswer answer,
+        RagResponseDiagnostics diagnostics
 ) {
 }

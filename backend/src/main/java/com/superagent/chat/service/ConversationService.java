@@ -16,11 +16,15 @@ import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.rag.domain.RagEvidence;
 import com.superagent.rag.domain.RagResponse;
+import com.superagent.rag.domain.RagResponseDiagnostics;
+import com.superagent.rag.domain.RetrievalResult;
 import com.superagent.rag.service.RagOrchestrationService;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.http.HttpStatus;
@@ -185,13 +189,14 @@ public class ConversationService {
             Long resolvedKnowledgeBaseId = request.knowledgeBaseId() == null ? session.knowledgeBaseId() : request.knowledgeBaseId();
             conversationRepository.updateSessionDefaults(sessionId, tenantId, resolvedMemoryStrategy, resolvedKnowledgeBaseId);
 
-            userMessage = conversationRepository.createMessage(
+            userMessage = conversationRepository.createMessageWithMetadata(
                     tenantId,
                     sessionId,
                     MessageRole.user,
                     request.message().trim(),
                     "success",
-                    null
+                    null,
+                    Map.of("userId", principal.userId())
             );
             conversationRepository.touchSession(sessionId, tenantId, userMessage.createdAt());
 
@@ -210,27 +215,24 @@ public class ConversationService {
             List<String> recentMessages = conversationRepository.findMessages(sessionId, tenantId, 1, 6).stream()
                     .map(ConversationMessage::content)
                     .toList();
-            emitTraceStage(exchangeId, tenantId, emitter, "memory_assembly", "已组装最近会话记忆");
+            emitTraceStage(exchangeId, tenantId, emitter, "memory_assembly", "recent_messages=" + recentMessages.size(), "已组装最近会话记忆");
             RagResponse ragResponse = ragOrchestrationService.answer(
                     request.message().trim(),
                     resolvedKnowledgeBaseId,
                     recentMessages,
                     request.ragOptions()
             );
-            emitTraceStage(exchangeId, tenantId, emitter, "query_rewrite", ragResponse.rewrittenQuestion());
+            emitTraceStage(exchangeId, tenantId, emitter, "query_rewrite", "original=" + excerpt(request.message().trim()), ragResponse.rewrittenQuestion());
             if (ragResponse.subQuestions().size() > 1) {
-                emitTraceStage(exchangeId, tenantId, emitter, "sub_question_split", String.join(" | ", ragResponse.subQuestions()));
+                emitTraceStage(exchangeId, tenantId, emitter, "sub_question_split", "count=" + ragResponse.subQuestions().size(), String.join(" | ", ragResponse.subQuestions()));
             }
-            emitTraceStage(exchangeId, tenantId, emitter, "vector_retrieval", "已完成向量检索");
-            emitTraceStage(exchangeId, tenantId, emitter, "keyword_retrieval", "已完成关键词检索");
-            emitTraceStage(exchangeId, tenantId, emitter, "rrf_fusion", "融合后得到 " + ragResponse.evidences().size() + " 条证据");
-            emitTraceStage(exchangeId, tenantId, emitter, "evidence_budget", "预算裁剪后保留 " + ragResponse.evidences().size() + " 条证据");
-            if (request.ragOptions() != null && Boolean.TRUE.equals(request.ragOptions().rerankEnabled())) {
-                emitTraceStage(exchangeId, tenantId, emitter, "rerank", "已应用 Rerank 排序");
-            }
-            emitTraceStage(exchangeId, tenantId, emitter, "prompt_assembly", ragResponse.evidences().isEmpty() ? "无证据兜底 Prompt" : "已组装 RAG Prompt");
+            persistRetrievalTrace(exchangeId, tenantId, emitter, ragResponse.diagnostics());
+            persistRerankTrace(exchangeId, tenantId, emitter, ragResponse.diagnostics());
+            emitTraceStage(exchangeId, tenantId, emitter, "prompt_assembly", "question=" + excerpt(ragResponse.rewrittenQuestion()), ragResponse.diagnostics().promptSummary());
 
             StringBuilder fullText = new StringBuilder();
+            long modelStageId = createTraceStage(exchangeId, tenantId, "answer_generation", "prompt=" + ragResponse.diagnostics().promptSummary());
+            long generationStartedAt = System.nanoTime();
             for (String delta : ragResponse.answer().deltas()) {
                 if (activeConversation.stopRequested()) {
                     break;
@@ -239,6 +241,27 @@ public class ConversationService {
                 sendEvent(emitter, "delta", new DeltaEvent(delta));
                 sleep(100L);
             }
+            completeTraceStage(modelStageId, tenantId, "success", ragResponse.diagnostics().modelSummary(), null);
+            conversationRepository.createModelCallTrace(
+                    tenantId,
+                    exchangeId,
+                    modelStageId,
+                    "openai-compatible",
+                    "chat-model",
+                    "chat",
+                    ragResponse.diagnostics().promptSummary(),
+                    excerpt(fullText.toString()),
+                    null,
+                    null,
+                    (int) ((System.nanoTime() - generationStartedAt) / 1_000_000L),
+                    activeConversation.stopRequested() ? "stopped" : "success",
+                    null,
+                    Map.of(
+                            "rewrittenQuestion", ragResponse.rewrittenQuestion(),
+                            "recommendationCount", ragResponse.answer().recommendations().size()
+                    )
+            );
+            sendEvent(emitter, "trace_stage", new TraceStageEvent("answer_generation", "success", 80L));
 
             String assistantStatus = activeConversation.stopRequested() ? "stopped" : "success";
             assistantMessage = conversationRepository.createMessage(
@@ -296,15 +319,237 @@ public class ConversationService {
         }
     }
 
-    private void emitTraceStage(long exchangeId, long tenantId, SseEmitter emitter, String stageCode, String outputSummary) {
-        var stage = conversationRepository.createTraceStage(tenantId, exchangeId, stageCode, "running", null);
+    private void emitTraceStage(long exchangeId, long tenantId, SseEmitter emitter, String stageCode, String inputSummary, String outputSummary) {
+        var stage = conversationRepository.createTraceStage(tenantId, exchangeId, stageCode, "running", inputSummary);
         conversationRepository.completeTraceStage(stage.id(), tenantId, "success", outputSummary, null);
         sendEvent(emitter, "trace_stage", new TraceStageEvent(stageCode, "success", 80L));
+    }
+
+    private long createTraceStage(long exchangeId, long tenantId, String stageCode, String inputSummary) {
+        return conversationRepository.createTraceStage(tenantId, exchangeId, stageCode, "running", inputSummary).id();
+    }
+
+    private void completeTraceStage(long stageId, long tenantId, String status, String outputSummary, String errorMessage) {
+        conversationRepository.completeTraceStage(stageId, tenantId, status, outputSummary, errorMessage);
+    }
+
+    private void persistRetrievalTrace(
+            long exchangeId,
+            long tenantId,
+            SseEmitter emitter,
+            RagResponseDiagnostics diagnostics
+    ) {
+        if (diagnostics == null) {
+            return;
+        }
+
+        long vectorStageId = createTraceStage(exchangeId, tenantId, "vector_retrieval", diagnostics.memorySummary());
+        long keywordStageId = createTraceStage(exchangeId, tenantId, "keyword_retrieval", diagnostics.memorySummary());
+        long fusionStageId = createTraceStage(exchangeId, tenantId, "rrf_fusion", "sub_questions=" + diagnostics.retrievalSteps().size());
+        long budgetStageId = createTraceStage(exchangeId, tenantId, "evidence_budget", "candidate_steps=" + diagnostics.retrievalSteps().size());
+
+        int selectedTotal = 0;
+        for (RagResponseDiagnostics.RetrievalStep step : diagnostics.retrievalSteps()) {
+            selectedTotal += step.selectedResults().size();
+            long vectorTraceId = conversationRepository.createRetrievalTrace(
+                    tenantId,
+                    exchangeId,
+                    vectorStageId,
+                    step.query().subQuestionNo(),
+                    "vector",
+                    step.query().subQuestion(),
+                    buildRetrievalFilters(step.query()),
+                    step.vectorResults().size(),
+                    countSelectedChunks(step.vectorResults(), step.selectedResults()),
+                    null
+            );
+            persistRetrievalResultItems(tenantId, vectorTraceId, step.vectorResults(), step.selectedResults());
+
+            long keywordTraceId = conversationRepository.createRetrievalTrace(
+                    tenantId,
+                    exchangeId,
+                    keywordStageId,
+                    step.query().subQuestionNo(),
+                    "keyword",
+                    step.query().subQuestion(),
+                    buildRetrievalFilters(step.query()),
+                    step.keywordResults().size(),
+                    countSelectedChunks(step.keywordResults(), step.selectedResults()),
+                    null
+            );
+            persistRetrievalResultItems(tenantId, keywordTraceId, step.keywordResults(), step.selectedResults());
+
+            long fusedTraceId = conversationRepository.createRetrievalTrace(
+                    tenantId,
+                    exchangeId,
+                    fusionStageId,
+                    step.query().subQuestionNo(),
+                    "rrf",
+                    step.query().subQuestion(),
+                    buildRetrievalFilters(step.query()),
+                    step.fusedResults().size(),
+                    step.selectedResults().size(),
+                    null
+            );
+            persistFusedItems(tenantId, fusedTraceId, step.fusedResults(), step.selectedResults());
+        }
+
+        completeTraceStage(vectorStageId, tenantId, "success", "vector_retrieval_steps=" + diagnostics.retrievalSteps().size(), null);
+        completeTraceStage(keywordStageId, tenantId, "success", "keyword_retrieval_steps=" + diagnostics.retrievalSteps().size(), null);
+        completeTraceStage(fusionStageId, tenantId, "success", "fused_evidence_count=" + selectedTotal, null);
+        completeTraceStage(budgetStageId, tenantId, "success", "selected_evidence_count=" + selectedTotal, null);
+
+        sendEvent(emitter, "trace_stage", new TraceStageEvent("vector_retrieval", "success", 80L));
+        sendEvent(emitter, "trace_stage", new TraceStageEvent("keyword_retrieval", "success", 80L));
+        sendEvent(emitter, "trace_stage", new TraceStageEvent("rrf_fusion", "success", 80L));
+        sendEvent(emitter, "trace_stage", new TraceStageEvent("evidence_budget", "success", 80L));
+    }
+
+    private void persistRerankTrace(
+            long exchangeId,
+            long tenantId,
+            SseEmitter emitter,
+            RagResponseDiagnostics diagnostics
+    ) {
+        if (diagnostics == null || diagnostics.rerankStep() == null) {
+            return;
+        }
+        RagResponseDiagnostics.RerankStep rerankStep = diagnostics.rerankStep();
+        var stage = conversationRepository.createTraceStage(
+                tenantId,
+                exchangeId,
+                "rerank",
+                "running",
+                "enabled=" + rerankStep.enabled() + ", input=" + rerankStep.inputCount()
+        );
+        conversationRepository.createRerankTrace(
+                tenantId,
+                exchangeId,
+                rerankStep.provider(),
+                rerankStep.model(),
+                rerankStep.enabled(),
+                rerankStep.skippedReason(),
+                rerankStep.inputCount(),
+                rerankStep.outputCount(),
+                null,
+                rerankStep.status(),
+                null,
+                Map.of()
+        );
+        completeTraceStage(
+                stage.id(),
+                tenantId,
+                rerankStep.status(),
+                rerankStep.enabled() ? "reranked=" + rerankStep.outputCount() : rerankStep.skippedReason(),
+                null
+        );
+        sendEvent(emitter, "trace_stage", new TraceStageEvent("rerank", rerankStep.status(), 80L));
+    }
+
+    private void persistRetrievalResultItems(long tenantId, long retrievalTraceId, List<RetrievalResult> results, List<RagEvidence> selectedResults) {
+        for (int index = 0; index < results.size(); index++) {
+            RetrievalResult result = results.get(index);
+            conversationRepository.createRetrievalTraceItem(
+                    tenantId,
+                    retrievalTraceId,
+                    result.documentId(),
+                    result.chunkId(),
+                    index + 1,
+                    BigDecimal.valueOf(result.score()),
+                    null,
+                    containsChunk(selectedResults, result.chunkId()),
+                    buildTraceMetadata(result.documentTitle(), result.sectionTitle(), null)
+            );
+        }
+    }
+
+    private void persistFusedItems(long tenantId, long retrievalTraceId, List<RagEvidence> fusedResults, List<RagEvidence> selectedResults) {
+        for (int index = 0; index < fusedResults.size(); index++) {
+            RagEvidence result = fusedResults.get(index);
+            conversationRepository.createRetrievalTraceItem(
+                    tenantId,
+                    retrievalTraceId,
+                    result.documentId(),
+                    result.chunkId(),
+                    index + 1,
+                    BigDecimal.valueOf(result.score()),
+                    BigDecimal.valueOf(result.score()),
+                    containsChunk(selectedResults, result.chunkId()),
+                    buildTraceMetadata(result.documentTitle(), result.sectionTitle(), result.channel())
+            );
+        }
+    }
+
+    private int countSelectedChunks(List<RetrievalResult> results, List<RagEvidence> selectedResults) {
+        int count = 0;
+        for (RetrievalResult result : results) {
+            if (containsChunk(selectedResults, result.chunkId())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private boolean containsChunk(List<RagEvidence> selectedResults, long chunkId) {
+        return selectedResults.stream().anyMatch(evidence -> evidence.chunkId() == chunkId);
+    }
+
+    private Map<String, Object> buildTraceMetadata(String documentTitle, String sectionTitle, String channel) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        if (documentTitle != null && !documentTitle.isBlank()) {
+            metadata.put("documentTitle", documentTitle);
+        }
+        if (sectionTitle != null && !sectionTitle.isBlank()) {
+            metadata.put("sectionTitle", sectionTitle);
+        }
+        if (channel != null && !channel.isBlank()) {
+            metadata.put("channel", channel);
+        }
+        return metadata;
+    }
+
+    private Map<String, Object> buildRetrievalFilters(RagResponseDiagnostics.RetrievalStep step) {
+        return buildRetrievalFilters(step.query());
+    }
+
+    private Map<String, Object> buildRetrievalFilters(com.superagent.rag.domain.RagSearchQuery query) {
+        Map<String, Object> filters = new LinkedHashMap<>();
+        filters.put("knowledgeBaseId", query.knowledgeBaseId());
+        filters.put("vectorTopK", query.vectorTopK());
+        filters.put("keywordTopK", query.keywordTopK());
+        filters.put("rrfK", query.rrfK());
+        filters.put("evidenceLimit", query.evidenceLimit());
+        filters.put("minRelevanceScore", query.minRelevanceScore());
+        return filters;
     }
 
     private void handleStreamError(long tenantId, long sessionId, long exchangeId, SseEmitter emitter, ErrorCode code, String message) {
         try {
             if (exchangeId > 0) {
+                var errorStage = conversationRepository.createTraceStage(
+                        tenantId,
+                        exchangeId,
+                        "error",
+                        "failed",
+                        "code=" + code.name()
+                );
+                conversationRepository.completeTraceStage(errorStage.id(), tenantId, "failed", null, message);
+                conversationRepository.createModelCallTrace(
+                        tenantId,
+                        exchangeId,
+                        errorStage.id(),
+                        "openai-compatible",
+                        "chat-model",
+                        "chat",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "failed",
+                        message,
+                        Map.of("errorCode", code.name())
+                );
                 conversationRepository.completeExchange(exchangeId, tenantId, null, "failed");
             }
             sendEvent(emitter, "error", new ErrorEvent(code.name(), message, exchangeId > 0 ? exchangeId : null));

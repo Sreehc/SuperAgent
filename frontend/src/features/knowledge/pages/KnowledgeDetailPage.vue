@@ -69,7 +69,12 @@
           <tr v-if="knowledgeStore.documents.length === 0">
             <td colspan="6">暂无文档。</td>
           </tr>
-          <tr v-for="document in knowledgeStore.documents" :key="document.id">
+          <tr
+            v-for="document in knowledgeStore.documents"
+            :key="document.id"
+            class="table-row"
+            @click="openDocument(document.id)"
+          >
             <td>{{ document.title }}</td>
             <td>{{ document.fileType }}</td>
             <td><span class="status-chip">{{ document.status }}</span></td>
@@ -85,11 +90,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../auth/store/auth'
 import { useKnowledgeStore } from '../store/knowledge'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const knowledgeStore = useKnowledgeStore()
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -141,6 +147,10 @@ async function submitUpload() {
   if (fileInput.value) {
     fileInput.value.value = ''
   }
+}
+
+async function openDocument(documentId: number) {
+  await router.push(`/documents/${documentId}`)
 }
 
 function formatTime(value: string) {
@@ -225,6 +235,14 @@ function formatFileSize(value: number) {
   padding: 0.95rem 0.75rem;
   border-bottom: 1px solid var(--line-soft);
   text-align: left;
+}
+
+.table-row {
+  cursor: pointer;
+}
+
+.table-row:hover {
+  background: rgba(209, 148, 104, 0.08);
 }
 
 .eyebrow {

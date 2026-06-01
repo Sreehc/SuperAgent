@@ -47,6 +47,16 @@ class RetrievalIntegrationTest {
 
     @BeforeEach
     void cleanTables() {
+        jdbcTemplate.execute("DELETE FROM conversation_reference");
+        jdbcTemplate.execute("DELETE FROM retrieval_trace_item");
+        jdbcTemplate.execute("DELETE FROM rerank_trace");
+        jdbcTemplate.execute("DELETE FROM retrieval_trace");
+        jdbcTemplate.execute("DELETE FROM model_call_trace");
+        jdbcTemplate.execute("DELETE FROM exchange_trace_stage");
+        jdbcTemplate.execute("DELETE FROM conversation_exchange");
+        jdbcTemplate.execute("DELETE FROM conversation_memory_summary");
+        jdbcTemplate.execute("DELETE FROM conversation_message");
+        jdbcTemplate.execute("DELETE FROM conversation_session");
         jdbcTemplate.execute("DELETE FROM document_task");
         jdbcTemplate.execute("DELETE FROM document_embedding");
         jdbcTemplate.execute("DELETE FROM document_chunk");

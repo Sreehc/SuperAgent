@@ -51,6 +51,8 @@ class KnowledgeIntegrationTest {
     @BeforeEach
     void cleanKnowledgeTables() {
         jdbcTemplate.execute("DELETE FROM conversation_reference");
+        jdbcTemplate.execute("DELETE FROM retrieval_trace_item");
+        jdbcTemplate.execute("DELETE FROM rerank_trace");
         jdbcTemplate.execute("DELETE FROM retrieval_trace");
         jdbcTemplate.execute("DELETE FROM model_call_trace");
         jdbcTemplate.execute("DELETE FROM exchange_trace_stage");

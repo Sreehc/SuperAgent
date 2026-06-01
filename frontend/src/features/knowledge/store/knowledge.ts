@@ -2,16 +2,23 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   createKnowledgeBase,
+  getKnowledgeDocument,
   getKnowledgeBase,
   listKnowledgeBases,
+  listKnowledgeDocumentChunks,
+  listKnowledgeDocumentTasks,
   listKnowledgeDocuments,
+  reprocessKnowledgeDocument,
   updateKnowledgeBase,
   uploadKnowledgeDocument,
 } from '../api'
 import type {
   CreateKnowledgeBaseRequest,
+  DocumentChunkItem,
+  DocumentTaskItem,
   KnowledgeBaseDetail,
   KnowledgeBaseListItem,
+  KnowledgeDocumentDetail,
   KnowledgeDocumentListItem,
   KnowledgeBaseStatus,
 } from '../types'
@@ -19,11 +26,16 @@ import type {
 export const useKnowledgeStore = defineStore('knowledge', () => {
   const knowledgeBases = ref<KnowledgeBaseListItem[]>([])
   const selectedKnowledgeBase = ref<KnowledgeBaseDetail | null>(null)
+  const selectedDocument = ref<KnowledgeDocumentDetail | null>(null)
   const documents = ref<KnowledgeDocumentListItem[]>([])
+  const documentChunks = ref<DocumentChunkItem[]>([])
+  const documentTasks = ref<DocumentTaskItem[]>([])
   const loadingKnowledgeBases = ref(false)
   const loadingDocuments = ref(false)
+  const loadingDocumentDetail = ref(false)
   const creatingKnowledgeBase = ref(false)
   const uploadingDocument = ref(false)
+  const reprocessingDocument = ref(false)
   const errorMessage = ref('')
   const keyword = ref('')
   const statusFilter = ref('')
@@ -106,6 +118,42 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
+  async function selectDocument(documentId: number) {
+    loadingDocumentDetail.value = true
+    errorMessage.value = ''
+    try {
+      const [documentResponse, chunkResponse, taskResponse] = await Promise.all([
+        getKnowledgeDocument(documentId),
+        listKnowledgeDocumentChunks(documentId, { pageSize: 20 }),
+        listKnowledgeDocumentTasks(documentId),
+      ])
+      selectedDocument.value = documentResponse.data
+      documentChunks.value = chunkResponse.data.items
+      documentTasks.value = taskResponse.data
+    } catch {
+      errorMessage.value = '文档详情加载失败，请稍后重试。'
+      throw new Error(errorMessage.value)
+    } finally {
+      loadingDocumentDetail.value = false
+    }
+  }
+
+  async function reprocessDocument(reason?: string) {
+    if (!selectedDocument.value) {
+      return
+    }
+    reprocessingDocument.value = true
+    errorMessage.value = ''
+    try {
+      await reprocessKnowledgeDocument(selectedDocument.value.id, reason)
+      await selectDocument(selectedDocument.value.id)
+    } catch {
+      errorMessage.value = '文档重处理触发失败，请稍后重试。'
+    } finally {
+      reprocessingDocument.value = false
+    }
+  }
+
   async function publishKnowledgeBase() {
     if (!selectedKnowledgeBase.value) {
       return
@@ -153,11 +201,16 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   return {
     knowledgeBases,
     selectedKnowledgeBase,
+    selectedDocument,
     documents,
+    documentChunks,
+    documentTasks,
     loadingKnowledgeBases,
     loadingDocuments,
+    loadingDocumentDetail,
     creatingKnowledgeBase,
     uploadingDocument,
+    reprocessingDocument,
     errorMessage,
     keyword,
     statusFilter,
@@ -168,9 +221,11 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     fetchKnowledgeBases,
     createBase,
     selectKnowledgeBase,
+    selectDocument,
     refreshDocuments,
     publishKnowledgeBase,
     archiveKnowledgeBase,
     uploadDocument,
+    reprocessDocument,
   }
 })

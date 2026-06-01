@@ -42,6 +42,45 @@ export interface KnowledgeDocumentListItem {
   updatedAt: string
 }
 
+export interface KnowledgeDocumentDetail {
+  id: number
+  knowledgeBaseId: number
+  title: string
+  fileName: string
+  fileType: string
+  fileSize: number
+  status: string
+  chunkCount: number
+  errorMessage: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocumentChunkItem {
+  id: number
+  chunkNo: number
+  sectionTitle: string | null
+  content: string
+  charCount: number
+  tokenCount: number | null
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
+export interface DocumentTaskItem {
+  id: number
+  taskType: string
+  status: string
+  attemptCount: number
+  inputSummary: string | null
+  outputSummary: string | null
+  errorMessage: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+}
+
 export interface CreateKnowledgeBaseRequest {
   name: string
   description?: string
