@@ -14,11 +14,13 @@ import com.superagent.chat.domain.MessageRole;
 import com.superagent.chat.repository.ConversationRepository;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
+import com.superagent.rag.domain.RagEvidence;
+import com.superagent.rag.domain.RagResponse;
+import com.superagent.rag.service.RagOrchestrationService;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.Executor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.http.HttpStatus;
@@ -30,19 +32,19 @@ public class ConversationService {
 
     private final CurrentAuthenticatedUser currentAuthenticatedUser;
     private final ConversationRepository conversationRepository;
-    private final ChatModelClient chatModelClient;
+    private final RagOrchestrationService ragOrchestrationService;
     private final ConversationStreamRegistry streamRegistry;
     private final Executor conversationExecutor = new SimpleAsyncTaskExecutor("conversation-stream-");
 
     public ConversationService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
             ConversationRepository conversationRepository,
-            ChatModelClient chatModelClient,
+            RagOrchestrationService ragOrchestrationService,
             ConversationStreamRegistry streamRegistry
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.conversationRepository = conversationRepository;
-        this.chatModelClient = chatModelClient;
+        this.ragOrchestrationService = ragOrchestrationService;
         this.streamRegistry = streamRegistry;
     }
 
@@ -142,7 +144,14 @@ public class ConversationService {
         emitter.onTimeout(() -> streamRegistry.remove(tenantContext.tenantId(), sessionId));
         emitter.onError(error -> streamRegistry.remove(tenantContext.tenantId(), sessionId));
 
-        conversationExecutor.execute(() -> generateConversation(session, principal, tenantContext, request, activeConversation));
+        conversationExecutor.execute(() -> {
+            TenantContextHolder.set(tenantContext);
+            try {
+                generateConversation(session, principal, tenantContext, request, activeConversation);
+            } finally {
+                TenantContextHolder.clear();
+            }
+        });
         return emitter;
     }
 
@@ -192,28 +201,37 @@ public class ConversationService {
                     userMessage.id(),
                     ExecutionMode.RAG_QA,
                     "running",
-                    resolvedKnowledgeBaseId == null ? "direct_chat_minimal_chain" : "minimal_chain_with_reference",
+                    resolvedKnowledgeBaseId == null ? "direct_chat_with_memory_only" : "rag_with_knowledge_base",
                     BigDecimal.valueOf(0.92d)
             );
             exchangeId = exchange.id();
 
             sendEvent(emitter, "start", new StartEvent(exchangeId, userMessage.id()));
-            emitTraceStage(exchangeId, tenantId, emitter, "memory_assembly", "已组装最近会话消息窗口");
-            emitTraceStage(exchangeId, tenantId, emitter, "minimal_generation", "已调用最小可用模型输出链路");
-
             List<String> recentMessages = conversationRepository.findMessages(sessionId, tenantId, 1, 6).stream()
                     .map(ConversationMessage::content)
                     .toList();
-            ChatModelClient.ModelResponse modelResponse = chatModelClient.generateReply(new ChatModelClient.ModelRequest(
+            emitTraceStage(exchangeId, tenantId, emitter, "memory_assembly", "已组装最近会话记忆");
+            RagResponse ragResponse = ragOrchestrationService.answer(
                     request.message().trim(),
-                    session.title(),
-                    resolvedMemoryStrategy.name(),
                     resolvedKnowledgeBaseId,
-                    recentMessages
-            ));
+                    recentMessages,
+                    request.ragOptions()
+            );
+            emitTraceStage(exchangeId, tenantId, emitter, "query_rewrite", ragResponse.rewrittenQuestion());
+            if (ragResponse.subQuestions().size() > 1) {
+                emitTraceStage(exchangeId, tenantId, emitter, "sub_question_split", String.join(" | ", ragResponse.subQuestions()));
+            }
+            emitTraceStage(exchangeId, tenantId, emitter, "vector_retrieval", "已完成向量检索");
+            emitTraceStage(exchangeId, tenantId, emitter, "keyword_retrieval", "已完成关键词检索");
+            emitTraceStage(exchangeId, tenantId, emitter, "rrf_fusion", "融合后得到 " + ragResponse.evidences().size() + " 条证据");
+            emitTraceStage(exchangeId, tenantId, emitter, "evidence_budget", "预算裁剪后保留 " + ragResponse.evidences().size() + " 条证据");
+            if (request.ragOptions() != null && Boolean.TRUE.equals(request.ragOptions().rerankEnabled())) {
+                emitTraceStage(exchangeId, tenantId, emitter, "rerank", "已应用 Rerank 排序");
+            }
+            emitTraceStage(exchangeId, tenantId, emitter, "prompt_assembly", ragResponse.evidences().isEmpty() ? "无证据兜底 Prompt" : "已组装 RAG Prompt");
 
             StringBuilder fullText = new StringBuilder();
-            for (String delta : modelResponse.deltas()) {
+            for (String delta : ragResponse.answer().deltas()) {
                 if (activeConversation.stopRequested()) {
                     break;
                 }
@@ -233,19 +251,17 @@ public class ConversationService {
             );
             conversationRepository.touchSession(sessionId, tenantId, assistantMessage.createdAt());
 
-            Optional<ConversationRepository.ReferenceCandidate> referenceCandidate =
-                    conversationRepository.findReferenceCandidate(tenantId, resolvedKnowledgeBaseId);
-            if (referenceCandidate.isPresent()) {
-                var candidate = referenceCandidate.get();
+            for (int index = 0; index < ragResponse.evidences().size(); index++) {
+                RagEvidence candidate = ragResponse.evidences().get(index);
                 var reference = conversationRepository.createReference(
                         tenantId,
                         exchangeId,
                         candidate.documentId(),
                         candidate.chunkId(),
-                        1,
-                        candidate.title(),
-                        candidate.quote(),
-                        BigDecimal.valueOf(0.81d),
+                        index + 1,
+                        candidate.documentTitle(),
+                        excerpt(candidate.content()),
+                        BigDecimal.valueOf(candidate.score()),
                         "/documents/" + candidate.documentId()
                 );
                 sendEvent(emitter, "reference", new ReferenceEvent(
@@ -259,7 +275,7 @@ public class ConversationService {
             }
 
             if (!activeConversation.stopRequested()) {
-                sendEvent(emitter, "recommendation", new RecommendationEvent(modelResponse.recommendations()));
+                sendEvent(emitter, "recommendation", new RecommendationEvent(ragResponse.answer().recommendations()));
             }
 
             conversationRepository.completeExchange(
@@ -274,7 +290,7 @@ public class ConversationService {
         } catch (AppException exception) {
             handleStreamError(tenantId, sessionId, exchangeId, emitter, exception.getErrorCode(), exception.getMessage());
         } catch (Exception exception) {
-            handleStreamError(tenantId, sessionId, exchangeId, emitter, ErrorCode.MODEL_PROVIDER_ERROR, "Minimal model chain failed");
+            handleStreamError(tenantId, sessionId, exchangeId, emitter, ErrorCode.MODEL_PROVIDER_ERROR, "RAG generation failed");
         } finally {
             streamRegistry.remove(tenantId, sessionId);
         }
@@ -349,6 +365,13 @@ public class ConversationService {
             Thread.currentThread().interrupt();
             throw new AppException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, "Conversation stream interrupted");
         }
+    }
+
+    private String excerpt(String content) {
+        if (content == null) {
+            return "";
+        }
+        return content.length() <= 220 ? content : content.substring(0, 220);
     }
 
     public record PagedResult<T>(List<T> items, int page, int pageSize, long total) {

@@ -35,6 +35,9 @@ public class SuperAgentProperties {
     @Valid
     private final DocumentProcessing documentProcessing = new DocumentProcessing();
 
+    @Valid
+    private final Rag rag = new Rag();
+
     public App getApp() {
         return app;
     }
@@ -61,6 +64,10 @@ public class SuperAgentProperties {
 
     public DocumentProcessing getDocumentProcessing() {
         return documentProcessing;
+    }
+
+    public Rag getRag() {
+        return rag;
     }
 
     public static class App {
@@ -367,6 +374,97 @@ public class SuperAgentProperties {
 
         public void setMaxChunkCount(int maxChunkCount) {
             this.maxChunkCount = maxChunkCount;
+        }
+    }
+
+    public static class Rag {
+
+        @NotNull
+        private Boolean rewriteEnabled = true;
+
+        @NotNull
+        private Boolean subQuestionEnabled = true;
+
+        @Min(1)
+        private int vectorTopK = 20;
+
+        @Min(1)
+        private int keywordTopK = 20;
+
+        @Min(1)
+        private int rrfK = 60;
+
+        @Min(1)
+        private int evidenceLimit = 8;
+
+        @Min(0)
+        private double minRelevanceScore = 0.35d;
+
+        @Min(1)
+        private int maxSubQuestions = 4;
+
+        public Boolean getRewriteEnabled() {
+            return rewriteEnabled;
+        }
+
+        public void setRewriteEnabled(Boolean rewriteEnabled) {
+            this.rewriteEnabled = rewriteEnabled;
+        }
+
+        public Boolean getSubQuestionEnabled() {
+            return subQuestionEnabled;
+        }
+
+        public void setSubQuestionEnabled(Boolean subQuestionEnabled) {
+            this.subQuestionEnabled = subQuestionEnabled;
+        }
+
+        public int getVectorTopK() {
+            return vectorTopK;
+        }
+
+        public void setVectorTopK(int vectorTopK) {
+            this.vectorTopK = vectorTopK;
+        }
+
+        public int getKeywordTopK() {
+            return keywordTopK;
+        }
+
+        public void setKeywordTopK(int keywordTopK) {
+            this.keywordTopK = keywordTopK;
+        }
+
+        public int getRrfK() {
+            return rrfK;
+        }
+
+        public void setRrfK(int rrfK) {
+            this.rrfK = rrfK;
+        }
+
+        public int getEvidenceLimit() {
+            return evidenceLimit;
+        }
+
+        public void setEvidenceLimit(int evidenceLimit) {
+            this.evidenceLimit = evidenceLimit;
+        }
+
+        public double getMinRelevanceScore() {
+            return minRelevanceScore;
+        }
+
+        public void setMinRelevanceScore(double minRelevanceScore) {
+            this.minRelevanceScore = minRelevanceScore;
+        }
+
+        public int getMaxSubQuestions() {
+            return maxSubQuestions;
+        }
+
+        public void setMaxSubQuestions(int maxSubQuestions) {
+            this.maxSubQuestions = maxSubQuestions;
         }
     }
 }

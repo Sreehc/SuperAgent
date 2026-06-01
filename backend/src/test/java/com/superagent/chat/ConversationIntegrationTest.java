@@ -3,6 +3,7 @@ package com.superagent.chat;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -10,15 +11,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.knowledge.messaging.DocumentTaskMessage;
+import com.superagent.knowledge.service.DocumentProcessingService;
+import com.superagent.rag.TestEmbeddingClientConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -26,6 +33,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 @SpringBootTest
+@Import(TestEmbeddingClientConfiguration.class)
 class ConversationIntegrationTest {
 
     @Autowired
@@ -36,6 +44,26 @@ class ConversationIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DocumentProcessingService documentProcessingService;
+
+    @BeforeEach
+    void cleanTables() {
+        jdbcTemplate.execute("DELETE FROM conversation_reference");
+        jdbcTemplate.execute("DELETE FROM retrieval_trace");
+        jdbcTemplate.execute("DELETE FROM model_call_trace");
+        jdbcTemplate.execute("DELETE FROM exchange_trace_stage");
+        jdbcTemplate.execute("DELETE FROM conversation_exchange");
+        jdbcTemplate.execute("DELETE FROM conversation_memory_summary");
+        jdbcTemplate.execute("DELETE FROM conversation_message");
+        jdbcTemplate.execute("DELETE FROM conversation_session");
+        jdbcTemplate.execute("DELETE FROM document_task");
+        jdbcTemplate.execute("DELETE FROM document_embedding");
+        jdbcTemplate.execute("DELETE FROM document_chunk");
+        jdbcTemplate.execute("DELETE FROM knowledge_document");
+        jdbcTemplate.execute("DELETE FROM knowledge_base");
+    }
 
     @Test
     void shouldCreateUpdateListAndDeleteConversation() throws Exception {
@@ -82,7 +110,9 @@ class ConversationIntegrationTest {
         JsonNode login = login("admin", "password123");
         String token = login.path("data").path("accessToken").asText();
         long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
-        long sessionId = createConversation(token, tenantId, "流式测试").path("data").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "售后知识库", "published");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "refund-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
+        long sessionId = createConversation(token, tenantId, "流式测试", knowledgeBaseId).path("data").path("id").asLong();
 
         MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
@@ -97,7 +127,10 @@ class ConversationIntegrationTest {
 
         String body = awaitStreamBody(streamResult, "event:done");
         assertThat(body).contains("event:start");
+        assertThat(body).contains("event:trace_stage");
         assertThat(body).contains("event:delta");
+        assertThat(body).contains("event:reference");
+        assertThat(body).contains("event:recommendation");
         assertThat(body).contains("event:done");
 
         Integer messageCount = jdbcTemplate.queryForObject(
@@ -166,6 +199,31 @@ class ConversationIntegrationTest {
         assertThat(awaitStreamBody(streamResult, "\"stopped\":true")).contains("event:done");
     }
 
+    @Test
+    void shouldReturnNoEvidenceResponseWhenKnowledgeBaseHasNoRelevantEvidence() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "空证据知识库", "published");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "ops-guide.txt", "这里只描述系统部署步骤和日志目录。");
+        long sessionId = createConversation(token, tenantId, "无证据测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "message", "退款规则是什么？",
+                                "knowledgeBaseId", knowledgeBaseId
+                        ))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("未检索到足够证据");
+    }
+
     private JsonNode login(String username, String password) throws Exception {
         MvcResult response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -179,17 +237,76 @@ class ConversationIntegrationTest {
     }
 
     private JsonNode createConversation(String token, long tenantId, String title) throws Exception {
+        return createConversation(token, tenantId, title, null);
+    }
+
+    private JsonNode createConversation(String token, long tenantId, String title, Long knowledgeBaseId) throws Exception {
+        java.util.Map<String, Object> requestBody = new java.util.LinkedHashMap<>();
+        requestBody.put("title", title);
+        requestBody.put("memoryStrategy", "SLIDING_WINDOW");
+        if (knowledgeBaseId != null) {
+            requestBody.put("knowledgeBaseId", knowledgeBaseId);
+        }
         MvcResult response = mockMvc.perform(post("/api/v1/conversations")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .header("X-Tenant-Id", tenantId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "title", title,
-                                "memoryStrategy", "SLIDING_WINDOW"
-                        ))))
+                        .content(objectMapper.writeValueAsString(requestBody)))
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(response.getResponse().getContentAsString());
+    }
+
+    private long createKnowledgeBase(String token, long tenantId, String name, String status) throws Exception {
+        MvcResult createResponse = mockMvc.perform(post("/api/v1/knowledge-bases")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "name", name,
+                                "description", name + "描述",
+                                "visibility", "tenant"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        long knowledgeBaseId = objectMapper.readTree(createResponse.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("id").asLong();
+        mockMvc.perform(patch("/api/v1/knowledge-bases/{knowledgeBaseId}", knowledgeBaseId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("status", status))))
+                .andExpect(status().isOk());
+        return knowledgeBaseId;
+    }
+
+    private void uploadAndProcessKnowledgeDocument(
+            String token,
+            long tenantId,
+            long knowledgeBaseId,
+            String fileName,
+            String content
+    ) throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                fileName,
+                "text/plain",
+                content.getBytes(StandardCharsets.UTF_8)
+        );
+        MvcResult uploadResponse = mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                        .file(file)
+                        .param("title", fileName)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode uploaded = objectMapper.readTree(uploadResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        documentProcessingService.process(new DocumentTaskMessage(
+                tenantId,
+                uploaded.path("data").path("id").asLong(),
+                uploaded.path("data").path("taskId").asLong(),
+                "test"
+        ));
     }
 
     private String awaitStreamBody(MvcResult result, String marker) throws Exception {

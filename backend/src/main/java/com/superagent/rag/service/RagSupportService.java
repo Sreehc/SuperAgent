@@ -1,0 +1,277 @@
+package com.superagent.rag.service;
+
+import com.superagent.chat.service.ConversationService;
+import com.superagent.infra.config.SuperAgentProperties;
+import com.superagent.rag.domain.RagEvidence;
+import com.superagent.rag.domain.RagSearchQuery;
+import com.superagent.rag.domain.RetrievalResult;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import org.springframework.stereotype.Service;
+
+@Service
+public class RagSupportService {
+
+    private final SuperAgentProperties properties;
+
+    public RagSupportService(SuperAgentProperties properties) {
+        this.properties = properties;
+    }
+
+    public String assembleMemory(List<String> recentMessages, String question) {
+        List<String> sanitizedMessages = sanitizeRecentMessages(recentMessages, question);
+        if (sanitizedMessages.isEmpty()) {
+            return question.trim();
+        }
+        StringBuilder builder = new StringBuilder();
+        int start = Math.max(0, sanitizedMessages.size() - 6);
+        for (int index = start; index < sanitizedMessages.size(); index++) {
+            builder.append(sanitizedMessages.get(index).trim()).append("\n");
+        }
+        builder.append("当前问题: ").append(question.trim());
+        return builder.toString().trim();
+    }
+
+    public String rewriteQuestion(String question, List<String> recentMessages, ConversationService.RagOptions ragOptions) {
+        boolean enabled = ragOptions == null || ragOptions.rewriteEnabled() == null
+                ? properties.getRag().getRewriteEnabled()
+                : ragOptions.rewriteEnabled();
+        List<String> sanitizedMessages = sanitizeRecentMessages(recentMessages, question);
+        if (!enabled || sanitizedMessages.isEmpty()) {
+            return question.trim();
+        }
+        String context = sanitizedMessages.stream()
+                .skip(Math.max(0, sanitizedMessages.size() - 3))
+                .map(String::trim)
+                .reduce((left, right) -> left + " / " + right)
+                .orElse("");
+        return "结合上下文[" + context + "]的问题：" + question.trim();
+    }
+
+    public List<String> splitSubQuestions(String rewrittenQuestion, ConversationService.RagOptions ragOptions) {
+        boolean enabled = ragOptions == null || ragOptions.subQuestionEnabled() == null
+                ? properties.getRag().getSubQuestionEnabled()
+                : ragOptions.subQuestionEnabled();
+        int maxSubQuestions = properties.getRag().getMaxSubQuestions();
+        if (!enabled) {
+            return List.of(rewrittenQuestion);
+        }
+        String[] candidates = rewrittenQuestion.split("[？?；;。]");
+        List<String> subQuestions = new ArrayList<>();
+        for (String candidate : candidates) {
+            String trimmed = candidate.trim();
+            if (!trimmed.isBlank()) {
+                subQuestions.add(trimmed);
+            }
+            if (subQuestions.size() >= maxSubQuestions) {
+                break;
+            }
+        }
+        if (subQuestions.isEmpty()) {
+            return List.of(rewrittenQuestion);
+        }
+        return subQuestions;
+    }
+
+    public RagSearchQuery resolveSearchQuery(
+            String originalQuestion,
+            String rewrittenQuestion,
+            String subQuestion,
+            int subQuestionNo,
+            Long knowledgeBaseId,
+            ConversationService.RagOptions ragOptions
+    ) {
+        return new RagSearchQuery(
+                originalQuestion,
+                rewrittenQuestion,
+                subQuestion,
+                subQuestionNo,
+                knowledgeBaseId,
+                ragOptions == null || ragOptions.vectorTopK() == null ? properties.getRag().getVectorTopK() : ragOptions.vectorTopK(),
+                ragOptions == null || ragOptions.keywordTopK() == null ? properties.getRag().getKeywordTopK() : ragOptions.keywordTopK(),
+                ragOptions == null || ragOptions.rrfK() == null ? properties.getRag().getRrfK() : ragOptions.rrfK(),
+                ragOptions == null || ragOptions.evidenceLimit() == null ? properties.getRag().getEvidenceLimit() : ragOptions.evidenceLimit(),
+                ragOptions == null || ragOptions.minRelevanceScore() == null ? properties.getRag().getMinRelevanceScore() : ragOptions.minRelevanceScore(),
+                ragOptions != null && Boolean.TRUE.equals(ragOptions.rerankEnabled())
+        );
+    }
+
+    public List<RagEvidence> fuseWithRrf(List<RetrievalResult> vectorResults, List<RetrievalResult> keywordResults, int rrfK) {
+        Map<Long, RagEvidenceAccumulator> accumulator = new LinkedHashMap<>();
+        mergeRanked(accumulator, vectorResults, rrfK);
+        mergeRanked(accumulator, keywordResults, rrfK);
+        double maxPossibleScore = 2.0d / (rrfK + 1.0d);
+        return accumulator.values().stream()
+                .map(candidate -> candidate.toEvidence(maxPossibleScore))
+                .sorted((left, right) -> Double.compare(right.score(), left.score()))
+                .toList();
+    }
+
+    public List<RagEvidence> applyThresholdAndBudget(String query, List<RagEvidence> evidences, double minScore, int evidenceLimit) {
+        return evidences.stream()
+                .map(evidence -> adjustRelevance(query, evidence))
+                .filter(evidence -> evidence.score() >= minScore)
+                .sorted((left, right) -> Double.compare(right.score(), left.score()))
+                .limit(evidenceLimit)
+                .toList();
+    }
+
+    public List<RagEvidence> applyTotalBudget(List<RagEvidence> evidences, int evidenceLimit) {
+        return evidences.stream()
+                .sorted((left, right) -> Double.compare(right.score(), left.score()))
+                .limit(evidenceLimit)
+                .toList();
+    }
+
+    private void mergeRanked(Map<Long, RagEvidenceAccumulator> accumulator, List<RetrievalResult> results, int rrfK) {
+        for (int index = 0; index < results.size(); index++) {
+            RetrievalResult result = results.get(index);
+            double contribution = 1.0d / (rrfK + index + 1);
+            accumulator.compute(result.chunkId(), (ignored, existing) -> {
+                if (existing == null) {
+                    return new RagEvidenceAccumulator(result, contribution);
+                }
+                existing.addContribution(result.channel(), contribution);
+                return existing;
+            });
+        }
+    }
+
+    private RagEvidence adjustRelevance(String query, RagEvidence evidence) {
+        boolean lexicalMatched = hasMeaningfulLexicalMatch(query, evidence.content());
+        @SuppressWarnings("unchecked")
+        List<String> channels = (List<String>) evidence.metadata().getOrDefault("channels", List.of());
+        boolean keywordMatched = channels.stream().anyMatch("keyword"::equalsIgnoreCase);
+        double adjustedScore = evidence.score() * 0.2d;
+        if (lexicalMatched) {
+            adjustedScore += 0.45d;
+        }
+        if (keywordMatched) {
+            adjustedScore += 0.25d;
+        }
+        adjustedScore = Math.min(1.0d, adjustedScore);
+        Map<String, Object> metadata = new LinkedHashMap<>(evidence.metadata());
+        metadata.put("lexicalMatched", lexicalMatched);
+        metadata.put("adjustedScore", adjustedScore);
+        return new RagEvidence(
+                evidence.channel(),
+                evidence.knowledgeBaseId(),
+                evidence.documentId(),
+                evidence.chunkId(),
+                evidence.documentTitle(),
+                evidence.chunkNo(),
+                evidence.content(),
+                evidence.sectionTitle(),
+                adjustedScore,
+                metadata
+        );
+    }
+
+    private boolean hasMeaningfulLexicalMatch(String query, String content) {
+        if (query == null || query.isBlank() || content == null || content.isBlank()) {
+            return false;
+        }
+        String normalizedContent = content.toLowerCase(Locale.ROOT);
+        long matchedCount = extractKeywordTerms(query).stream()
+                .filter(token -> token.length() >= 2)
+                .filter(normalizedContent::contains)
+                .count();
+        return matchedCount >= 1;
+    }
+
+    public List<String> extractKeywordTerms(String text) {
+        Set<String> tokens = new LinkedHashSet<>();
+        collectAsciiTokens(text, tokens);
+        collectCjkNgrams(text, tokens);
+        return tokens.stream()
+                .filter(token -> token.length() >= 2)
+                .toList();
+    }
+
+    private List<String> sanitizeRecentMessages(List<String> recentMessages, String question) {
+        if (recentMessages == null || recentMessages.isEmpty()) {
+            return List.of();
+        }
+        String normalizedQuestion = question == null ? "" : question.trim();
+        return recentMessages.stream()
+                .map(item -> item == null ? "" : item.trim())
+                .filter(item -> !item.isBlank())
+                .filter(item -> !item.equals(normalizedQuestion))
+                .toList();
+    }
+
+    private void collectAsciiTokens(String text, Set<String> tokens) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{2,}").matcher(text.toLowerCase(Locale.ROOT));
+        while (matcher.find()) {
+            tokens.add(matcher.group());
+        }
+    }
+
+    private void collectCjkNgrams(String text, Set<String> tokens) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[\\p{IsHan}]{2,}").matcher(text);
+        while (matcher.find()) {
+            String segment = matcher.group();
+            for (int index = 0; index < segment.length() - 1; index++) {
+                tokens.add(segment.substring(index, index + 2));
+            }
+            if (segment.length() <= 4) {
+                tokens.add(segment);
+            }
+        }
+    }
+
+    private static final class RagEvidenceAccumulator {
+        private final long knowledgeBaseId;
+        private final long documentId;
+        private final long chunkId;
+        private final String documentTitle;
+        private final int chunkNo;
+        private final String content;
+        private final String sectionTitle;
+        private final Map<String, Object> metadata;
+        private final Set<String> channels = new LinkedHashSet<>();
+        private double score;
+
+        private RagEvidenceAccumulator(RetrievalResult result, double score) {
+            this.knowledgeBaseId = result.knowledgeBaseId();
+            this.documentId = result.documentId();
+            this.chunkId = result.chunkId();
+            this.documentTitle = result.documentTitle();
+            this.chunkNo = result.chunkNo();
+            this.content = result.content();
+            this.sectionTitle = result.sectionTitle();
+            this.metadata = new LinkedHashMap<>(result.metadata());
+            this.channels.add(result.channel());
+            this.score = score;
+        }
+
+        private void addContribution(String channel, double contribution) {
+            this.channels.add(channel);
+            this.score += contribution;
+        }
+
+        private RagEvidence toEvidence(double maxPossibleScore) {
+            Map<String, Object> resolvedMetadata = new LinkedHashMap<>(metadata);
+            resolvedMetadata.put("channels", channels.stream().map(item -> item.toLowerCase(Locale.ROOT)).toList());
+            resolvedMetadata.put("rawRrfScore", score);
+            double normalizedScore = maxPossibleScore <= 0 ? score : Math.min(1.0d, score / maxPossibleScore);
+            return new RagEvidence(
+                    channels.size() == 1 ? channels.iterator().next() : "hybrid",
+                    knowledgeBaseId,
+                    documentId,
+                    chunkId,
+                    documentTitle,
+                    chunkNo,
+                    content,
+                    sectionTitle,
+                    normalizedScore,
+                    resolvedMetadata
+            );
+        }
+    }
+}

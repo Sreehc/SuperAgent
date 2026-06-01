@@ -91,3 +91,12 @@ super-agent:
     chunk-size: ${DOCUMENT_CHUNK_SIZE:1000}
     chunk-overlap: ${DOCUMENT_CHUNK_OVERLAP:120}
     max-chunk-count: ${DOCUMENT_MAX_CHUNK_COUNT:5000}
+  rag:
+    rewrite-enabled: ${RAG_REWRITE_ENABLED:true}
+    sub-question-enabled: ${RAG_SUB_QUESTION_ENABLED:true}
+    vector-top-k: ${RAG_VECTOR_TOP_K:20}
+    keyword-top-k: ${RAG_KEYWORD_TOP_K:20}
+    rrf-k: ${RAG_RRF_K:60}
+    evidence-limit: ${RAG_EVIDENCE_LIMIT:8}
+    min-relevance-score: ${RAG_MIN_RELEVANCE_SCORE:0.35}
+    max-sub-questions: ${RAG_MAX_SUB_QUESTIONS:4}

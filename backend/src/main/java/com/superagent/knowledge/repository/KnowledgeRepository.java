@@ -478,12 +478,17 @@ public class KnowledgeRepository {
                             error_message = NULL
                         WHERE tenant_id = ?
                           AND id = ?
+                          AND status = ?
                         """,
                 DocumentTaskStatus.running.name(),
                 tenantId,
-                taskId
+                taskId,
+                DocumentTaskStatus.pending.name()
         );
-        return getDocumentTask(tenantId, taskId).orElseThrow();
+        if (updated == 0) {
+            return Optional.empty();
+        }
+        return getDocumentTask(tenantId, taskId);
     }
 
     public DocumentTask markTaskSuccess(long tenantId, long taskId, String outputSummary) {
@@ -588,9 +593,10 @@ public class KnowledgeRepository {
                             content_hash,
                             char_count,
                             token_count,
+                            search_vector,
                             metadata
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, to_tsvector('simple', ?), ?::jsonb)
                         """,
                 new BatchPreparedStatementSetter() {
                     @Override
@@ -613,7 +619,8 @@ public class KnowledgeRepository {
                         } else {
                             ps.setInt(9, chunk.tokenCount());
                         }
-                        ps.setString(10, writeMetadata(chunk.metadata()));
+                        ps.setString(10, chunk.content());
+                        ps.setString(11, writeMetadata(chunk.metadata()));
                     }
 
                     @Override
@@ -743,6 +750,125 @@ public class KnowledgeRepository {
         args.add(topK);
         return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new RetrievalResult(
                         "vector",
+                        rs.getLong("knowledge_base_id"),
+                        rs.getLong("document_id"),
+                        rs.getLong("chunk_id"),
+                        rs.getString("document_title"),
+                        rs.getInt("chunk_no"),
+                        rs.getString("content"),
+                        rs.getString("section_title"),
+                        rs.getDouble("score"),
+                        readMetadata(rs.getString("metadata"))
+                ),
+                args.toArray()
+        );
+    }
+
+    public List<RetrievalResult> findTopKByKeyword(long tenantId, Long knowledgeBaseId, String query, int topK) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    kd.knowledge_base_id,
+                    kd.id AS document_id,
+                    dc.id AS chunk_id,
+                    kd.title AS document_title,
+                    dc.chunk_no,
+                    dc.content,
+                    dc.section_title,
+                    dc.metadata,
+                    ts_rank_cd(dc.search_vector, websearch_to_tsquery('simple', ?)) AS score
+                FROM document_chunk dc
+                JOIN knowledge_document kd ON kd.id = dc.document_id
+                JOIN knowledge_base kb ON kb.id = kd.knowledge_base_id
+                WHERE dc.tenant_id = ?
+                  AND kd.tenant_id = ?
+                  AND kd.status = 'ready'
+                  AND kd.deleted_at IS NULL
+                  AND kb.deleted_at IS NULL
+                  AND kb.status = 'published'
+                  AND dc.search_vector @@ websearch_to_tsquery('simple', ?)
+                """);
+        ArrayList<Object> args = new ArrayList<>();
+        args.add(query);
+        args.add(tenantId);
+        args.add(tenantId);
+        args.add(query);
+        if (knowledgeBaseId != null) {
+            sql.append(" AND kd.knowledge_base_id = ?");
+            args.add(knowledgeBaseId);
+        }
+        sql.append(" ORDER BY score DESC, dc.chunk_no ASC LIMIT ?");
+        args.add(topK);
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new RetrievalResult(
+                        "keyword",
+                        rs.getLong("knowledge_base_id"),
+                        rs.getLong("document_id"),
+                        rs.getLong("chunk_id"),
+                        rs.getString("document_title"),
+                        rs.getInt("chunk_no"),
+                        rs.getString("content"),
+                        rs.getString("section_title"),
+                        rs.getDouble("score"),
+                        readMetadata(rs.getString("metadata"))
+                ),
+                args.toArray()
+        );
+    }
+
+    public List<RetrievalResult> findTopKByKeywordFallback(long tenantId, Long knowledgeBaseId, List<String> terms, int topK) {
+        if (terms == null || terms.isEmpty()) {
+            return List.of();
+        }
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    kd.knowledge_base_id,
+                    kd.id AS document_id,
+                    dc.id AS chunk_id,
+                    kd.title AS document_title,
+                    dc.chunk_no,
+                    dc.content,
+                    dc.section_title,
+                    dc.metadata,
+                    (
+                """);
+        ArrayList<Object> args = new ArrayList<>();
+        for (int index = 0; index < terms.size(); index++) {
+            if (index > 0) {
+                sql.append(" + ");
+            }
+            sql.append("CASE WHEN dc.content ILIKE ? THEN 1 ELSE 0 END");
+            args.add("%" + terms.get(index) + "%");
+        }
+        sql.append("""
+                    )::double precision AS score
+                FROM document_chunk dc
+                JOIN knowledge_document kd ON kd.id = dc.document_id
+                JOIN knowledge_base kb ON kb.id = kd.knowledge_base_id
+                WHERE dc.tenant_id = ?
+                  AND kd.tenant_id = ?
+                  AND kd.status = 'ready'
+                  AND kd.deleted_at IS NULL
+                  AND kb.deleted_at IS NULL
+                  AND kb.status = 'published'
+                  AND (
+                """);
+        args.add(tenantId);
+        args.add(tenantId);
+        for (int index = 0; index < terms.size(); index++) {
+            if (index > 0) {
+                sql.append(" OR ");
+            }
+            sql.append("dc.content ILIKE ?");
+            args.add("%" + terms.get(index) + "%");
+        }
+        sql.append(")");
+        if (knowledgeBaseId != null) {
+            sql.append(" AND kd.knowledge_base_id = ?");
+            args.add(knowledgeBaseId);
+        }
+        sql.append(" ORDER BY score DESC, dc.chunk_no ASC LIMIT ?");
+        args.add(topK);
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new RetrievalResult(
+                        "keyword",
                         rs.getLong("knowledge_base_id"),
                         rs.getLong("document_id"),
                         rs.getLong("chunk_id"),

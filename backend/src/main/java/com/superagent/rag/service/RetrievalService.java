@@ -9,6 +9,7 @@ import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.knowledge.domain.KnowledgeBaseStatus;
 import com.superagent.knowledge.repository.KnowledgeRepository;
+import com.superagent.rag.domain.RagSearchQuery;
 import com.superagent.rag.domain.RetrievalResult;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -20,15 +21,18 @@ public class RetrievalService {
     private final CurrentAuthenticatedUser currentAuthenticatedUser;
     private final EmbeddingClient embeddingClient;
     private final KnowledgeRepository knowledgeRepository;
+    private final RagSupportService ragSupportService;
 
     public RetrievalService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
             EmbeddingClient embeddingClient,
-            KnowledgeRepository knowledgeRepository
+            KnowledgeRepository knowledgeRepository,
+            RagSupportService ragSupportService
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.embeddingClient = embeddingClient;
         this.knowledgeRepository = knowledgeRepository;
+        this.ragSupportService = ragSupportService;
     }
 
     public List<RetrievalResult> search(String query, Long knowledgeBaseId, Integer topK) {
@@ -52,6 +56,36 @@ public class RetrievalService {
                 knowledgeBaseId,
                 embedding.vectors().getFirst(),
                 resolvedTopK
+        );
+    }
+
+    public List<RetrievalResult> searchVector(RagSearchQuery query) {
+        TenantContext tenantContext = requireTenantContext();
+        EmbeddingClient.EmbeddingResult embedding = embeddingClient.embed(List.of(query.subQuestion()));
+        return knowledgeRepository.findTopKByVector(
+                tenantContext.tenantId(),
+                query.knowledgeBaseId(),
+                embedding.vectors().getFirst(),
+                query.vectorTopK()
+        );
+    }
+
+    public List<RetrievalResult> searchKeyword(RagSearchQuery query) {
+        TenantContext tenantContext = requireTenantContext();
+        List<RetrievalResult> results = knowledgeRepository.findTopKByKeyword(
+                tenantContext.tenantId(),
+                query.knowledgeBaseId(),
+                query.subQuestion(),
+                query.keywordTopK()
+        );
+        if (!results.isEmpty()) {
+            return results;
+        }
+        return knowledgeRepository.findTopKByKeywordFallback(
+                tenantContext.tenantId(),
+                query.knowledgeBaseId(),
+                ragSupportService.extractKeywordTerms(query.subQuestion()),
+                query.keywordTopK()
         );
     }
 
