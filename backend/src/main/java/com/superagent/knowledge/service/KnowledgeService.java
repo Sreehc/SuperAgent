@@ -222,6 +222,10 @@ public class KnowledgeService {
         return new ReprocessDocumentResult(document.id(), task.id(), task.status().name());
     }
 
+    public KnowledgeDocument getDocument(long documentId) {
+        return requireVisibleDocument(documentId);
+    }
+
     public PagedResult<DocumentChunk> listDocumentChunks(long documentId, Integer page, Integer pageSize) {
         KnowledgeDocument document = requireVisibleDocument(documentId);
         TenantContext tenantContext = requireTenantContext();

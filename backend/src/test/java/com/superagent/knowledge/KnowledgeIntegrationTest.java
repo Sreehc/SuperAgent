@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.common.exception.AppException;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.service.DocumentProcessingService;
 import com.superagent.rag.TestEmbeddingClientConfiguration;
@@ -49,6 +50,14 @@ class KnowledgeIntegrationTest {
 
     @BeforeEach
     void cleanKnowledgeTables() {
+        jdbcTemplate.execute("DELETE FROM conversation_reference");
+        jdbcTemplate.execute("DELETE FROM retrieval_trace");
+        jdbcTemplate.execute("DELETE FROM model_call_trace");
+        jdbcTemplate.execute("DELETE FROM exchange_trace_stage");
+        jdbcTemplate.execute("DELETE FROM conversation_exchange");
+        jdbcTemplate.execute("DELETE FROM conversation_memory_summary");
+        jdbcTemplate.execute("DELETE FROM conversation_message");
+        jdbcTemplate.execute("DELETE FROM conversation_session");
         jdbcTemplate.execute("DELETE FROM document_task");
         jdbcTemplate.execute("DELETE FROM document_embedding");
         jdbcTemplate.execute("DELETE FROM document_chunk");
@@ -231,6 +240,16 @@ class KnowledgeIntegrationTest {
         long documentId = uploaded.path("data").path("id").asLong();
         long parseTaskId = uploaded.path("data").path("taskId").asLong();
 
+        JsonNode documentDetail = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(documentDetail.path("data").path("title").asText()).isEqualTo("处理链路文档");
+        assertThat(documentDetail.path("data").path("status").asText()).isEqualTo("uploaded");
+
         documentProcessingService.process(new DocumentTaskMessage(owner.tenantId(), documentId, parseTaskId, "test"));
 
         JsonNode chunks = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/chunks", documentId)
@@ -305,6 +324,94 @@ class KnowledgeIntegrationTest {
                 documentId
         );
         assertThat(embeddingCount).isEqualTo(processedChunkCount);
+
+        int parseAttemptCount = jdbcTemplate.queryForObject(
+                "SELECT attempt_count FROM document_task WHERE id = ?",
+                Integer.class,
+                parseTaskId
+        );
+        documentProcessingService.process(new DocumentTaskMessage(owner.tenantId(), documentId, parseTaskId, "duplicate_delivery"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT attempt_count FROM document_task WHERE id = ?",
+                Integer.class,
+                parseTaskId
+        )).isEqualTo(parseAttemptCount);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM document_chunk WHERE document_id = ?",
+                Integer.class,
+                documentId
+        )).isEqualTo(processedChunkCount);
+    }
+
+    @Test
+    void shouldRecordFailureReasonInTasksWhenParsingFails() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "失败处理测试", "published");
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "bad.txt",
+                "text/plain",
+                new byte[0]
+        );
+
+        MvcResult uploadResponse = mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                        .file(file)
+                        .param("title", "空文档")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isUnprocessableEntity())
+                .andReturn();
+        assertThat(uploadResponse.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("Document file is required");
+    }
+
+    @Test
+    void shouldRecordFailureReasonInTasksForUnsupportedParsedContent() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "失败日志测试", "published");
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "empty.md",
+                "text/markdown",
+                "   ".getBytes(StandardCharsets.UTF_8)
+        );
+
+        MvcResult uploadResponse = mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                        .file(file)
+                        .param("title", "空白文档")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode uploaded = objectMapper.readTree(uploadResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        long documentId = uploaded.path("data").path("id").asLong();
+        long parseTaskId = uploaded.path("data").path("taskId").asLong();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                documentProcessingService.process(new DocumentTaskMessage(owner.tenantId(), documentId, parseTaskId, "failure_test")))
+                .isInstanceOf(AppException.class)
+                .hasMessageContaining("Document content is empty after parsing");
+
+        JsonNode documentDetail = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(documentDetail.path("data").path("status").asText()).isEqualTo("failed");
+        assertThat(documentDetail.path("data").path("errorMessage").asText()).contains("empty after parsing");
+
+        JsonNode tasks = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/tasks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(tasks.path("data").toString()).contains("failed");
+        assertThat(tasks.path("data").toString()).contains("Document content is empty after parsing");
     }
 
     private long createKnowledgeBase(LoginSession owner, String name, String status) throws Exception {

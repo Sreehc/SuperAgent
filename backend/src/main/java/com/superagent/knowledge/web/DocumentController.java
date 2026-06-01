@@ -7,6 +7,7 @@ import com.superagent.knowledge.service.KnowledgeService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,6 +28,28 @@ public class DocumentController {
 
     public DocumentController(KnowledgeService knowledgeService) {
         this.knowledgeService = knowledgeService;
+    }
+
+    @GetMapping("/{documentId}")
+    public ApiResponse<DocumentDetailItem> getDocument(@PathVariable long documentId) {
+        var document = knowledgeService.getDocument(documentId);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("category", document.category());
+        metadata.put("tags", document.tags());
+        return ApiResponse.success(new DocumentDetailItem(
+                document.id(),
+                document.knowledgeBaseId(),
+                document.title(),
+                document.fileName(),
+                document.fileType(),
+                document.fileSize(),
+                document.status().name(),
+                document.chunkCount(),
+                document.errorMessage(),
+                metadata,
+                document.createdAt(),
+                document.updatedAt()
+        ));
     }
 
     @PostMapping("/{documentId}/reprocess")
@@ -92,6 +115,22 @@ public class DocumentController {
     }
 
     public record ReprocessRequest(@Size(max = 500) String reason) {
+    }
+
+    public record DocumentDetailItem(
+            long id,
+            long knowledgeBaseId,
+            String title,
+            String fileName,
+            String fileType,
+            long fileSize,
+            String status,
+            int chunkCount,
+            String errorMessage,
+            Map<String, Object> metadata,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt
+    ) {
     }
 
     public record DocumentChunkItem(

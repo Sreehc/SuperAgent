@@ -59,7 +59,9 @@ public class DocumentProcessingService {
     }
 
     private void processReprocess(DocumentTaskMessage message, DocumentTask reprocessTask) {
-        knowledgeRepository.markTaskRunning(message.tenantId(), reprocessTask.id());
+        if (knowledgeRepository.tryMarkTaskRunning(message.tenantId(), reprocessTask.id()).isEmpty()) {
+            return;
+        }
         try {
             DocumentTask parseTask = knowledgeRepository.createDocumentTask(
                     message.tenantId(),
@@ -79,8 +81,10 @@ public class DocumentProcessingService {
     private void processParseAndChunk(DocumentTaskMessage message, DocumentTask parseTask) {
         KnowledgeDocument document = knowledgeRepository.getKnowledgeDocument(message.tenantId(), message.documentId())
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Document not found"));
+        if (knowledgeRepository.tryMarkTaskRunning(message.tenantId(), parseTask.id()).isEmpty()) {
+            return;
+        }
         knowledgeRepository.updateDocumentStatus(message.tenantId(), document.id(), KnowledgeDocumentStatus.parsing, null, null);
-        knowledgeRepository.markTaskRunning(message.tenantId(), parseTask.id());
         try (InputStream inputStream = objectStorageService.open(document.objectKey())) {
             DocumentParserService.ParsedDocument parsed = documentParserService.parse(document.fileType(), inputStream);
             knowledgeRepository.markTaskSuccess(
@@ -103,10 +107,12 @@ public class DocumentProcessingService {
     }
 
     protected void processChunkTask(long tenantId, KnowledgeDocument document, String content, long chunkTaskId) {
+        if (knowledgeRepository.tryMarkTaskRunning(tenantId, chunkTaskId).isEmpty()) {
+            return;
+        }
         try {
             transactionTemplate.executeWithoutResult(status -> {
                 knowledgeRepository.updateDocumentStatus(tenantId, document.id(), KnowledgeDocumentStatus.chunking, null, null);
-                knowledgeRepository.markTaskRunning(tenantId, chunkTaskId);
                 List<RecursiveChunker.ChunkCandidate> candidates = recursiveChunker.chunk(content);
                 List<KnowledgeRepository.ChunkInsert> inserts = candidates.stream()
                         .map(candidate -> new KnowledgeRepository.ChunkInsert(
@@ -142,7 +148,9 @@ public class DocumentProcessingService {
     }
 
     protected void processEmbedTask(long tenantId, KnowledgeDocument document, long embedTaskId) {
-        knowledgeRepository.markTaskRunning(tenantId, embedTaskId);
+        if (knowledgeRepository.tryMarkTaskRunning(tenantId, embedTaskId).isEmpty()) {
+            return;
+        }
         try {
             List<DocumentChunk> chunks = knowledgeRepository.listAllDocumentChunks(tenantId, document.id());
             EmbeddingClient.EmbeddingResult embeddingResult = embeddingClient.embed(

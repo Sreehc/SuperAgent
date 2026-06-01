@@ -468,8 +468,8 @@ public class KnowledgeRepository {
         );
     }
 
-    public DocumentTask markTaskRunning(long tenantId, long taskId) {
-        jdbcTemplate.update("""
+    public Optional<DocumentTask> tryMarkTaskRunning(long tenantId, long taskId) {
+        int updated = jdbcTemplate.update("""
                         UPDATE document_task
                         SET status = ?,
                             attempt_count = attempt_count + 1,
