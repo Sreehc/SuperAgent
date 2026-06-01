@@ -1,21 +1,26 @@
 package com.superagent.common.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.time.OffsetDateTime;
+import com.superagent.common.web.TraceIdHolder;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApiResponse<T>(
         boolean success,
+        String code,
+        String message,
         T data,
-        ApiError error,
-        OffsetDateTime timestamp
+        String traceId
 ) {
 
     public static <T> ApiResponse<T> success(T data) {
-        return new ApiResponse<>(true, data, null, OffsetDateTime.now());
+        return new ApiResponse<>(true, ErrorCode.OK.name(), "success", data, TraceIdHolder.getOrCreate());
     }
 
-    public static <T> ApiResponse<T> failure(ApiError error) {
-        return new ApiResponse<>(false, null, error, OffsetDateTime.now());
+    public static <T> ApiResponse<T> failure(ErrorCode code, String message) {
+        return new ApiResponse<>(false, code.name(), message, null, TraceIdHolder.getOrCreate());
+    }
+
+    public <R> ApiResponse<R> withData(R newData) {
+        return new ApiResponse<>(success, code, message, newData, traceId);
     }
 }

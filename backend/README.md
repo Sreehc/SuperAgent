@@ -1,6 +1,6 @@
 # Backend Scaffold
 
-当前目录已完成阶段 1 的 Spring Boot 基线初始化，统一使用 Java 21 目标版本。
+当前目录已完成阶段 2 的后端基础认证能力，统一使用 Java 21 目标版本。
 
 ## 已完成内容
 
@@ -8,9 +8,12 @@
 - 模块化单体包结构：`api`、`auth`、`chat`、`rag`、`knowledge`、`observability`、`infra`、`common`。
 - 统一响应和统一异常处理。
 - 基础系统接口：`/api/v1/system/bootstrap`、`/api/v1/system/modules/{module}`。
+- 认证与租户接口：`/api/v1/auth/login`、`/api/v1/auth/refresh`、`/api/v1/auth/logout`、`/api/v1/auth/me`、`/api/v1/tenants`。
+- JWT Access Token、Refresh Token 轮换、`X-Tenant-Id` 解析和租户角色拦截。
 - Actuator 健康检查：`/actuator/health`。
 - OpenAPI/Swagger 基础配置：`/v3/api-docs`、`/swagger-ui.html`。
 - Flyway 迁移框架，以及 PostgreSQL 扩展、基础表结构、索引和 `updated_at` 触发器迁移。
+- 启动时自动补充本地种子账号和默认租户。
 
 ## 启动前提
 
@@ -41,23 +44,35 @@ POSTGRES_URL=jdbc:postgresql://localhost:5432/superagent \
 ./mvnw spring-boot:run
 ```
 
+## 本地种子账号
+
+- `admin / password123`
+- `member / password123`
+
+默认租户：
+
+- `默认租户`
+- 租户 code：`default`
+
 ## 验证命令
 
 ```bash
 TEST_POSTGRES_PASSWORD=root ./mvnw test
 curl http://localhost:8080/actuator/health
-curl http://localhost:8080/api/v1/system/bootstrap
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"password123"}'
 ```
 
 ## 范围边界
 
 当前阶段只完成基础工程、配置和迁移，不包含：
 
-- 认证逻辑
 - 会话逻辑
 - RAG 业务逻辑
 - 文档处理业务逻辑
+- 前端业务页面
 
 ## 下一阶段入口
 
-阶段 2 从认证、多租户上下文、权限拦截和相关数据访问层开始。
+阶段 3 可以基于现有认证接口和租户上下文进入前端登录态、路由守卫和 `/chat` 占位页接入。

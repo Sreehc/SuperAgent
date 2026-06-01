@@ -1,7 +1,12 @@
 package com.superagent.common.api;
 
 public enum ErrorCode {
-    VALIDATION_ERROR,
-    MODULE_NOT_FOUND,
+    OK,
+    BAD_REQUEST,
+    UNAUTHORIZED,
+    FORBIDDEN,
+    NOT_FOUND,
+    CONFLICT,
+    VALIDATION_FAILED,
     INTERNAL_ERROR
 }

@@ -50,6 +50,6 @@ super-agent:
     embedding-model: ${EMBEDDING_MODEL:text-embedding-3-small}
     rerank-enabled: ${RERANK_ENABLED:false}
   security:
-    jwt-secret: ${JWT_SECRET:replace-with-local-dev-secret}
+    jwt-secret: ${JWT_SECRET:replace-with-local-dev-secret-1234567890}
     access-token-ttl-seconds: ${ACCESS_TOKEN_TTL_SECONDS:7200}
     refresh-token-ttl-seconds: ${REFRESH_TOKEN_TTL_SECONDS:1209600}

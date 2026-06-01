@@ -50,7 +50,7 @@ public class BootstrapCatalogService {
                 .filter(module -> module.code().equals(name))
                 .findFirst()
                 .orElseThrow(() -> new AppException(
-                        ErrorCode.MODULE_NOT_FOUND,
+                        ErrorCode.NOT_FOUND,
                         HttpStatus.NOT_FOUND,
                         "Module not found: " + name
                 ));
