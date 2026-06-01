@@ -117,7 +117,7 @@ async function switchTenant() {
     await authStore.switchTenant(selectedTenantId.value)
     const allowedRoles = route.meta.roles as Array<'OWNER' | 'ADMIN' | 'MEMBER'> | undefined
     if (allowedRoles?.length && authStore.currentRole && !allowedRoles.includes(authStore.currentRole)) {
-      await router.push('/chat')
+      await router.push('/forbidden')
     }
   } finally {
     tenantSwitching.value = false

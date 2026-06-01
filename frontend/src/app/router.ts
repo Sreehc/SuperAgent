@@ -3,7 +3,7 @@ import { createRouter as createVueRouter, createWebHistory, type RouteLocationNo
 import AppShell from './shells/AppShell.vue'
 import { useAuthStore } from '../features/auth/store/auth'
 import { LoginPage } from '../features/auth/pages'
-import { ChatPlaceholderPage, KnowledgePlaceholderPage, SettingsPlaceholderPage, TracePlaceholderPage } from '../features/placeholders/pages'
+import { ChatPlaceholderPage, KnowledgePlaceholderPage, PermissionDeniedPage, SettingsPlaceholderPage, TracePlaceholderPage } from '../features/placeholders/pages'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -75,6 +75,14 @@ export function createRouter(pinia: Pinia) {
               menuLabel: '设置',
             },
           },
+          {
+            path: '/forbidden',
+            name: 'forbidden',
+            component: PermissionDeniedPage,
+            meta: {
+              requiresAuth: true,
+            },
+          },
         ],
       },
       {
@@ -115,7 +123,7 @@ export function createRouter(pinia: Pinia) {
     if (to.meta.roles?.length) {
       const currentRole = authStore.currentRole
       if (!currentRole || !to.meta.roles.includes(currentRole)) {
-        return { name: 'chat' }
+        return { name: 'forbidden' }
       }
     }
 
