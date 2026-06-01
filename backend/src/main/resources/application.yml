@@ -46,6 +46,7 @@ super-agent:
     kafka-enabled: ${KAFKA_ENABLED:false}
   ai:
     openai-compatible-base-url: ${OPENAI_COMPATIBLE_BASE_URL:https://api.example.com/v1}
+    api-key: ${OPENAI_API_KEY:local-dev-openai-key}
     chat-model: ${CHAT_MODEL:gpt-4.1-mini}
     embedding-model: ${EMBEDDING_MODEL:text-embedding-3-small}
     rerank-enabled: ${RERANK_ENABLED:false}

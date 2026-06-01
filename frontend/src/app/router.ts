@@ -3,7 +3,8 @@ import { createRouter as createVueRouter, createWebHistory, type RouteLocationNo
 import AppShell from './shells/AppShell.vue'
 import { useAuthStore } from '../features/auth/store/auth'
 import { LoginPage } from '../features/auth/pages'
-import { ChatPlaceholderPage, KnowledgePlaceholderPage, PermissionDeniedPage, SettingsPlaceholderPage, TracePlaceholderPage } from '../features/placeholders/pages'
+import { ChatWorkspacePage } from '../features/chat/pages'
+import { KnowledgePlaceholderPage, PermissionDeniedPage, SettingsPlaceholderPage, TracePlaceholderPage } from '../features/placeholders/pages'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -40,7 +41,16 @@ export function createRouter(pinia: Pinia) {
           {
             path: '/chat',
             name: 'chat',
-            component: ChatPlaceholderPage,
+            component: ChatWorkspacePage,
+            meta: {
+              requiresAuth: true,
+              menuLabel: '对话工作台',
+            },
+          },
+          {
+            path: '/chat/:sessionId',
+            name: 'chat-session',
+            component: ChatWorkspacePage,
             meta: {
               requiresAuth: true,
               menuLabel: '对话工作台',

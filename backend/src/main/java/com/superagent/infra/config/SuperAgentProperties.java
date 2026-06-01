@@ -148,6 +148,9 @@ public class SuperAgentProperties {
         private String openaiCompatibleBaseUrl;
 
         @NotBlank
+        private String apiKey;
+
+        @NotBlank
         private String chatModel;
 
         @NotBlank
@@ -162,6 +165,14 @@ public class SuperAgentProperties {
 
         public void setOpenaiCompatibleBaseUrl(String openaiCompatibleBaseUrl) {
             this.openaiCompatibleBaseUrl = openaiCompatibleBaseUrl;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
         }
 
         public String getChatModel() {
