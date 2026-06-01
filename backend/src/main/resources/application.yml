@@ -53,3 +53,9 @@ super-agent:
     jwt-secret: ${JWT_SECRET:replace-with-local-dev-secret-1234567890}
     access-token-ttl-seconds: ${ACCESS_TOKEN_TTL_SECONDS:7200}
     refresh-token-ttl-seconds: ${REFRESH_TOKEN_TTL_SECONDS:1209600}
+  web:
+    allowed-origins:
+      - ${FRONTEND_ORIGIN_PRIMARY:http://localhost:5173}
+      - ${FRONTEND_ORIGIN_SECONDARY:http://127.0.0.1:5173}
+      - ${FRONTEND_ORIGIN_TERTIARY:http://localhost:4173}
+      - ${FRONTEND_ORIGIN_QUATERNARY:http://127.0.0.1:4173}

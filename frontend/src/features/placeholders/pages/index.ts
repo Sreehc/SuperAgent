@@ -1,0 +1,4 @@
+export { default as ChatPlaceholderPage } from './ChatPlaceholderPage.vue'
+export { default as KnowledgePlaceholderPage } from './KnowledgePlaceholderPage.vue'
+export { default as SettingsPlaceholderPage } from './SettingsPlaceholderPage.vue'
+export { default as TracePlaceholderPage } from './TracePlaceholderPage.vue'

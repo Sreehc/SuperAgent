@@ -7,6 +7,9 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Validated
 @ConfigurationProperties(prefix = "super-agent")
 public class SuperAgentProperties {
@@ -26,6 +29,9 @@ public class SuperAgentProperties {
     @Valid
     private final Security security = new Security();
 
+    @Valid
+    private final Web web = new Web();
+
     public App getApp() {
         return app;
     }
@@ -44,6 +50,10 @@ public class SuperAgentProperties {
 
     public Security getSecurity() {
         return security;
+    }
+
+    public Web getWeb() {
+        return web;
     }
 
     public static class App {
@@ -212,6 +222,20 @@ public class SuperAgentProperties {
 
         public void setRefreshTokenTtlSeconds(long refreshTokenTtlSeconds) {
             this.refreshTokenTtlSeconds = refreshTokenTtlSeconds;
+        }
+    }
+
+    public static class Web {
+
+        @NotNull
+        private List<@NotBlank String> allowedOrigins = new ArrayList<>();
+
+        public List<String> getAllowedOrigins() {
+            return allowedOrigins;
+        }
+
+        public void setAllowedOrigins(List<String> allowedOrigins) {
+            this.allowedOrigins = allowedOrigins;
         }
     }
 }
