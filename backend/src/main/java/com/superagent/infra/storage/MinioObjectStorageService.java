@@ -3,6 +3,7 @@ package com.superagent.infra.storage;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.infra.config.SuperAgentProperties;
+import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import java.io.InputStream;
@@ -33,6 +34,18 @@ public class MinioObjectStorageService implements ObjectStorageService {
             return new StoredObject(bucket, objectKey);
         } catch (Exception exception) {
             throw new AppException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, "Failed to store document in MinIO");
+        }
+    }
+
+    @Override
+    public InputStream open(String objectKey) {
+        try {
+            return minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(properties.getStorage().getMinioBucket())
+                    .object(objectKey)
+                    .build());
+        } catch (Exception exception) {
+            throw new AppException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, "Failed to read document from MinIO");
         }
     }
 }

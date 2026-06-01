@@ -9,6 +9,7 @@ import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.infra.storage.ObjectStorageService;
+import com.superagent.knowledge.domain.DocumentChunk;
 import com.superagent.knowledge.domain.DocumentTask;
 import com.superagent.knowledge.domain.DocumentTaskStatus;
 import com.superagent.knowledge.domain.DocumentTaskType;
@@ -17,9 +18,10 @@ import com.superagent.knowledge.domain.KnowledgeBaseStatus;
 import com.superagent.knowledge.domain.KnowledgeBaseVisibility;
 import com.superagent.knowledge.domain.KnowledgeDocument;
 import com.superagent.knowledge.domain.KnowledgeDocumentStatus;
+import com.superagent.knowledge.messaging.DocumentTaskMessage;
+import com.superagent.knowledge.messaging.DocumentTaskProducer;
 import com.superagent.knowledge.repository.KnowledgeRepository;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
@@ -29,6 +31,7 @@ import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -38,17 +41,20 @@ public class KnowledgeService {
     private final KnowledgeRepository knowledgeRepository;
     private final ObjectStorageService objectStorageService;
     private final SuperAgentProperties properties;
+    private final ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider;
 
     public KnowledgeService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
             KnowledgeRepository knowledgeRepository,
             ObjectStorageService objectStorageService,
-            SuperAgentProperties properties
+            SuperAgentProperties properties,
+            ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.knowledgeRepository = knowledgeRepository;
         this.objectStorageService = objectStorageService;
         this.properties = properties;
+        this.documentTaskProducerProvider = documentTaskProducerProvider;
     }
 
     public KnowledgeBase createKnowledgeBase(String name, String description, KnowledgeBaseVisibility visibility) {
@@ -163,6 +169,7 @@ public class KnowledgeService {
                 DocumentTaskStatus.pending,
                 "Document uploaded to MinIO at " + OffsetDateTime.now()
         );
+        publishTaskIfEnabled(new DocumentTaskMessage(tenantContext.tenantId(), document.id(), task.id(), "upload"));
         return new UploadedDocumentResult(document, task);
     }
 
@@ -200,6 +207,42 @@ public class KnowledgeService {
         return new PagedResult<>(items, resolvedPage, resolvedPageSize, total);
     }
 
+    public ReprocessDocumentResult reprocessDocument(long documentId, String reason) {
+        requireAdminRole();
+        KnowledgeDocument document = requireKnowledgeDocument(documentId);
+        TenantContext tenantContext = requireTenantContext();
+        DocumentTask task = knowledgeRepository.createDocumentTask(
+                tenantContext.tenantId(),
+                document.id(),
+                DocumentTaskType.reprocess,
+                DocumentTaskStatus.pending,
+                (reason == null || reason.isBlank() ? "Manual reprocess requested" : reason.trim()) + " at " + OffsetDateTime.now()
+        );
+        publishTaskIfEnabled(new DocumentTaskMessage(tenantContext.tenantId(), document.id(), task.id(), "manual_reprocess"));
+        return new ReprocessDocumentResult(document.id(), task.id(), task.status().name());
+    }
+
+    public PagedResult<DocumentChunk> listDocumentChunks(long documentId, Integer page, Integer pageSize) {
+        KnowledgeDocument document = requireVisibleDocument(documentId);
+        TenantContext tenantContext = requireTenantContext();
+        int resolvedPage = normalizePage(page);
+        int resolvedPageSize = normalizePageSize(pageSize, 20, 200);
+        long total = knowledgeRepository.countDocumentChunks(tenantContext.tenantId(), document.id());
+        List<DocumentChunk> items = knowledgeRepository.listDocumentChunks(
+                tenantContext.tenantId(),
+                document.id(),
+                resolvedPage,
+                resolvedPageSize
+        );
+        return new PagedResult<>(items, resolvedPage, resolvedPageSize, total);
+    }
+
+    public List<DocumentTask> listDocumentTasks(long documentId) {
+        KnowledgeDocument document = requireVisibleDocument(documentId);
+        TenantContext tenantContext = requireTenantContext();
+        return knowledgeRepository.listDocumentTasks(tenantContext.tenantId(), document.id());
+    }
+
     private KnowledgeBase requireVisibleKnowledgeBase(long knowledgeBaseId) {
         TenantContext tenantContext = requireTenantContext();
         return knowledgeRepository.getKnowledgeBase(tenantContext.tenantId(), knowledgeBaseId)
@@ -208,6 +251,21 @@ public class KnowledgeService {
 
     private KnowledgeBase requireKnowledgeBase(long knowledgeBaseId) {
         return requireVisibleKnowledgeBase(knowledgeBaseId);
+    }
+
+    private KnowledgeDocument requireVisibleDocument(long documentId) {
+        KnowledgeDocument document = requireKnowledgeDocument(documentId);
+        KnowledgeBase knowledgeBase = requireVisibleKnowledgeBase(document.knowledgeBaseId());
+        if (!isAdmin(currentAuthenticatedUser.get()) && knowledgeBase.status() != KnowledgeBaseStatus.published) {
+            throw new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Document not found");
+        }
+        return document;
+    }
+
+    private KnowledgeDocument requireKnowledgeDocument(long documentId) {
+        TenantContext tenantContext = requireTenantContext();
+        return knowledgeRepository.getKnowledgeDocument(tenantContext.tenantId(), documentId)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Document not found"));
     }
 
     private void requireAdminRole() {
@@ -314,7 +372,21 @@ public class KnowledgeService {
         return contentType;
     }
 
+    private void publishTaskIfEnabled(DocumentTaskMessage message) {
+        if (!Boolean.TRUE.equals(properties.getMessaging().getKafkaEnabled())) {
+            return;
+        }
+        DocumentTaskProducer producer = documentTaskProducerProvider.getIfAvailable();
+        if (producer == null) {
+            throw new AppException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, "Kafka producer is not configured");
+        }
+        producer.publish(message);
+    }
+
     public record UploadedDocumentResult(KnowledgeDocument document, DocumentTask task) {
+    }
+
+    public record ReprocessDocumentResult(long documentId, long taskId, String status) {
     }
 
     public record PagedResult<T>(List<T> items, int page, int pageSize, long total) {

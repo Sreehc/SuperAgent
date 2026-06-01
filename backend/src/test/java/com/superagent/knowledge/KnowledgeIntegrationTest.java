@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.knowledge.messaging.DocumentTaskMessage;
+import com.superagent.knowledge.service.DocumentProcessingService;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,9 +41,13 @@ class KnowledgeIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private DocumentProcessingService documentProcessingService;
+
     @BeforeEach
     void cleanKnowledgeTables() {
         jdbcTemplate.execute("DELETE FROM document_task");
+        jdbcTemplate.execute("DELETE FROM document_chunk");
         jdbcTemplate.execute("DELETE FROM knowledge_document");
         jdbcTemplate.execute("DELETE FROM knowledge_base");
     }
@@ -196,6 +202,93 @@ class KnowledgeIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + member.accessToken())
                         .header("X-Tenant-Id", member.tenantId()))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void shouldProcessDocumentAndExposeChunksTasksAndReprocess() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "文档处理测试", "published");
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "guide.txt",
+                "text/plain",
+                ("第一段说明。\n\n第二段说明，包含更多文字。\n第三段说明。").getBytes(StandardCharsets.UTF_8)
+        );
+
+        MvcResult uploadResponse = mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                        .file(file)
+                        .param("title", "处理链路文档")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode uploaded = objectMapper.readTree(uploadResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        long documentId = uploaded.path("data").path("id").asLong();
+        long parseTaskId = uploaded.path("data").path("taskId").asLong();
+
+        documentProcessingService.process(new DocumentTaskMessage(owner.tenantId(), documentId, parseTaskId, "test"));
+
+        JsonNode chunks = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/chunks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(chunks.path("data").path("total").asInt()).isGreaterThan(0);
+        assertThat(chunks.path("data").path("items").get(0).path("content").asText()).contains("说明");
+
+        JsonNode tasks = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/tasks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(tasks.path("data").toString()).contains("parse");
+        assertThat(tasks.path("data").toString()).contains("chunk");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM knowledge_document WHERE id = ?",
+                String.class,
+                documentId
+        )).isEqualTo("ready");
+
+        int originalChunkCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM document_chunk WHERE document_id = ?",
+                Integer.class,
+                documentId
+        );
+
+        MvcResult reprocessResponse = mockMvc.perform(post("/api/v1/documents/{documentId}/reprocess", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "重试处理"))))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode reprocessed = objectMapper.readTree(reprocessResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        long reprocessTaskId = reprocessed.path("data").path("taskId").asLong();
+
+        documentProcessingService.process(new DocumentTaskMessage(owner.tenantId(), documentId, reprocessTaskId, "test_reprocess"));
+
+        int processedChunkCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM document_chunk WHERE document_id = ?",
+                Integer.class,
+                documentId
+        );
+        assertThat(processedChunkCount).isEqualTo(originalChunkCount);
+        Integer duplicateChunkNoCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM (
+                    SELECT chunk_no
+                    FROM document_chunk
+                    WHERE document_id = ?
+                    GROUP BY chunk_no
+                    HAVING COUNT(*) > 1
+                ) duplicated
+                """, Integer.class, documentId);
+        assertThat(duplicateChunkNoCount).isEqualTo(0);
     }
 
     private long createKnowledgeBase(LoginSession owner, String name, String status) throws Exception {

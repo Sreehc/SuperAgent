@@ -2,6 +2,7 @@ package com.superagent.knowledge.repository;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.knowledge.domain.DocumentChunk;
 import com.superagent.knowledge.domain.DocumentTask;
 import com.superagent.knowledge.domain.DocumentTaskStatus;
 import com.superagent.knowledge.domain.DocumentTaskType;
@@ -12,10 +13,13 @@ import com.superagent.knowledge.domain.KnowledgeDocument;
 import com.superagent.knowledge.domain.KnowledgeDocumentStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -34,6 +38,7 @@ public class KnowledgeRepository {
     private final RowMapper<KnowledgeBase> knowledgeBaseRowMapper = (rs, rowNum) -> mapKnowledgeBase(rs);
     private final RowMapper<KnowledgeDocument> knowledgeDocumentRowMapper = (rs, rowNum) -> mapKnowledgeDocument(rs);
     private final RowMapper<DocumentTask> documentTaskRowMapper = (rs, rowNum) -> mapDocumentTask(rs);
+    private final RowMapper<DocumentChunk> documentChunkRowMapper = (rs, rowNum) -> mapDocumentChunk(rs);
 
     public KnowledgeRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
@@ -394,6 +399,233 @@ public class KnowledgeRepository {
         ).stream().findFirst();
     }
 
+    public List<DocumentTask> listDocumentTasks(long tenantId, long documentId) {
+        return jdbcTemplate.query("""
+                        SELECT id,
+                               tenant_id,
+                               document_id,
+                               task_type,
+                               status,
+                               attempt_count,
+                               input_summary,
+                               output_summary,
+                               error_message,
+                               started_at,
+                               finished_at,
+                               created_at,
+                               updated_at
+                        FROM document_task
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                        ORDER BY created_at DESC, id DESC
+                        """,
+                documentTaskRowMapper,
+                tenantId,
+                documentId
+        );
+    }
+
+    public List<DocumentChunk> listDocumentChunks(long tenantId, long documentId, int page, int pageSize) {
+        return jdbcTemplate.query("""
+                        SELECT id,
+                               tenant_id,
+                               document_id,
+                               parent_chunk_id,
+                               chunk_no,
+                               section_title,
+                               content,
+                               content_hash,
+                               char_count,
+                               token_count,
+                               metadata,
+                               created_at,
+                               updated_at
+                        FROM document_chunk
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                        ORDER BY chunk_no ASC
+                        LIMIT ? OFFSET ?
+                        """,
+                documentChunkRowMapper,
+                tenantId,
+                documentId,
+                pageSize,
+                (page - 1) * pageSize
+        );
+    }
+
+    public long countDocumentChunks(long tenantId, long documentId) {
+        return jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*)
+                        FROM document_chunk
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                        """,
+                Long.class,
+                tenantId,
+                documentId
+        );
+    }
+
+    public DocumentTask markTaskRunning(long tenantId, long taskId) {
+        jdbcTemplate.update("""
+                        UPDATE document_task
+                        SET status = ?,
+                            attempt_count = attempt_count + 1,
+                            started_at = NOW(),
+                            finished_at = NULL,
+                            error_message = NULL
+                        WHERE tenant_id = ?
+                          AND id = ?
+                        """,
+                DocumentTaskStatus.running.name(),
+                tenantId,
+                taskId
+        );
+        return getDocumentTask(tenantId, taskId).orElseThrow();
+    }
+
+    public DocumentTask markTaskSuccess(long tenantId, long taskId, String outputSummary) {
+        jdbcTemplate.update("""
+                        UPDATE document_task
+                        SET status = ?,
+                            output_summary = ?,
+                            error_message = NULL,
+                            finished_at = NOW()
+                        WHERE tenant_id = ?
+                          AND id = ?
+                        """,
+                DocumentTaskStatus.success.name(),
+                outputSummary,
+                tenantId,
+                taskId
+        );
+        return getDocumentTask(tenantId, taskId).orElseThrow();
+    }
+
+    public DocumentTask markTaskFailed(long tenantId, long taskId, String errorMessage) {
+        jdbcTemplate.update("""
+                        UPDATE document_task
+                        SET status = ?,
+                            error_message = ?,
+                            finished_at = NOW()
+                        WHERE tenant_id = ?
+                          AND id = ?
+                        """,
+                DocumentTaskStatus.failed.name(),
+                errorMessage,
+                tenantId,
+                taskId
+        );
+        return getDocumentTask(tenantId, taskId).orElseThrow();
+    }
+
+    public KnowledgeDocument updateDocumentStatus(
+            long tenantId,
+            long documentId,
+            KnowledgeDocumentStatus status,
+            Integer chunkCount,
+            String errorMessage
+    ) {
+        jdbcTemplate.update(connection -> {
+            var statement = connection.prepareStatement("""
+                    UPDATE knowledge_document
+                    SET status = ?,
+                        chunk_count = COALESCE(?, chunk_count),
+                        error_message = ?,
+                        updated_at = NOW()
+                    WHERE tenant_id = ?
+                      AND id = ?
+                      AND deleted_at IS NULL
+                    """);
+            statement.setString(1, status.name());
+            if (chunkCount == null) {
+                statement.setNull(2, Types.INTEGER);
+            } else {
+                statement.setInt(2, chunkCount);
+            }
+            statement.setString(3, errorMessage);
+            statement.setLong(4, tenantId);
+            statement.setLong(5, documentId);
+            return statement;
+        });
+        return getKnowledgeDocument(tenantId, documentId).orElseThrow();
+    }
+
+    public int deleteDocumentChunks(long tenantId, long documentId) {
+        return jdbcTemplate.update("""
+                        DELETE FROM document_chunk
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                        """,
+                tenantId,
+                documentId
+        );
+    }
+
+    public void replaceDocumentChunks(long tenantId, long documentId, List<ChunkInsert> chunks) {
+        deleteDocumentChunks(tenantId, documentId);
+        if (chunks.isEmpty()) {
+            return;
+        }
+        jdbcTemplate.batchUpdate("""
+                        INSERT INTO document_chunk (
+                            tenant_id,
+                            document_id,
+                            parent_chunk_id,
+                            chunk_no,
+                            section_title,
+                            content,
+                            content_hash,
+                            char_count,
+                            token_count,
+                            metadata
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                        """,
+                new BatchPreparedStatementSetter() {
+                    @Override
+                    public void setValues(java.sql.PreparedStatement ps, int index) throws SQLException {
+                        ChunkInsert chunk = chunks.get(index);
+                        ps.setLong(1, tenantId);
+                        ps.setLong(2, documentId);
+                        if (chunk.parentChunkId() == null) {
+                            ps.setNull(3, Types.BIGINT);
+                        } else {
+                            ps.setLong(3, chunk.parentChunkId());
+                        }
+                        ps.setInt(4, chunk.chunkNo());
+                        ps.setString(5, chunk.sectionTitle());
+                        ps.setString(6, chunk.content());
+                        ps.setString(7, chunk.contentHash());
+                        ps.setInt(8, chunk.charCount());
+                        if (chunk.tokenCount() == null) {
+                            ps.setNull(9, Types.INTEGER);
+                        } else {
+                            ps.setInt(9, chunk.tokenCount());
+                        }
+                        ps.setString(10, writeMetadata(chunk.metadata()));
+                    }
+
+                    @Override
+                    public int getBatchSize() {
+                        return chunks.size();
+                    }
+                });
+    }
+
+    public record ChunkInsert(
+            Long parentChunkId,
+            int chunkNo,
+            String sectionTitle,
+            String content,
+            String contentHash,
+            int charCount,
+            Integer tokenCount,
+            Map<String, Object> metadata
+    ) {
+    }
+
     private KnowledgeBase mapKnowledgeBase(ResultSet rs) throws SQLException {
         return new KnowledgeBase(
                 rs.getLong("id"),
@@ -450,6 +682,24 @@ public class KnowledgeRepository {
         );
     }
 
+    private DocumentChunk mapDocumentChunk(ResultSet rs) throws SQLException {
+        return new DocumentChunk(
+                rs.getLong("id"),
+                rs.getLong("tenant_id"),
+                rs.getLong("document_id"),
+                rs.getObject("parent_chunk_id", Long.class),
+                rs.getInt("chunk_no"),
+                rs.getString("section_title"),
+                rs.getString("content"),
+                rs.getString("content_hash"),
+                rs.getInt("char_count"),
+                rs.getObject("token_count", Integer.class),
+                readMetadata(rs.getString("metadata")),
+                readOffsetDateTime(rs, "created_at"),
+                readOffsetDateTime(rs, "updated_at")
+        );
+    }
+
     private OffsetDateTime readOffsetDateTime(ResultSet rs, String column) throws SQLException {
         return rs.getObject(column, OffsetDateTime.class);
     }
@@ -496,7 +746,7 @@ public class KnowledgeRepository {
 
     private record DocumentFilterArgs(long tenantId, long knowledgeBaseId, String keyword, String tag) {
         private Object[] toArgs(String status, String fileType, boolean paged, Object... pagination) {
-            java.util.ArrayList<Object> args = new java.util.ArrayList<>();
+            ArrayList<Object> args = new ArrayList<>();
             args.add(tenantId);
             args.add(knowledgeBaseId);
             if (status != null && !status.isBlank()) {

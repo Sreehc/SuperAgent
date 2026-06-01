@@ -11,6 +11,8 @@ public interface ObjectStorageService {
             String contentType
     );
 
+    InputStream open(String objectKey);
+
     record StoredObject(String bucket, String objectKey) {
     }
 }

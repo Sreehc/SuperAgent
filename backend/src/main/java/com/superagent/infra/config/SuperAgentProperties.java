@@ -32,6 +32,9 @@ public class SuperAgentProperties {
     @Valid
     private final Web web = new Web();
 
+    @Valid
+    private final DocumentProcessing documentProcessing = new DocumentProcessing();
+
     public App getApp() {
         return app;
     }
@@ -54,6 +57,10 @@ public class SuperAgentProperties {
 
     public Web getWeb() {
         return web;
+    }
+
+    public DocumentProcessing getDocumentProcessing() {
+        return documentProcessing;
     }
 
     public static class App {
@@ -302,6 +309,42 @@ public class SuperAgentProperties {
 
         public void setAllowedOrigins(List<String> allowedOrigins) {
             this.allowedOrigins = allowedOrigins;
+        }
+    }
+
+    public static class DocumentProcessing {
+
+        @Min(128)
+        private int chunkSize = 1000;
+
+        @Min(0)
+        private int chunkOverlap = 120;
+
+        @Min(1)
+        private int maxChunkCount = 5000;
+
+        public int getChunkSize() {
+            return chunkSize;
+        }
+
+        public void setChunkSize(int chunkSize) {
+            this.chunkSize = chunkSize;
+        }
+
+        public int getChunkOverlap() {
+            return chunkOverlap;
+        }
+
+        public void setChunkOverlap(int chunkOverlap) {
+            this.chunkOverlap = chunkOverlap;
+        }
+
+        public int getMaxChunkCount() {
+            return maxChunkCount;
+        }
+
+        public void setMaxChunkCount(int maxChunkCount) {
+            this.maxChunkCount = maxChunkCount;
         }
     }
 }

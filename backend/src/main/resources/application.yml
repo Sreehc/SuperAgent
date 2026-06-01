@@ -12,6 +12,18 @@ spring:
     validate-on-migrate: true
   jackson:
     default-property-inclusion: non_null
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:superagent-document-worker}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.superagent.knowledge.messaging
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 server:
   port: ${APP_PORT:8080}
@@ -73,3 +85,7 @@ super-agent:
       - ${FRONTEND_ORIGIN_SECONDARY:http://127.0.0.1:5173}
       - ${FRONTEND_ORIGIN_TERTIARY:http://localhost:4173}
       - ${FRONTEND_ORIGIN_QUATERNARY:http://127.0.0.1:4173}
+  document-processing:
+    chunk-size: ${DOCUMENT_CHUNK_SIZE:1000}
+    chunk-overlap: ${DOCUMENT_CHUNK_OVERLAP:120}
+    max-chunk-count: ${DOCUMENT_MAX_CHUNK_COUNT:5000}
