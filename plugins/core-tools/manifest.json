@@ -15,33 +15,84 @@
     {
       "id": "knowledge.search",
       "kind": "knowledge",
+      "timeoutMs": 5000,
+      "retryPolicy": "retry:1",
+      "inputSchema": {
+        "required": ["question"]
+      },
+      "outputSchema": {
+        "type": "knowledge_evidence"
+      },
       "supportsStreaming": false
     },
     {
       "id": "web.search",
       "kind": "web",
+      "timeoutMs": 12000,
+      "retryPolicy": "retry:2",
+      "inputSchema": {
+        "required": ["question"]
+      },
+      "outputSchema": {
+        "type": "search_results"
+      },
       "supportsStreaming": false
     },
     {
       "id": "web.fetch",
       "kind": "web",
+      "timeoutMs": 12000,
+      "retryPolicy": "retry:1",
+      "inputSchema": {
+        "required": ["url"]
+      },
+      "outputSchema": {
+        "type": "fetched_article"
+      },
       "supportsStreaming": false
     },
     {
       "id": "http.request",
       "kind": "http",
       "riskLevel": "high",
+      "timeoutMs": 10000,
+      "retryPolicy": "retry:1",
+      "inputSchema": {
+        "required": ["url"],
+        "defaults": {
+          "method": "GET"
+        }
+      },
+      "outputSchema": {
+        "type": "http_response"
+      },
       "supportsStreaming": false
     },
     {
       "id": "graph.query",
       "kind": "graph",
+      "timeoutMs": 10000,
+      "retryPolicy": "retry:1",
+      "inputSchema": {
+        "required": ["question"]
+      },
+      "outputSchema": {
+        "type": "graph_evidence"
+      },
       "supportsStreaming": false
     },
     {
       "id": "python.sandbox",
       "kind": "python",
       "riskLevel": "high",
+      "timeoutMs": 15000,
+      "retryPolicy": "none",
+      "inputSchema": {
+        "required": ["code"]
+      },
+      "outputSchema": {
+        "type": "sandbox_result"
+      },
       "supportsStreaming": false
     }
   ]

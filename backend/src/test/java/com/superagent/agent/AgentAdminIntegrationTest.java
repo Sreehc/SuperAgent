@@ -2,6 +2,7 @@ package com.superagent.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -191,6 +192,112 @@ class AgentAdminIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn());
         assertThat(byExchange.path("data").path("runId").asLong()).isEqualTo(runId);
+    }
+
+    @Test
+    void shouldExposePluginGovernanceAndToolCalls() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long ownerId = jdbcTemplate.queryForObject("SELECT id FROM user_account WHERE username = 'admin'", Long.class);
+        ConversationSession session = conversationRepository.createSession(
+                tenantId,
+                ownerId,
+                "Plugin Governance",
+                MemoryStrategy.SUMMARY_PLUS_WINDOW,
+                null
+        );
+
+        Long pluginId = jdbcTemplate.queryForObject("""
+                        INSERT INTO plugin_registry (plugin_key, version, display_name, manifest_json, status)
+                        VALUES (
+                            'core-tools',
+                            '0.1.0',
+                            'Core Tools',
+                            '{
+                              "permissions":["web.search","http.request"],
+                              "tools":[{"id":"web.search"},{"id":"http.request","riskLevel":"high"}]
+                            }'::jsonb,
+                            'active'
+                        )
+                        RETURNING id
+                        """,
+                Long.class
+        );
+        jdbcTemplate.update(
+                "INSERT INTO plugin_installation (tenant_id, plugin_id, enabled, config_json) VALUES (?, ?, TRUE, ?::jsonb)",
+                tenantId,
+                pluginId,
+                "{\"rollout\":\"tenant-only\"}"
+        );
+        jdbcTemplate.update(
+                "INSERT INTO tenant_tool_binding (tenant_id, tool_id, plugin_id, enabled, risk_level, config_json) VALUES (?, 'http.request', ?, TRUE, 'high', ?::jsonb)",
+                tenantId,
+                pluginId,
+                "{\"allowedMethods\":[\"GET\",\"POST\"]}"
+        );
+        jdbcTemplate.update(
+                "INSERT INTO tenant_tool_secret (tenant_id, tool_id, secret_key, secret_value) VALUES (?, 'http.request', 'service_token', 'masked')",
+                tenantId
+        );
+        Long runId = jdbcTemplate.queryForObject("""
+                        INSERT INTO agent_run (
+                            tenant_id, session_id, status, memory_strategy, question, route_reason,
+                            model_step_count, tool_call_count, latest_checkpoint_no, started_at, finished_at
+                        ) VALUES (?, ?, 'failed', 'SUMMARY_PLUS_WINDOW', '调用外部接口', 'requires_http_request', 1, 1, 0, NOW(), NOW())
+                        RETURNING id
+                        """,
+                Long.class,
+                tenantId,
+                session.id()
+        );
+        jdbcTemplate.update("""
+                        INSERT INTO tool_call_trace (
+                            tenant_id, agent_run_id, step_id, tool_id, plugin_id, request_summary, response_summary, status, latency_ms, error_message, metadata
+                        ) VALUES (?, ?, NULL, 'http.request', ?, '调用外部接口', '返回 500', 'failed', 210, 'upstream_500',
+                                  '{"policy":{"allowedMethods":["GET","POST"]}}'::jsonb)
+                        """,
+                tenantId,
+                runId,
+                pluginId
+        );
+
+        JsonNode plugins = readJson(mockMvc.perform(get("/api/v1/admin/plugins")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn());
+        JsonNode plugin = plugins.path("data").get(0);
+        assertThat(plugin.path("pluginId").asLong()).isEqualTo(pluginId);
+        assertThat(plugin.path("installationConfig").path("rollout").asText()).isEqualTo("tenant-only");
+        assertThat(plugin.path("enabledTools").get(0).asText()).isEqualTo("http.request");
+        assertThat(plugin.path("secretKeys").get(0).asText()).isEqualTo("service_token");
+        assertThat(plugin.path("recentErrorCount").asInt()).isEqualTo(1);
+
+        JsonNode toolCalls = readJson(mockMvc.perform(get("/api/v1/admin/tool-calls")
+                        .param("toolId", "http.request")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(toolCalls.path("data")).hasSize(1);
+        assertThat(toolCalls.path("data").get(0).path("toolId").asText()).isEqualTo("http.request");
+
+        JsonNode patchResponse = readJson(mockMvc.perform(patch("/api/v1/admin/plugins/{pluginId}", pluginId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":false}")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(patchResponse.path("data").path("updated").asBoolean()).isTrue();
+        Boolean enabled = jdbcTemplate.queryForObject(
+                "SELECT enabled FROM plugin_installation WHERE tenant_id = ? AND plugin_id = ?",
+                Boolean.class,
+                tenantId,
+                pluginId
+        );
+        assertThat(enabled).isFalse();
     }
 
     private JsonNode login(String username, String password) throws Exception {

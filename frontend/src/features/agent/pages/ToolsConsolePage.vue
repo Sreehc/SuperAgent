@@ -63,6 +63,10 @@
           </div>
           <p>状态：{{ plugin.status }} · 更新时间：{{ formatTime(plugin.updatedAt) }}</p>
           <p>权限：{{ permissionsLabel(plugin.manifest.permissions) }}</p>
+          <p>启用工具：{{ listLabel(plugin.enabledTools) }}</p>
+          <p>密钥引用：{{ listLabel(plugin.secretKeys) }}</p>
+          <p>最近失败：{{ plugin.recentErrorCount }}</p>
+          <pre class="metadata">{{ formatMetadata(plugin.installationConfig) }}</pre>
         </article>
       </div>
     </section>
@@ -132,6 +136,13 @@ function formatMetadata(metadata: Record<string, unknown>) {
 
 function permissionsLabel(value: unknown) {
   if (!Array.isArray(value)) {
+    return '-'
+  }
+  return value.join(', ')
+}
+
+function listLabel(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0) {
     return '-'
   }
   return value.join(', ')

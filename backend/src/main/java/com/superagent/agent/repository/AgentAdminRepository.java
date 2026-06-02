@@ -211,6 +211,30 @@ public class AgentAdminRepository {
     public List<AdminPluginItem> listPlugins(long tenantId) {
         return jdbcTemplate.query("""
                         SELECT pr.id, pr.plugin_key, pr.version, pr.display_name, pr.status, pr.manifest_json, pr.updated_at,
+                               COALESCE(pi.config_json::text, '{}'::text) AS installation_config_json,
+                               COALESCE((
+                                   SELECT json_agg(ttb.tool_id ORDER BY ttb.tool_id)
+                                   FROM tenant_tool_binding ttb
+                                   WHERE ttb.tenant_id = :tenantId
+                                     AND ttb.plugin_id = pr.id
+                                     AND ttb.enabled = TRUE
+                               )::text, '[]') AS enabled_tools_json,
+                               COALESCE((
+                                   SELECT json_agg(DISTINCT tts.secret_key ORDER BY tts.secret_key)
+                                   FROM tenant_tool_secret tts
+                                   JOIN tenant_tool_binding ttb
+                                     ON ttb.tenant_id = tts.tenant_id
+                                    AND ttb.tool_id = tts.tool_id
+                                   WHERE tts.tenant_id = :tenantId
+                                     AND ttb.plugin_id = pr.id
+                               )::text, '[]') AS secret_keys_json,
+                               COALESCE((
+                                   SELECT COUNT(*)
+                                   FROM tool_call_trace tct
+                                   WHERE tct.tenant_id = :tenantId
+                                     AND tct.plugin_id = pr.id
+                                     AND tct.status = 'failed'
+                               ), 0) AS recent_error_count,
                                COALESCE(pi.enabled, FALSE) AS enabled
                         FROM plugin_registry pr
                         LEFT JOIN plugin_installation pi
@@ -227,6 +251,10 @@ public class AgentAdminRepository {
                         rs.getBoolean("enabled"),
                         rs.getString("status"),
                         parseMap(rs.getString("manifest_json")),
+                        parseMap(rs.getString("installation_config_json")),
+                        parseStringList(rs.getString("enabled_tools_json")),
+                        parseStringList(rs.getString("secret_keys_json")),
+                        rs.getInt("recent_error_count"),
                         rs.getObject("updated_at", OffsetDateTime.class)
                 )
         );
@@ -252,6 +280,14 @@ public class AgentAdminRepository {
             return objectMapper.readValue(json, MAP_TYPE);
         } catch (Exception exception) {
             return Map.of();
+        }
+    }
+
+    private List<String> parseStringList(String json) {
+        try {
+            return objectMapper.readValue(json, objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+        } catch (Exception exception) {
+            return List.of();
         }
     }
 

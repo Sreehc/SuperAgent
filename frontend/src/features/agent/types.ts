@@ -68,6 +68,10 @@ export interface PluginItem {
   enabled: boolean
   status: string
   manifest: Record<string, unknown>
+  installationConfig: Record<string, unknown>
+  enabledTools: string[]
+  secretKeys: string[]
+  recentErrorCount: number
   updatedAt: string
 }
 

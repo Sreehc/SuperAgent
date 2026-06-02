@@ -66,8 +66,8 @@ public class ToolRegistryService {
                         row.pluginKey(),
                         manifest.path("version").asText("0.1.0"),
                         tool.path("kind").asText("custom"),
-                        Map.of(),
-                        Map.of(),
+                        parseMap(tool.path("inputSchema")),
+                        parseMap(tool.path("outputSchema")),
                         tool.path("timeoutMs").asInt(10_000),
                         tool.path("retryPolicy").asText("none"),
                         tool.path("riskLevel").asText(riskLevel),
@@ -78,5 +78,13 @@ public class ToolRegistryService {
             return List.of();
         }
         return specs;
+    }
+
+    private Map<String, Object> parseMap(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return Map.of();
+        }
+        return objectMapper.convertValue(node, new com.fasterxml.jackson.core.type.TypeReference<>() {
+        });
     }
 }
