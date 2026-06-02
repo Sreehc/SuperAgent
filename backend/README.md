@@ -17,6 +17,7 @@
 - PostgreSQL/pgvector
 - MinIO
 - Kafka 可选；默认 `KAFKA_ENABLED=false`
+- 本地闭环验证时可额外使用 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true` 与 `EMBEDDING_PROVIDER=local-deterministic`
 
 如需显式切换 Java 21：
 
@@ -54,4 +55,5 @@ curl http://localhost:8080/actuator/health
 ## 已知问题
 
 - 文档自动解析依赖 Kafka；关闭 Kafka 时，上传动作只会创建任务，不会自动消费。
+- 本地若启用 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true`，会同步处理文档；配合 `EMBEDDING_PROVIDER=local-deterministic` 可在无外部模型时完成闭环验证，但不代表生产召回质量。
 - 设置页的模型配置已经可持久化并写审计，但真实模型调用热更新仍受当前客户端装配方式限制。

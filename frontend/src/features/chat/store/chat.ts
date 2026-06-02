@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { createConversation, defaultMemoryStrategy, getConversation, listConversations, listMessages, openMessageStream, stopConversation } from '../api'
 import type { ConversationDetail, ConversationMessage, ConversationSummary, MemoryStrategy, StreamDeltaEvent, StreamDoneEvent, StreamErrorEvent, StreamRecommendationEvent, StreamReferenceEvent, StreamStartEvent, StreamTraceStageEvent } from '../types'
+import { listKnowledgeBases } from '../../knowledge/api'
 
 interface DisplayReference {
   ordinal: number
@@ -51,10 +52,13 @@ export const useChatStore = defineStore('chat', () => {
   const parserOffset = ref(0)
   const parserBuffer = ref('')
   const selectedReference = ref<DisplayReference | null>(null)
+  const availableKnowledgeBases = ref<Array<{ id: number; name: string }>>([])
+  const selectedKnowledgeBaseId = ref<number | null>(null)
 
   const hasMessages = computed(() => messages.value.length > 0)
 
   async function bootstrap(sessionId?: number | null) {
+    await fetchKnowledgeBaseOptions()
     await fetchConversations()
     const preferredSessionId = sessionId ?? selectedSessionId.value
     if (preferredSessionId) {
@@ -83,11 +87,24 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function fetchKnowledgeBaseOptions() {
+    try {
+      const response = await listKnowledgeBases({ pageSize: 100, status: 'published' })
+      availableKnowledgeBases.value = response.data.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+      }))
+    } catch {
+      availableKnowledgeBases.value = []
+    }
+  }
+
   async function createAndSelectConversation(title?: string) {
     creatingConversation.value = true
     try {
       const response = await createConversation({
         title,
+        knowledgeBaseId: selectedKnowledgeBaseId.value,
         memoryStrategy: memoryStrategy.value,
       })
       await fetchConversations()
@@ -110,6 +127,7 @@ export const useChatStore = defineStore('chat', () => {
       ])
       selectedConversation.value = conversationResponse.data
       memoryStrategy.value = conversationResponse.data.memoryStrategy
+      selectedKnowledgeBaseId.value = conversationResponse.data.knowledgeBaseId
       messages.value = messagesResponse.data.items.map((message) => ({
         ...message,
         references: [],
@@ -276,13 +294,17 @@ export const useChatStore = defineStore('chat', () => {
         selectedSessionId.value,
         {
           message: text,
+          knowledgeBaseId: selectedKnowledgeBaseId.value,
           memoryStrategy: memoryStrategy.value,
         },
         consumeSseChunk,
         controller.signal,
       )
       await fetchConversations()
-      await selectConversation(selectedSessionId.value)
+      const conversationResponse = await getConversation(selectedSessionId.value)
+      selectedConversation.value = conversationResponse.data
+      memoryStrategy.value = conversationResponse.data.memoryStrategy
+      selectedKnowledgeBaseId.value = conversationResponse.data.knowledgeBaseId
     } catch (error) {
       const assistantMessage = [...messages.value].reverse().find((message) => message.role === 'assistant')
       if (assistantMessage) {
@@ -322,6 +344,10 @@ export const useChatStore = defineStore('chat', () => {
     streamedResponse.value = ''
   }
 
+  function setSelectedKnowledgeBaseId(value: number | null) {
+    selectedKnowledgeBaseId.value = value
+  }
+
   return {
     conversations,
     selectedSessionId,
@@ -335,13 +361,17 @@ export const useChatStore = defineStore('chat', () => {
     memoryStrategy,
     streamState,
     selectedReference,
+    availableKnowledgeBases,
+    selectedKnowledgeBaseId,
     hasMessages,
     bootstrap,
     fetchConversations,
+    fetchKnowledgeBaseOptions,
     createAndSelectConversation,
     selectConversation,
     sendMessage,
     stopStreaming,
     clearOnRouteLeave,
+    setSelectedKnowledgeBaseId,
   }
 })

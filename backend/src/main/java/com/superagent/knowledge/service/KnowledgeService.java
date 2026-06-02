@@ -42,19 +42,22 @@ public class KnowledgeService {
     private final ObjectStorageService objectStorageService;
     private final SuperAgentProperties properties;
     private final ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider;
+    private final ObjectProvider<DocumentProcessingService> documentProcessingServiceProvider;
 
     public KnowledgeService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
             KnowledgeRepository knowledgeRepository,
             ObjectStorageService objectStorageService,
             SuperAgentProperties properties,
-            ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider
+            ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider,
+            ObjectProvider<DocumentProcessingService> documentProcessingServiceProvider
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.knowledgeRepository = knowledgeRepository;
         this.objectStorageService = objectStorageService;
         this.properties = properties;
         this.documentTaskProducerProvider = documentTaskProducerProvider;
+        this.documentProcessingServiceProvider = documentProcessingServiceProvider;
     }
 
     public KnowledgeBase createKnowledgeBase(String name, String description, KnowledgeBaseVisibility visibility) {
@@ -378,6 +381,13 @@ public class KnowledgeService {
 
     private void publishTaskIfEnabled(DocumentTaskMessage message) {
         if (!Boolean.TRUE.equals(properties.getMessaging().getKafkaEnabled())) {
+            if (Boolean.TRUE.equals(properties.getMessaging().getInlineProcessingWhenKafkaDisabled())) {
+                DocumentProcessingService documentProcessingService = documentProcessingServiceProvider.getIfAvailable();
+                if (documentProcessingService == null) {
+                    throw new AppException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, "Inline document processing is not configured");
+                }
+                documentProcessingService.process(message);
+            }
             return;
         }
         DocumentTaskProducer producer = documentTaskProducerProvider.getIfAvailable();

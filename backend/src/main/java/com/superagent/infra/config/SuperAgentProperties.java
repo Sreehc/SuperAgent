@@ -186,6 +186,9 @@ public class SuperAgentProperties {
         @NotNull
         private Boolean kafkaEnabled;
 
+        @NotNull
+        private Boolean inlineProcessingWhenKafkaDisabled = false;
+
         public String getBootstrapServers() {
             return bootstrapServers;
         }
@@ -208,6 +211,14 @@ public class SuperAgentProperties {
 
         public void setKafkaEnabled(Boolean kafkaEnabled) {
             this.kafkaEnabled = kafkaEnabled;
+        }
+
+        public Boolean getInlineProcessingWhenKafkaDisabled() {
+            return inlineProcessingWhenKafkaDisabled;
+        }
+
+        public void setInlineProcessingWhenKafkaDisabled(Boolean inlineProcessingWhenKafkaDisabled) {
+            this.inlineProcessingWhenKafkaDisabled = inlineProcessingWhenKafkaDisabled;
         }
     }
 

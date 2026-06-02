@@ -66,6 +66,7 @@
               v-for="reference in message.references"
               :key="`${message.id}-${reference.ordinal}`"
               class="reference-chip"
+              data-testid="chat-reference-chip"
               type="button"
               @click="chatStore.selectedReference = reference"
             >
@@ -82,6 +83,23 @@
             <select v-model="chatStore.memoryStrategy">
               <option value="NONE">NONE</option>
               <option value="SLIDING_WINDOW">SLIDING_WINDOW</option>
+            </select>
+          </label>
+          <label>
+            知识库
+            <select
+              :value="chatStore.selectedKnowledgeBaseId ?? ''"
+              data-testid="chat-knowledge-base"
+              @change="updateKnowledgeBase"
+            >
+              <option value="">不指定</option>
+              <option
+                v-for="knowledgeBase in chatStore.availableKnowledgeBases"
+                :key="knowledgeBase.id"
+                :value="knowledgeBase.id"
+              >
+                {{ knowledgeBase.name }}
+              </option>
             </select>
           </label>
         </div>
@@ -254,6 +272,16 @@ function formatTime(value: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function updateKnowledgeBase(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (!value) {
+    chatStore.setSelectedKnowledgeBaseId(null)
+    return
+  }
+  const parsed = Number(value)
+  chatStore.setSelectedKnowledgeBaseId(Number.isInteger(parsed) && parsed > 0 ? parsed : null)
 }
 </script>
 

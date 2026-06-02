@@ -32,10 +32,11 @@ npm run e2e
 ## E2E 说明
 
 - 先手动启动后端 `18080` 和前端 `4173`。
+- 后端本地验证建议加上 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true EMBEDDING_PROVIDER=local-deterministic`，这样上传文档后能直接完成解析、切块和本地 deterministic embedding。
 - Playwright 使用本机已安装的 `Google Chrome`。
-- 当前 E2E 覆盖登录守卫、设置页可见性、文档上传、会话发起和 Trace 查看。
+- 当前 E2E 覆盖登录守卫、文档上传、发起 RAG 对话、停止生成和 Trace 查看，并在桌面/平板宽度下运行。
 
 ## 已知问题
 
-- 对话页还没有直接选择知识库的控件，测试通过后端 API 先创建带知识库的会话。
-- 当后端未消费文档任务时，上传后的文档会停留在 `uploaded` 或 `pending` 状态。
+- 当后端未开启 Kafka 且未启用 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true` 时，上传后的文档会停留在 `uploaded` 或 `pending` 状态。
+- `EMBEDDING_PROVIDER=local-deterministic` 只适合本地联调，不代表真实召回质量。

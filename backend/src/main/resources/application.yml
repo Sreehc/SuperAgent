@@ -69,6 +69,7 @@ super-agent:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     document-task-topic: ${DOCUMENT_TASK_TOPIC:superagent.document.task}
     kafka-enabled: ${KAFKA_ENABLED:false}
+    inline-processing-when-kafka-disabled: ${INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED:false}
   ai:
     openai-compatible-base-url: ${OPENAI_COMPATIBLE_BASE_URL:https://api.example.com/v1}
     api-key: ${OPENAI_API_KEY:local-dev-openai-key}

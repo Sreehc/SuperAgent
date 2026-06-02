@@ -13,4 +13,18 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
+  projects: [
+    {
+      name: 'desktop',
+      use: {
+        viewport: { width: 1440, height: 960 },
+      },
+    },
+    {
+      name: 'tablet',
+      use: {
+        viewport: { width: 820, height: 1180 },
+      },
+    },
+  ],
 })
