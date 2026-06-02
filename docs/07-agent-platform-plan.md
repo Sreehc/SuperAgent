@@ -33,7 +33,7 @@
 | --- | --- | --- | --- |
 | 1 | 基础契约、枚举升级与数据迁移 | 已完成 | `REACT_AGENT`、记忆策略枚举、Agent 相关迁移和基础配置已落地 |
 | 2 | Agent Service 骨架与 SSE 桥接闭环 | 已完成 | `backend -> agent-service` 的最小 SSE 桥接和基础 run 闭环已打通 |
-| 3 | 状态机执行器、步骤级 Checkpoint 与恢复 | 部分完成 | 有基础 checkpoint/resume，但恢复鲁棒性、故障回放和稳定步骤覆盖仍未收口 |
+| 3 | 状态机执行器、步骤级 Checkpoint 与恢复 | 已完成 | 状态机执行器、稳定 checkpoint、结构化失败分支、恢复流程和基础验证已收口 |
 | 4 | 工具协议、插件注册中心与租户级启停 | 部分完成 | 已有最小工具抽象和 manifest 扫描骨架，但插件治理、审计和管理接口未完整 |
 | 5 | 联网工具、HTTP 工具与受控 Python 执行 | 部分完成 | 已有 `knowledge.search`、基础 `web.search/web.fetch`、`http.request`、`python.sandbox` 雏形，但真实 provider、审计和风控未完成 |
 | 6 | 摘要记忆与会话恢复策略 | 部分完成 | 记忆策略和摘要存储已接入，但摘要质量、压缩策略和长会话回归还未收口 |
@@ -272,13 +272,7 @@ Goal 描述：
 
 ## 阶段 3：状态机执行器、步骤级 Checkpoint 与恢复
 
-当前状态：部分完成
-
-剩余项：
-
-- 强制中断后的稳定恢复测试仍需补齐
-- 服务重启后步骤级幂等恢复仍需增强
-- checkpoint 覆盖率和恢复成功率尚未纳入门禁
+当前状态：已完成
 
 参考文档：
 
@@ -316,6 +310,21 @@ Goal 描述：
 - 服务重启后可恢复未完成 run
 - 已完成稳定步骤不会被重复执行
 - 运行上限保护生效
+
+本阶段完成记录：
+
+- `agent-service` 已改为固定状态机推进：`PLAN -> SELECT_TOOL -> EXECUTE_TOOL -> OBSERVE -> DECIDE_NEXT -> COMPLETE/FAILED/CANCELLED`
+- 稳定步骤已持久化到 `agent_run_step` 与 `agent_checkpoint`
+- checkpoint 已覆盖模型决策、工具选择、工具调用开始、工具调用结束、observation 摘要和最终 answer
+- `resume` 已从最近稳定 checkpoint 恢复，并通过步骤号幂等写入避免重复稳定步骤
+- 达到最大模型步数 / 工具调用次数时会提前终止
+- 工具失败进入结构化 observation 分支，不会直接把 run 崩掉
+- `backend` 已补会话恢复集成测试，验证 `/api/v1/conversations/{sessionId}/resume` 可正确转发到 Agent 网关
+
+本阶段验证：
+
+- `cd /Users/cheers/Desktop/workspace/SuperAgent/agent-service && mvn test`
+- `cd /Users/cheers/Desktop/workspace/SuperAgent/backend && ./mvnw -Dtest=ConversationIntegrationTest,ConversationExecutionPlannerTest test`
 
 下一阶段依赖：
 

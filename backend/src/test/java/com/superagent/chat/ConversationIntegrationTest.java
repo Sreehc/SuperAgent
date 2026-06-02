@@ -1,6 +1,9 @@
 package com.superagent.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -11,6 +14,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.agent.service.AgentGatewayClient;
+import com.superagent.chat.domain.ExecutionMode;
 import com.superagent.chat.TestChatModelClientConfiguration;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.service.DocumentProcessingService;
@@ -27,6 +32,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -49,6 +55,9 @@ class ConversationIntegrationTest {
 
     @Autowired
     private DocumentProcessingService documentProcessingService;
+
+    @MockBean
+    private AgentGatewayClient agentGatewayClient;
 
     @BeforeEach
     void cleanTables() {
@@ -249,6 +258,62 @@ class ConversationIntegrationTest {
         assertThat(stopJson.path("data").path("stopped").asBoolean()).isTrue();
 
         assertThat(awaitStreamBody(streamResult, "\"stopped\":true")).contains("event:done");
+    }
+
+    @Test
+    void shouldResumeLatestAgentRunForConversation() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long sessionId = createConversation(token, tenantId, "恢复测试").path("data").path("id").asLong();
+
+        Long userMessageId = jdbcTemplate.queryForObject("""
+                        INSERT INTO conversation_message (tenant_id, session_id, role, content, status, metadata)
+                        VALUES (?, ?, 'user', '请恢复刚才的 Agent 执行', 'success', ?::jsonb)
+                        RETURNING id
+                        """,
+                Long.class,
+                tenantId,
+                sessionId,
+                "{\"userId\":1}"
+        );
+        Long exchangeId = jdbcTemplate.queryForObject("""
+                        INSERT INTO conversation_exchange (
+                            tenant_id, session_id, user_message_id, execution_mode, status, route_reason, started_at
+                        ) VALUES (?, ?, ?, ?, 'running', 'open_ended_or_realtime_request_routed_to_agent', NOW())
+                        RETURNING id
+                        """,
+                Long.class,
+                tenantId,
+                sessionId,
+                userMessageId,
+                ExecutionMode.REACT_AGENT.name()
+        );
+        Long runId = jdbcTemplate.queryForObject("""
+                        INSERT INTO agent_run (
+                            tenant_id, session_id, exchange_id, trigger_message_id, status, memory_strategy, question, route_reason, started_at
+                        ) VALUES (?, ?, ?, ?, 'running', 'SUMMARY_PLUS_WINDOW', '请恢复刚才的 Agent 执行', 'resume_requested', NOW())
+                        RETURNING id
+                        """,
+                Long.class,
+                tenantId,
+                sessionId,
+                exchangeId,
+                userMessageId
+        );
+
+        when(agentGatewayClient.resumeRun(eq(runId))).thenReturn(true);
+
+        JsonNode response = objectMapper.readTree(mockMvc.perform(post("/api/v1/conversations/{sessionId}/resume", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(response.path("data").path("resumed").asBoolean()).isTrue();
+        assertThat(response.path("data").path("runId").asLong()).isEqualTo(runId);
+        verify(agentGatewayClient).resumeRun(eq(runId));
     }
 
     @Test

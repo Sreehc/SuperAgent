@@ -35,6 +35,16 @@ public class TenantRuntimeSettingsService {
         );
     }
 
+    public ExecutionPolicy resolveExecutionPolicy(long tenantId) {
+        Map<String, Object> agent = readSection(tenantId, "agent");
+        return new ExecutionPolicy(
+                getBoolean(agent, "enabled", true),
+                getInt(agent, "maxModelSteps", 6),
+                getInt(agent, "maxToolCalls", 6),
+                getBoolean(agent, "checkpointEnabled", true)
+        );
+    }
+
     private Map<String, Object> readSection(long tenantId, String key) {
         return agentRunRepository.findRuntimeSetting(tenantId, key)
                 .map(row -> row.get("configJson"))
@@ -84,6 +94,14 @@ public class TenantRuntimeSettingsService {
             int toolTimeoutMs,
             String searchProvider,
             List<String> allowedHttpDomains
+    ) {
+    }
+
+    public record ExecutionPolicy(
+            boolean enabled,
+            int maxModelSteps,
+            int maxToolCalls,
+            boolean checkpointEnabled
     ) {
     }
 }

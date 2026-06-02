@@ -18,12 +18,20 @@ public class AgentRunRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public long createRun(long tenantId, long sessionId, long exchangeId, long messageId, String question, String memoryStrategy) {
+    public long createRun(
+            long tenantId,
+            long sessionId,
+            long exchangeId,
+            long messageId,
+            String question,
+            String memoryStrategy,
+            String metadataJson
+    ) {
         Long id = jdbcTemplate.queryForObject("""
                         INSERT INTO agent_run (
-                            tenant_id, session_id, exchange_id, trigger_message_id, question, memory_strategy, status, started_at
+                            tenant_id, session_id, exchange_id, trigger_message_id, question, memory_strategy, status, started_at, metadata
                         ) VALUES (
-                            :tenantId, :sessionId, :exchangeId, :messageId, :question, :memoryStrategy, 'running', NOW()
+                            :tenantId, :sessionId, :exchangeId, :messageId, :question, :memoryStrategy, 'running', NOW(), CAST(:metadataJson AS jsonb)
                         )
                         RETURNING id
                         """,
@@ -33,19 +41,45 @@ public class AgentRunRepository {
                         .addValue("exchangeId", exchangeId)
                         .addValue("messageId", messageId)
                         .addValue("question", question)
-                        .addValue("memoryStrategy", memoryStrategy),
+                        .addValue("memoryStrategy", memoryStrategy)
+                        .addValue("metadataJson", metadataJson),
                 Long.class
         );
         return id == null ? -1L : id;
     }
 
-    public long createStep(long tenantId, long runId, int stepNo, String phase, String status, String decisionSummary) {
+    public long createStep(
+            long tenantId,
+            long runId,
+            int stepNo,
+            String phase,
+            String status,
+            String decisionSummary,
+            String observationSummary,
+            String selectedToolId,
+            String selectedToolReason,
+            String errorMessage,
+            String metadataJson
+    ) {
         Long id = jdbcTemplate.queryForObject("""
                         INSERT INTO agent_run_step (
-                            tenant_id, agent_run_id, step_no, phase, status, decision_summary, started_at, finished_at
+                            tenant_id, agent_run_id, step_no, phase, status, decision_summary, observation_summary,
+                            selected_tool_id, selected_tool_reason, error_message, metadata, started_at, finished_at
                         ) VALUES (
-                            :tenantId, :runId, :stepNo, :phase, :status, :decisionSummary, NOW(), NOW()
+                            :tenantId, :runId, :stepNo, :phase, :status, :decisionSummary, :observationSummary,
+                            :selectedToolId, :selectedToolReason, :errorMessage, CAST(:metadataJson AS jsonb), NOW(), NOW()
                         )
+                        ON CONFLICT (agent_run_id, step_no)
+                        DO UPDATE SET phase = EXCLUDED.phase,
+                                      status = EXCLUDED.status,
+                                      decision_summary = EXCLUDED.decision_summary,
+                                      observation_summary = EXCLUDED.observation_summary,
+                                      selected_tool_id = EXCLUDED.selected_tool_id,
+                                      selected_tool_reason = EXCLUDED.selected_tool_reason,
+                                      error_message = EXCLUDED.error_message,
+                                      metadata = EXCLUDED.metadata,
+                                      finished_at = NOW(),
+                                      updated_at = NOW()
                         RETURNING id
                         """,
                 new MapSqlParameterSource()
@@ -54,7 +88,12 @@ public class AgentRunRepository {
                         .addValue("stepNo", stepNo)
                         .addValue("phase", phase)
                         .addValue("status", status)
-                        .addValue("decisionSummary", decisionSummary),
+                        .addValue("decisionSummary", decisionSummary)
+                        .addValue("observationSummary", observationSummary)
+                        .addValue("selectedToolId", selectedToolId)
+                        .addValue("selectedToolReason", selectedToolReason)
+                        .addValue("errorMessage", errorMessage)
+                        .addValue("metadataJson", metadataJson == null ? "{}" : metadataJson),
                 Long.class
         );
         return id == null ? -1L : id;
@@ -162,14 +201,71 @@ public class AgentRunRepository {
         );
     }
 
-    public Optional<RunStatus> findRun(long runId) {
+    public void markRunRunning(long tenantId, long runId) {
+        jdbcTemplate.update("""
+                        UPDATE agent_run
+                        SET status = 'running',
+                            error_message = NULL,
+                            finished_at = NULL,
+                            started_at = COALESCE(started_at, NOW())
+                        WHERE id = :runId
+                          AND tenant_id = :tenantId
+                        """,
+                Map.of("runId", runId, "tenantId", tenantId)
+        );
+    }
+
+    public Optional<RunRecord> findRun(long runId) {
         return jdbcTemplate.query("""
-                        SELECT id, tenant_id, status, latest_checkpoint_no
+                        SELECT id, tenant_id, session_id, exchange_id, trigger_message_id, question, memory_strategy,
+                               status, latest_checkpoint_no, model_step_count, tool_call_count, metadata::text AS metadata_json, error_message
                         FROM agent_run
                         WHERE id = :runId
                         """,
                 Map.of("runId", runId),
                 rs -> rs.next() ? Optional.of(mapRunStatus(rs)) : Optional.empty()
+        );
+    }
+
+    public Optional<CheckpointRecord> findLatestStableCheckpoint(long tenantId, long runId) {
+        return jdbcTemplate.query("""
+                        SELECT checkpoint_no, step_id, checkpoint_type, stable, payload_json::text AS payload_json, created_at
+                        FROM agent_checkpoint
+                        WHERE tenant_id = :tenantId
+                          AND agent_run_id = :runId
+                          AND stable = TRUE
+                        ORDER BY checkpoint_no DESC, id DESC
+                        LIMIT 1
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("runId", runId),
+                rs -> rs.next() ? Optional.of(new CheckpointRecord(
+                        rs.getInt("checkpoint_no"),
+                        getNullableLong(rs, "step_id"),
+                        rs.getString("checkpoint_type"),
+                        rs.getBoolean("stable"),
+                        rs.getString("payload_json"),
+                        rs.getObject("created_at", OffsetDateTime.class)
+                )) : Optional.empty()
+        );
+    }
+
+    public Optional<Long> findLatestToolCallId(long tenantId, long runId, long stepId) {
+        return jdbcTemplate.query("""
+                        SELECT id
+                        FROM tool_call_trace
+                        WHERE tenant_id = :tenantId
+                          AND agent_run_id = :runId
+                          AND step_id = :stepId
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("runId", runId)
+                        .addValue("stepId", stepId),
+                rs -> rs.next() ? Optional.of(rs.getLong("id")) : Optional.empty()
         );
     }
 
@@ -223,16 +319,49 @@ public class AgentRunRepository {
         );
     }
 
-    private RunStatus mapRunStatus(ResultSet rs) throws java.sql.SQLException {
-        return new RunStatus(
+    private RunRecord mapRunStatus(ResultSet rs) throws java.sql.SQLException {
+        return new RunRecord(
                 rs.getLong("id"),
                 rs.getLong("tenant_id"),
+                rs.getLong("session_id"),
+                getNullableLong(rs, "exchange_id"),
+                getNullableLong(rs, "trigger_message_id"),
+                rs.getString("question"),
+                rs.getString("memory_strategy"),
                 rs.getString("status"),
-                rs.getInt("latest_checkpoint_no")
+                rs.getInt("latest_checkpoint_no"),
+                rs.getInt("model_step_count"),
+                rs.getInt("tool_call_count"),
+                rs.getString("metadata_json"),
+                rs.getString("error_message")
         );
     }
 
-    public record RunStatus(long id, long tenantId, String status, int latestCheckpointNo) {
+    public record RunRecord(
+            long id,
+            long tenantId,
+            long sessionId,
+            Long exchangeId,
+            Long triggerMessageId,
+            String question,
+            String memoryStrategy,
+            String status,
+            int latestCheckpointNo,
+            int modelStepCount,
+            int toolCallCount,
+            String metadataJson,
+            String errorMessage
+    ) {
+    }
+
+    public record CheckpointRecord(
+            int checkpointNo,
+            Long stepId,
+            String checkpointType,
+            boolean stable,
+            String payloadJson,
+            OffsetDateTime createdAt
+    ) {
     }
 
     public record EnabledToolRow(
@@ -243,5 +372,10 @@ public class AgentRunRepository {
             String toolId,
             boolean toolEnabled
     ) {
+    }
+
+    private Long getNullableLong(ResultSet rs, String column) throws java.sql.SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
     }
 }
