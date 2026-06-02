@@ -15,6 +15,14 @@ agent:
   plugin-manifest-root: ${PLUGIN_MANIFEST_ROOT:../plugins}
   sandbox-runner-base-url: ${SANDBOX_RUNNER_BASE_URL:http://localhost:18082}
   backend-base-url: ${BACKEND_BASE_URL:http://localhost:8080}
+  search:
+    provider: ${SEARCH_PROVIDER:tavily}
+    tavily-base-url: ${TAVILY_BASE_URL:https://api.tavily.com}
+    api-key: ${TAVILY_API_KEY:}
+    default-max-results: ${TAVILY_DEFAULT_MAX_RESULTS:5}
+  fetch:
+    max-summary-chars: ${WEB_FETCH_MAX_SUMMARY_CHARS:480}
+    max-body-chars: ${WEB_FETCH_MAX_BODY_CHARS:2400}
   graph:
     enabled: ${GRAPH_ENABLED:false}
     neo4j-uri: ${NEO4J_URI:bolt://localhost:7687}

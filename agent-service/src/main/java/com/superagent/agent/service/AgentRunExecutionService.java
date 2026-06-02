@@ -470,6 +470,7 @@ public class AgentRunExecutionService {
                 run.exchangeId() == null ? 0L : run.exchangeId(),
                 run.triggerMessageId() == null ? 0L : run.triggerMessageId(),
                 longValue(metadata.get("actorUserId"), 0L),
+                stringValue(metadata.get("actorRole"), "MEMBER"),
                 run.question(),
                 longValue(metadata.get("knowledgeBaseId"), null),
                 run.memoryStrategy(),
@@ -591,6 +592,7 @@ public class AgentRunExecutionService {
                     context.tenantId,
                     context.runId,
                     context.currentStepId,
+                    context.request.actorRole(),
                     context.selectedToolId,
                     context.toolInput
             ));
@@ -618,6 +620,7 @@ public class AgentRunExecutionService {
     private Map<String, Object> buildRunMetadata(InternalAgentRunRequest request) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("actorUserId", request.actorUserId());
+        metadata.put("actorRole", stringValue(request.actorRole(), "MEMBER"));
         metadata.put("knowledgeBaseId", request.knowledgeBaseId());
         metadata.put("recentMessages", request.recentMessages());
         return metadata;

@@ -8,6 +8,7 @@ public record InternalAgentRunRequest(
         long exchangeId,
         long triggerMessageId,
         long actorUserId,
+        String actorRole,
         String question,
         Long knowledgeBaseId,
         String memoryStrategy,

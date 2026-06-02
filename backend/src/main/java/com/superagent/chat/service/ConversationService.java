@@ -337,6 +337,7 @@ public class ConversationService {
                 exchangeId,
                 userMessage.id(),
                 principal.userId(),
+                principal.currentRole().name(),
                 question,
                 knowledgeBaseId,
                 memoryStrategy,

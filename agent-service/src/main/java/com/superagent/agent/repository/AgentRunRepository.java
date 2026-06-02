@@ -2,6 +2,7 @@ package com.superagent.agent.repository;
 
 import java.sql.ResultSet;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -319,6 +320,46 @@ public class AgentRunRepository {
         );
     }
 
+    public Optional<TenantToolBindingRow> findToolBinding(long tenantId, String toolId) {
+        return jdbcTemplate.query("""
+                        SELECT plugin_id, enabled, risk_level, config_json::text AS config_json
+                        FROM tenant_tool_binding
+                        WHERE tenant_id = :tenantId
+                          AND tool_id = :toolId
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("toolId", toolId),
+                rs -> rs.next() ? Optional.of(new TenantToolBindingRow(
+                        getNullableLong(rs, "plugin_id"),
+                        rs.getBoolean("enabled"),
+                        rs.getString("risk_level"),
+                        rs.getString("config_json")
+                )) : Optional.empty()
+        );
+    }
+
+    public Map<String, String> findToolSecrets(long tenantId, String toolId) {
+        return jdbcTemplate.query("""
+                        SELECT secret_key, secret_value
+                        FROM tenant_tool_secret
+                        WHERE tenant_id = :tenantId
+                          AND tool_id = :toolId
+                        ORDER BY secret_key ASC
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("toolId", toolId),
+                rs -> {
+                    Map<String, String> secrets = new LinkedHashMap<>();
+                    while (rs.next()) {
+                        secrets.put(rs.getString("secret_key"), rs.getString("secret_value"));
+                    }
+                    return secrets;
+                }
+        );
+    }
+
     private RunRecord mapRunStatus(ResultSet rs) throws java.sql.SQLException {
         return new RunRecord(
                 rs.getLong("id"),
@@ -371,6 +412,14 @@ public class AgentRunRepository {
             boolean pluginEnabled,
             String toolId,
             boolean toolEnabled
+    ) {
+    }
+
+    public record TenantToolBindingRow(
+            Long pluginId,
+            boolean enabled,
+            String riskLevel,
+            String configJson
     ) {
     }
 

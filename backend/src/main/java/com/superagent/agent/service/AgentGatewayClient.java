@@ -146,6 +146,7 @@ public class AgentGatewayClient {
             long exchangeId,
             long triggerMessageId,
             long actorUserId,
+            String actorRole,
             String question,
             Long knowledgeBaseId,
             MemoryStrategy memoryStrategy,
