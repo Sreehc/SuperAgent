@@ -89,13 +89,16 @@ public class RagOrchestrationService {
         List<RagEvidence> reranked = filtered;
         RagResponseDiagnostics.RerankStep rerankStep;
         if (rootQuery.rerankEnabled()) {
-            reranked = rerankClient.rerank(rewrittenQuestion, filtered);
+            RerankClient.RerankResult rerankResult = rerankClient.rerank(rewrittenQuestion, filtered);
+            reranked = rerankResult.status().equals("success") ? rerankResult.evidences() : filtered;
             rerankStep = new RagResponseDiagnostics.RerankStep(
                     true,
-                    "configured",
-                    "configured",
-                    "success",
-                    null,
+                    rerankResult.provider(),
+                    rerankResult.model(),
+                    rerankResult.status(),
+                    rerankResult.skippedReason(),
+                    rerankResult.errorMessage(),
+                    rerankResult.latencyMs(),
                     filtered.size(),
                     reranked.size()
             );
@@ -106,6 +109,8 @@ public class RagOrchestrationService {
                     null,
                     "skipped",
                     "disabled_by_config",
+                    null,
+                    null,
                     filtered.size(),
                     filtered.size()
             );
@@ -148,7 +153,10 @@ public class RagOrchestrationService {
     }
 
     private String summarizeModelOutput(RagAnswer answer) {
-        return "answer_chars=" + answer.fullText().length() + ", recommendations=" + answer.recommendations().size();
+        return "provider=" + answer.provider()
+                + ", model=" + answer.model()
+                + ", answer_chars=" + answer.fullText().length()
+                + ", recommendations=" + answer.recommendations().size();
     }
 
     private String abbreviate(String value, int maxLength) {

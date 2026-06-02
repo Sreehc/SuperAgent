@@ -16,6 +16,7 @@ public record KnowledgeDocument(
         KnowledgeDocumentStatus status,
         int chunkCount,
         String errorMessage,
+        String parsedText,
         String category,
         List<String> tags,
         long createdBy,

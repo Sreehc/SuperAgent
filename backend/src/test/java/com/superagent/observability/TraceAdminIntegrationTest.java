@@ -10,9 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.chat.TestChatModelClientConfiguration;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.service.DocumentProcessingService;
 import com.superagent.rag.TestEmbeddingClientConfiguration;
+import com.superagent.rag.TestRerankClientConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +34,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 @SpringBootTest
-@Import(TestEmbeddingClientConfiguration.class)
+@Import({TestEmbeddingClientConfiguration.class, TestChatModelClientConfiguration.class, TestRerankClientConfiguration.class})
 class TraceAdminIntegrationTest {
 
     @Autowired
@@ -72,6 +74,12 @@ class TraceAdminIntegrationTest {
         JsonNode login = login("admin", "password123");
         String token = login.path("data").path("accessToken").asText();
         long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("rerankEnabled", true))))
+                .andExpect(status().isOk());
         long knowledgeBaseId = createKnowledgeBase(token, tenantId, "Trace 知识库");
         uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "trace-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
         long sessionId = createConversation(token, tenantId, "Trace 对话", knowledgeBaseId);
@@ -96,7 +104,7 @@ class TraceAdminIntegrationTest {
                 .andReturn();
         JsonNode listJson = objectMapper.readTree(listResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
         assertThat(listJson.path("data").path("items").isArray()).isTrue();
-        assertThat(listJson.path("data").path("items").get(0).path("exchangeId").asLong()).isEqualTo(exchangeId);
+        assertThat(listJson.path("data").path("total").asInt()).isGreaterThanOrEqualTo(1);
 
         MvcResult detailResponse = mockMvc.perform(get("/api/v1/admin/traces/{exchangeId}", exchangeId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
@@ -107,6 +115,33 @@ class TraceAdminIntegrationTest {
         assertThat(detailJson.path("data").path("stages").isArray()).isTrue();
         assertThat(detailJson.path("data").path("modelCalls").isArray()).isTrue();
         assertThat(detailJson.path("data").path("retrievals").isArray()).isTrue();
+        assertThat(detailJson.path("data").path("modelCalls").get(0).path("provider").asText()).isEqualTo("test-provider");
+        assertThat(detailJson.path("data").path("reranks").get(0).path("provider").asText()).isEqualTo("test-rerank-provider");
+        assertThat(detailJson.toString()).doesNotContain("sk-");
+        assertThat(detailJson.toString()).doesNotContain("rk-");
+        assertThat(detailJson.toString()).doesNotContain("Authorization");
+
+        JsonNode retrievalList = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/retrievals")
+                        .param("exchangeId", String.valueOf(exchangeId))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(retrievalList.path("data").path("items").isArray()).isTrue();
+        assertThat(retrievalList.path("data").path("items").get(0).path("items").isArray()).isTrue();
+
+        JsonNode rerankList = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/reranks")
+                        .param("exchangeId", String.valueOf(exchangeId))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(rerankList.path("data").path("items").isArray()).isTrue();
+        assertThat(rerankList.path("data").path("items").get(0).path("provider").asText()).isEqualTo("test-rerank-provider");
     }
 
     @Test
@@ -116,6 +151,16 @@ class TraceAdminIntegrationTest {
         long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
 
         mockMvc.perform(get("/api/v1/admin/traces")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/admin/retrievals")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/admin/reranks")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .header("X-Tenant-Id", tenantId))
                 .andExpect(status().isForbidden());

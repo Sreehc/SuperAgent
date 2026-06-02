@@ -3,6 +3,12 @@ import { readFile } from 'node:fs/promises'
 
 const backendBaseUrl = 'http://127.0.0.1:18080/api/v1'
 
+test.beforeEach(async ({ page }, testInfo) => {
+  const viewport = page.viewportSize()
+  expect(testInfo.project.name).toMatch(/desktop|tablet/)
+  expect(viewport?.width ?? 0).toBeGreaterThanOrEqual(820)
+})
+
 test('E2E-001 登录和路由守卫', async ({ page }) => {
   await page.goto('/chat')
   await expect(page).toHaveURL(/\/login$/)
@@ -68,6 +74,70 @@ test('E2E-004 查看 Trace', async ({ page, request }) => {
   await expect(page.getByText('模型调用')).toBeVisible()
 })
 
+test('E2E-005 文档详情展示解析文本和任务日志', async ({ page, request }) => {
+  const admin = await loginByApi(request, 'admin', 'password123')
+  const prepared = await prepareReadyKnowledgeBaseWithDocument(request, admin, `文档详情验证库 ${Date.now()}`)
+
+  await loginByUi(page, 'admin', 'password123')
+  await page.goto(`/knowledge/${prepared.knowledgeBaseId}`)
+  const documentRow = page.locator('[data-testid^="document-row-"]').first()
+  await expect(documentRow).toContainText('退款说明')
+  const rowTestId = await documentRow.getAttribute('data-testid')
+  const documentId = Number(rowTestId?.replace('document-row-', ''))
+  await documentRow.click()
+  await expect(page).toHaveURL(new RegExp(`/documents/${documentId}$`))
+  await expect(page.getByText('解析文本')).toBeVisible()
+  await expect(page.getByText('任务日志')).toBeVisible()
+  await expect(page.locator('.parsed-text')).toContainText('退款申请需要在 7 日内提交')
+  await expect(page.getByText('parse · success')).toBeVisible()
+  await expect(page.getByRole('button', { name: '重处理' })).toBeVisible()
+})
+
+test('E2E-006 引用来源侧栏可打开并跳转文档详情', async ({ page, request }) => {
+  const admin = await loginByApi(request, 'admin', 'password123')
+  const prepared = await prepareReadyKnowledgeBaseWithDocument(request, admin, `引用来源验证库 ${Date.now()}`)
+
+  await loginByUi(page, 'admin', 'password123')
+  await page.goto('/chat')
+  await page.getByTestId('chat-new-conversation').click()
+  await page.getByTestId('chat-knowledge-base').selectOption(`${prepared.knowledgeBaseId}`)
+  await page.getByTestId('chat-composer').fill('退款规则是什么？')
+  await page.getByTestId('chat-send').click()
+  await expect(page.getByTestId('chat-stop')).toBeVisible()
+  await expect(page.getByTestId('chat-stop')).toBeHidden({ timeout: 15000 })
+
+  const referenceChip = page.getByTestId('chat-reference-chip').first()
+  await expect(referenceChip).toBeVisible({ timeout: 15000 })
+  await referenceChip.click()
+  const referencePanel = page.locator('.reference-panel')
+  await expect(referencePanel.getByText('引用来源')).toBeVisible()
+  await expect(referencePanel.getByRole('heading', { name: '退款说明' })).toBeVisible()
+  await referencePanel.getByRole('button', { name: '查看文档' }).click()
+  await expect(page).toHaveURL(/\/documents\/\d+$/)
+  await expect(page.getByText('解析文本')).toBeVisible()
+})
+
+test('E2E-007 设置页支持字段级校验和保存', async ({ page }) => {
+  await loginByUi(page, 'admin', 'password123')
+  await page.goto('/settings')
+
+  await page.getByRole('button', { name: 'RAG' }).click()
+  await page.getByTestId('settings-rag-vector-top-k').fill('0')
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByTestId('settings-save-rag').click()
+  await expect(page.getByTestId('settings-error-vector-top-k')).toBeVisible()
+
+  await page.getByTestId('settings-rag-vector-top-k').fill('12')
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByTestId('settings-save-rag').click()
+  await expect(page.getByText('RAG 设置已保存。')).toBeVisible()
+
+  await page.getByRole('button', { name: '模型' }).click()
+  const apiKeyInput = page.getByTestId('settings-model-api-key')
+  await expect(apiKeyInput).toHaveValue('')
+  await expect(page.getByText('API Key 已设置')).toBeVisible()
+})
+
 async function loginByUi(page: Page, username: string, password: string) {
   await page.goto('/login')
   await page.getByTestId('login-username').fill(username)
@@ -122,6 +192,15 @@ async function prepareReadyKnowledgeBase(
   admin: { accessToken: string; tenantId: number },
   name: string,
 ) {
+  const prepared = await prepareReadyKnowledgeBaseWithDocument(request, admin, name)
+  return prepared.knowledgeBaseId
+}
+
+async function prepareReadyKnowledgeBaseWithDocument(
+  request: APIRequestContext,
+  admin: { accessToken: string; tenantId: number },
+  name: string,
+) {
   const knowledgeBaseId = await createPublishedKnowledgeBase(request, admin, name)
   const content = await readFile(new URL('./fixtures/refund-guide.txt', import.meta.url))
 
@@ -138,17 +217,23 @@ async function prepareReadyKnowledgeBase(
   })
   expect(uploadResponse.ok()).toBeTruthy()
 
+  const uploadJson = await uploadResponse.json()
+  const documentId = uploadJson.data.id as number
+
   await expect
     .poll(async () => {
       const response = await request.get(`${backendBaseUrl}/knowledge-bases/${knowledgeBaseId}/documents`, {
         headers: authHeaders(admin),
       })
       const json = await response.json()
-      return json.data.items[0]?.status ?? 'missing'
+      return json.data?.items?.find((item: { title: string; status: string }) => item.title === '退款说明')?.status ?? 'missing'
     }, { timeout: 15000 })
     .toBe('ready')
 
-  return knowledgeBaseId
+  return {
+    knowledgeBaseId,
+    documentId,
+  }
 }
 
 function authHeaders(admin: { accessToken: string; tenantId: number }) {

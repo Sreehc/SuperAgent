@@ -11,22 +11,42 @@
         </button>
       </div>
 
+      <input
+        v-model="chatStore.keyword"
+        class="chat-workspace__search"
+        type="search"
+        placeholder="搜索会话..."
+      />
+
       <div v-if="chatStore.loadingConversations" class="muted-card">正在加载会话列表...</div>
-      <div v-else-if="chatStore.conversations.length === 0" class="muted-card">
+      <div v-else-if="chatStore.filteredConversations.length === 0" class="muted-card">
         暂无会话，先创建一个对话开始提问。
       </div>
       <nav v-else class="conversation-list" aria-label="会话列表">
-        <button
-          v-for="conversation in chatStore.conversations"
+        <div
+          v-for="conversation in chatStore.filteredConversations"
           :key="conversation.id"
           class="conversation-list__item"
           :class="{ 'conversation-list__item--active': chatStore.selectedSessionId === conversation.id }"
-          type="button"
-          @click="selectConversation(conversation.id)"
         >
-          <strong>{{ conversation.title }}</strong>
-          <small>{{ formatTime(conversation.lastMessageAt) }}</small>
-        </button>
+          <button type="button" class="conversation-list__main" @click="selectConversation(conversation.id)">
+            <strong v-if="chatStore.editingConversationId !== conversation.id">{{ conversation.title }}</strong>
+            <input
+              v-else
+              :value="conversation.title"
+              class="conversation-list__rename"
+              type="text"
+              @keyup.enter="renameConversation(conversation.id, ($event.target as HTMLInputElement).value)"
+              @blur="renameConversation(conversation.id, ($event.target as HTMLInputElement).value)"
+            />
+            <small>{{ formatTime(conversation.lastMessageAt) }}</small>
+          </button>
+          <div class="conversation-list__actions">
+            <button class="table-link" type="button" @click="chatStore.editingConversationId = conversation.id">重命名</button>
+            <button class="table-link" type="button" @click="archiveConversation(conversation.id)">归档</button>
+            <button class="table-link table-link--danger" type="button" @click="removeConversation(conversation.id)">删除</button>
+          </div>
+        </div>
       </nav>
     </aside>
 
@@ -58,7 +78,7 @@
             <strong>{{ roleLabel(message.role) }}</strong>
             <span>{{ formatTime(message.createdAt) }}</span>
           </header>
-          <p class="message-card__content">{{ message.content || '...' }}</p>
+          <div class="message-card__content markdown-body" v-html="renderMessage(message.content || '...')" />
           <p v-if="message.status === 'stopped'" class="message-card__status">已停止生成</p>
           <p v-if="message.status === 'error'" class="message-card__status message-card__status--error">生成失败</p>
           <div v-if="message.references.length" class="message-card__references">
@@ -72,6 +92,12 @@
             >
               [{{ reference.ordinal }}] {{ reference.title }}
             </button>
+          </div>
+          <div
+            v-if="isAdmin && message.role === 'assistant' && chatStore.streamState.exchangeId"
+            class="message-card__references"
+          >
+            <button class="reference-chip" type="button" @click="openTrace(chatStore.streamState.exchangeId)">查看 Trace</button>
           </div>
         </article>
       </div>
@@ -159,6 +185,17 @@
           <h3>{{ chatStore.selectedReference.title }}</h3>
           <p>{{ chatStore.selectedReference.quote }}</p>
           <small>chunk #{{ chatStore.selectedReference.chunkId }} · score {{ chatStore.selectedReference.score ?? '-' }}</small>
+          <div class="reference-panel__actions">
+            <button class="ghost-button" type="button" @click="openDocument(chatStore.selectedReference.documentId)">查看文档</button>
+            <button
+              v-if="isAdmin && chatStore.streamState.exchangeId"
+              class="ghost-button"
+              type="button"
+              @click="openTrace(chatStore.streamState.exchangeId)"
+            >
+              查看 Trace
+            </button>
+          </div>
         </template>
         <template v-else>
           <h3>等待引用来源</h3>
@@ -170,14 +207,18 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '../../auth/store/auth'
 import { useChatStore } from '../store/chat'
 import type { MessageRole } from '../types'
+import { renderMarkdown } from '../utils/renderMarkdown'
 
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
+const authStore = useAuthStore()
+const isAdmin = computed(() => ['OWNER', 'ADMIN'].includes(authStore.currentRole ?? ''))
 
 onMounted(async () => {
   await chatStore.bootstrap(readSessionId())
@@ -224,6 +265,23 @@ async function sendMessage() {
   } catch {
     // Error text is already normalized into the store.
   }
+}
+
+async function renameConversation(sessionId: number, title: string) {
+  await chatStore.renameConversation(sessionId, title)
+}
+
+async function archiveConversation(sessionId: number) {
+  await chatStore.archiveConversation(sessionId)
+  await syncRouteWithStore()
+}
+
+async function removeConversation(sessionId: number) {
+  if (!window.confirm('删除后无法恢复，确认继续吗？')) {
+    return
+  }
+  await chatStore.removeConversation(sessionId)
+  await syncRouteWithStore()
 }
 
 function normalizeSessionId(value: unknown) {
@@ -283,6 +341,18 @@ function updateKnowledgeBase(event: Event) {
   const parsed = Number(value)
   chatStore.setSelectedKnowledgeBaseId(Number.isInteger(parsed) && parsed > 0 ? parsed : null)
 }
+
+function renderMessage(content: string) {
+  return renderMarkdown(content)
+}
+
+async function openDocument(documentId: number) {
+  await router.push(`/documents/${documentId}`)
+}
+
+async function openTrace(exchangeId: number) {
+  await router.push(`/traces/${exchangeId}`)
+}
 </script>
 
 <style scoped>
@@ -313,6 +383,15 @@ function updateKnowledgeBase(event: Event) {
 
 .chat-workspace__sidebar {
   padding: 1rem;
+}
+
+.chat-workspace__search,
+.conversation-list__rename {
+  width: 100%;
+  padding: 0.78rem 0.92rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.84);
 }
 
 .chat-workspace__sidebar-header,
@@ -354,7 +433,7 @@ function updateKnowledgeBase(event: Event) {
 
 .conversation-list__item {
   display: grid;
-  gap: 0.2rem;
+  gap: 0.7rem;
   padding: 0.9rem 1rem;
   text-align: left;
   border: 1px solid var(--line-soft);
@@ -365,6 +444,26 @@ function updateKnowledgeBase(event: Event) {
 .conversation-list__item--active {
   border-color: rgba(199, 109, 63, 0.45);
   background: rgba(199, 109, 63, 0.1);
+}
+
+.conversation-list__main,
+.conversation-list__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.conversation-list__main {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.conversation-list__actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
 .chat-workspace__timeline {
@@ -413,7 +512,21 @@ function updateKnowledgeBase(event: Event) {
 
 .message-card__content {
   margin: 0.6rem 0 0;
-  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+.markdown-body :deep(p) {
+  margin: 0 0 0.65rem;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 0.45rem 0 0.65rem;
+  padding-left: 1.25rem;
 }
 
 .message-card__status {
@@ -436,6 +549,7 @@ function updateKnowledgeBase(event: Event) {
 
 .reference-chip,
 .recommendation-chip,
+.table-link,
 .ghost-button,
 .pill-button {
   border-radius: 999px;
@@ -452,6 +566,14 @@ function updateKnowledgeBase(event: Event) {
 
 .ghost-button {
   background: rgba(27, 47, 61, 0.08);
+}
+
+.table-link {
+  padding: 0.45rem 0.8rem;
+}
+
+.table-link--danger {
+  color: var(--danger);
 }
 
 .composer-card {
@@ -486,6 +608,13 @@ function updateKnowledgeBase(event: Event) {
 
 .reference-panel small {
   color: var(--text-secondary);
+}
+
+.reference-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 @media (max-width: 1180px) {

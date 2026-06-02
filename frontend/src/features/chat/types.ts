@@ -42,6 +42,19 @@ export interface CreateConversationRequest {
   memoryStrategy?: MemoryStrategy
 }
 
+export interface UpdateConversationRequest {
+  title?: string
+  knowledgeBaseId?: number | null
+  memoryStrategy?: MemoryStrategy
+  status?: ConversationStatus
+}
+
+export interface ConversationPatchResponse {
+  id: number
+  title: string
+  status: ConversationStatus
+}
+
 export interface StreamMessageRequest {
   message: string
   knowledgeBaseId?: number | null

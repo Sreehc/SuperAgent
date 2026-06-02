@@ -11,10 +11,26 @@
         </div>
       </div>
       <div v-if="isAdmin" class="header-actions">
+        <button class="ghost-button" type="button" @click="editing = !editing">{{ editing ? '取消编辑' : '编辑' }}</button>
         <button class="ghost-button" type="button" @click="knowledgeStore.publishKnowledgeBase">发布</button>
         <button class="ghost-button" type="button" @click="knowledgeStore.archiveKnowledgeBase">归档</button>
+        <button class="ghost-button danger-button" type="button" @click="removeKnowledgeBase">删除</button>
       </div>
     </header>
+
+    <section v-if="isAdmin && editing && knowledgeStore.selectedKnowledgeBase" class="card-shell edit-form">
+      <div>
+        <h3>编辑知识库</h3>
+        <p>更新名称和描述，不影响当前文档列表。</p>
+      </div>
+      <form class="upload-form__grid" @submit.prevent="saveKnowledgeBase">
+        <input v-model="editName" type="text" placeholder="知识库名称" />
+        <input v-model="editDescription" class="field-span-4" type="text" placeholder="知识库描述" />
+        <button class="pill-button" type="submit" :disabled="knowledgeStore.savingKnowledgeBase || !editName.trim()">
+          {{ knowledgeStore.savingKnowledgeBase ? '保存中...' : '保存修改' }}
+        </button>
+      </form>
+    </section>
 
     <section v-if="isAdmin" class="card-shell upload-form">
       <div>
@@ -104,6 +120,9 @@ const selectedFile = ref<File | null>(null)
 const uploadTitle = ref('')
 const uploadCategory = ref('')
 const uploadTags = ref('')
+const editing = ref(false)
+const editName = ref('')
+const editDescription = ref('')
 
 const isAdmin = computed(() => ['OWNER', 'ADMIN'].includes(authStore.currentRole ?? ''))
 
@@ -124,6 +143,8 @@ async function loadCurrentKnowledgeBase() {
     return
   }
   await knowledgeStore.selectKnowledgeBase(knowledgeBaseId)
+  editName.value = knowledgeStore.selectedKnowledgeBase?.name ?? ''
+  editDescription.value = knowledgeStore.selectedKnowledgeBase?.description ?? ''
 }
 
 function onFileChange(event: Event) {
@@ -152,6 +173,24 @@ async function submitUpload() {
 
 async function openDocument(documentId: number) {
   await router.push(`/documents/${documentId}`)
+}
+
+async function saveKnowledgeBase() {
+  await knowledgeStore.saveKnowledgeBase({
+    name: editName.value.trim(),
+    description: editDescription.value.trim() || undefined,
+  })
+  editing.value = false
+}
+
+async function removeKnowledgeBase() {
+  if (!window.confirm('删除知识库后无法恢复，确认继续吗？')) {
+    return
+  }
+  const deleted = await knowledgeStore.removeKnowledgeBase()
+  if (deleted) {
+    await router.push('/knowledge')
+  }
 }
 
 function formatTime(value: string) {
@@ -217,6 +256,10 @@ function formatFileSize(value: number) {
   margin-top: 0.8rem;
 }
 
+.field-span-4 {
+  grid-column: span 4;
+}
+
 .filters input,
 .filters select,
 .upload-form__grid input {
@@ -267,6 +310,10 @@ function formatFileSize(value: number) {
   padding: 0.75rem 1rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.78);
+}
+
+.danger-button {
+  color: var(--danger);
 }
 
 .pill-button {

@@ -4,6 +4,7 @@ import {
   getModelSettings,
   getRagSettings,
   getRerankSettings,
+  SettingsValidationError,
   updateModelSettings,
   updateRagSettings,
   updateRerankSettings,
@@ -16,6 +17,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const savingTab = ref<SettingsTab | null>(null)
   const errorMessage = ref('')
   const successMessage = ref('')
+  const fieldErrors = reactive<Record<string, string>>({})
 
   const modelForm = reactive({
     provider: 'openai-compatible',
@@ -53,6 +55,7 @@ export const useSettingsStore = defineStore('settings', () => {
     loading.value = true
     errorMessage.value = ''
     successMessage.value = ''
+    clearFieldErrors()
     try {
       const [modelResponse, ragResponse, rerankResponse] = await Promise.all([
         getModelSettings(),
@@ -91,6 +94,7 @@ export const useSettingsStore = defineStore('settings', () => {
     savingTab.value = 'model'
     errorMessage.value = ''
     successMessage.value = ''
+    clearFieldErrors()
     try {
       const response = await updateModelSettings({
         baseUrl: modelForm.baseUrl,
@@ -101,7 +105,11 @@ export const useSettingsStore = defineStore('settings', () => {
       modelForm.apiKey = ''
       modelForm.apiKeySet = response.data.apiKeySet
       successMessage.value = '模型设置已保存。'
-    } catch {
+    } catch (error) {
+      if (applyValidationError(error)) {
+        errorMessage.value = '模型设置校验失败，请修正高亮字段。'
+        throw error
+      }
       errorMessage.value = '模型设置保存失败，请检查输入后重试。'
       throw new Error(errorMessage.value)
     } finally {
@@ -113,10 +121,15 @@ export const useSettingsStore = defineStore('settings', () => {
     savingTab.value = 'rag'
     errorMessage.value = ''
     successMessage.value = ''
+    clearFieldErrors()
     try {
       await updateRagSettings({ ...ragForm })
       successMessage.value = 'RAG 设置已保存。'
-    } catch {
+    } catch (error) {
+      if (applyValidationError(error)) {
+        errorMessage.value = 'RAG 设置校验失败，请修正高亮字段。'
+        throw error
+      }
       errorMessage.value = 'RAG 设置保存失败，请稍后重试。'
       throw new Error(errorMessage.value)
     } finally {
@@ -128,6 +141,7 @@ export const useSettingsStore = defineStore('settings', () => {
     savingTab.value = 'rerank'
     errorMessage.value = ''
     successMessage.value = ''
+    clearFieldErrors()
     try {
       const response = await updateRerankSettings({
         enabled: rerankForm.enabled,
@@ -139,7 +153,11 @@ export const useSettingsStore = defineStore('settings', () => {
       rerankForm.apiKey = ''
       rerankForm.apiKeySet = response.data.apiKeySet
       successMessage.value = 'Rerank 设置已保存。'
-    } catch {
+    } catch (error) {
+      if (applyValidationError(error)) {
+        errorMessage.value = 'Rerank 设置校验失败，请修正高亮字段。'
+        throw error
+      }
       errorMessage.value = 'Rerank 设置保存失败，请稍后重试。'
       throw new Error(errorMessage.value)
     } finally {
@@ -147,11 +165,31 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function clearFieldErrors() {
+    Object.keys(fieldErrors).forEach((key) => {
+      delete fieldErrors[key]
+    })
+  }
+
+  function applyValidationError(error: unknown) {
+    if (!(error instanceof SettingsValidationError)) {
+      return false
+    }
+    for (const item of error.fieldErrors) {
+      const key = item.field ?? item.parameter
+      if (key) {
+        fieldErrors[key] = item.message
+      }
+    }
+    return Object.keys(fieldErrors).length > 0
+  }
+
   return {
     loading,
     savingTab,
     errorMessage,
     successMessage,
+    fieldErrors,
     modelForm,
     ragForm,
     rerankForm,

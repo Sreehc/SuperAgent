@@ -1,8 +1,33 @@
 import { apiGet, apiPost, http } from '../../api/http'
-import type { ConversationDetail, ConversationMessage, ConversationSummary, CreateConversationRequest, MemoryStrategy, PagedResult, StreamMessageRequest } from './types'
+import type {
+  ConversationDetail,
+  ConversationMessage,
+  ConversationPatchResponse,
+  ConversationSummary,
+  CreateConversationRequest,
+  MemoryStrategy,
+  PagedResult,
+  StreamMessageRequest,
+  UpdateConversationRequest,
+} from './types'
 
-export function listConversations() {
-  return apiGet<PagedResult<ConversationSummary>>('/conversations')
+function buildQuery(params?: Record<string, string | number | undefined>) {
+  if (!params) {
+    return ''
+  }
+
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && `${value}`.trim() !== '') {
+      query.set(key, `${value}`)
+    }
+  })
+  const serialized = query.toString()
+  return serialized ? `?${serialized}` : ''
+}
+
+export function listConversations(params?: Record<string, string | number | undefined>) {
+  return apiGet<PagedResult<ConversationSummary>>(`/conversations${buildQuery(params)}`)
 }
 
 export function createConversation(payload: CreateConversationRequest) {
@@ -11,6 +36,19 @@ export function createConversation(payload: CreateConversationRequest) {
 
 export function getConversation(sessionId: number) {
   return apiGet<ConversationDetail>(`/conversations/${sessionId}`)
+}
+
+export function updateConversation(sessionId: number, payload: UpdateConversationRequest) {
+  return http.patch<{ success: boolean; code: string; message: string; data: ConversationPatchResponse; traceId: string }>(
+    `/conversations/${sessionId}`,
+    payload,
+  )
+}
+
+export function deleteConversation(sessionId: number) {
+  return http.delete<{ success: boolean; code: string; message: string; data: { deleted: boolean }; traceId: string }>(
+    `/conversations/${sessionId}`,
+  )
 }
 
 export function listMessages(sessionId: number) {

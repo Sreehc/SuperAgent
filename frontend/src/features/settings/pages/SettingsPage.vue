@@ -43,15 +43,33 @@
         </label>
         <label class="field">
           <span>Base URL</span>
-          <input v-model="settingsStore.modelForm.baseUrl" data-testid="settings-model-base-url" :disabled="!isOwner" />
+          <input
+            v-model="settingsStore.modelForm.baseUrl"
+            data-testid="settings-model-base-url"
+            :disabled="!isOwner"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.baseUrl)"
+          />
+          <small v-if="settingsStore.fieldErrors.baseUrl" class="field-error" data-testid="settings-error-base-url">{{ settingsStore.fieldErrors.baseUrl }}</small>
         </label>
         <label class="field">
           <span>Chat Model</span>
-          <input v-model="settingsStore.modelForm.chatModel" data-testid="settings-model-chat-model" :disabled="!isOwner" />
+          <input
+            v-model="settingsStore.modelForm.chatModel"
+            data-testid="settings-model-chat-model"
+            :disabled="!isOwner"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.chatModel)"
+          />
+          <small v-if="settingsStore.fieldErrors.chatModel" class="field-error">{{ settingsStore.fieldErrors.chatModel }}</small>
         </label>
         <label class="field">
           <span>Embedding Model</span>
-          <input v-model="settingsStore.modelForm.embeddingModel" :disabled="!isOwner" />
+          <input
+            v-model="settingsStore.modelForm.embeddingModel"
+            data-testid="settings-model-embedding-model"
+            :disabled="!isOwner"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.embeddingModel)"
+          />
+          <small v-if="settingsStore.fieldErrors.embeddingModel" class="field-error">{{ settingsStore.fieldErrors.embeddingModel }}</small>
         </label>
         <label class="field field--full">
           <span>API Key</span>
@@ -61,7 +79,9 @@
             placeholder="留空表示保持现状"
             data-testid="settings-model-api-key"
             :disabled="!isOwner"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.apiKey)"
           />
+          <small v-if="settingsStore.fieldErrors.apiKey" class="field-error">{{ settingsStore.fieldErrors.apiKey }}</small>
         </label>
       </div>
 
@@ -102,35 +122,86 @@
         </label>
         <label class="field">
           <span>Max Sub Questions</span>
-          <input v-model.number="settingsStore.ragForm.maxSubQuestions" type="number" min="1" />
+          <input
+            v-model.number="settingsStore.ragForm.maxSubQuestions"
+            data-testid="settings-rag-max-sub-questions"
+            type="number"
+            min="1"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.maxSubQuestions)"
+          />
+          <small v-if="settingsStore.fieldErrors.maxSubQuestions" class="field-error">{{ settingsStore.fieldErrors.maxSubQuestions }}</small>
         </label>
         <label class="field">
           <span>Vector Top K</span>
-          <input v-model.number="settingsStore.ragForm.vectorTopK" type="number" min="1" data-testid="settings-rag-vector-top-k" />
+          <input
+            v-model.number="settingsStore.ragForm.vectorTopK"
+            type="number"
+            min="1"
+            data-testid="settings-rag-vector-top-k"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.vectorTopK)"
+          />
+          <small v-if="settingsStore.fieldErrors.vectorTopK" class="field-error" data-testid="settings-error-vector-top-k">{{ settingsStore.fieldErrors.vectorTopK }}</small>
         </label>
         <label class="field">
           <span>Keyword Top K</span>
-          <input v-model.number="settingsStore.ragForm.keywordTopK" type="number" min="1" />
+          <input
+            v-model.number="settingsStore.ragForm.keywordTopK"
+            type="number"
+            min="1"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.keywordTopK)"
+          />
+          <small v-if="settingsStore.fieldErrors.keywordTopK" class="field-error">{{ settingsStore.fieldErrors.keywordTopK }}</small>
         </label>
         <label class="field">
           <span>RRF K</span>
-          <input v-model.number="settingsStore.ragForm.rrfK" type="number" min="1" />
+          <input
+            v-model.number="settingsStore.ragForm.rrfK"
+            type="number"
+            min="1"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.rrfK)"
+          />
+          <small v-if="settingsStore.fieldErrors.rrfK" class="field-error">{{ settingsStore.fieldErrors.rrfK }}</small>
         </label>
         <label class="field">
           <span>Evidence Limit</span>
-          <input v-model.number="settingsStore.ragForm.evidenceLimit" type="number" min="1" />
+          <input
+            v-model.number="settingsStore.ragForm.evidenceLimit"
+            type="number"
+            min="1"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.evidenceLimit)"
+          />
+          <small v-if="settingsStore.fieldErrors.evidenceLimit" class="field-error">{{ settingsStore.fieldErrors.evidenceLimit }}</small>
         </label>
         <label class="field">
           <span>Per-question Char Limit</span>
-          <input v-model.number="settingsStore.ragForm.perQuestionEvidenceCharLimit" type="number" min="1" />
+          <input
+            v-model.number="settingsStore.ragForm.perQuestionEvidenceCharLimit"
+            type="number"
+            min="1"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.perQuestionEvidenceCharLimit)"
+          />
+          <small v-if="settingsStore.fieldErrors.perQuestionEvidenceCharLimit" class="field-error">{{ settingsStore.fieldErrors.perQuestionEvidenceCharLimit }}</small>
         </label>
         <label class="field">
           <span>Total Char Limit</span>
-          <input v-model.number="settingsStore.ragForm.totalEvidenceCharLimit" type="number" min="1" />
+          <input
+            v-model.number="settingsStore.ragForm.totalEvidenceCharLimit"
+            type="number"
+            min="1"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.totalEvidenceCharLimit)"
+          />
+          <small v-if="settingsStore.fieldErrors.totalEvidenceCharLimit" class="field-error">{{ settingsStore.fieldErrors.totalEvidenceCharLimit }}</small>
         </label>
         <label class="field">
           <span>Min Relevance Score</span>
-          <input v-model.number="settingsStore.ragForm.minRelevanceScore" type="number" min="0" step="0.01" />
+          <input
+            v-model.number="settingsStore.ragForm.minRelevanceScore"
+            type="number"
+            min="0"
+            step="0.01"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.minRelevanceScore)"
+          />
+          <small v-if="settingsStore.fieldErrors.minRelevanceScore" class="field-error">{{ settingsStore.fieldErrors.minRelevanceScore }}</small>
         </label>
       </div>
 
@@ -163,15 +234,33 @@
         </label>
         <label class="field">
           <span>Provider</span>
-          <input v-model="settingsStore.rerankForm.provider" :disabled="!isOwner" />
+          <input
+            v-model="settingsStore.rerankForm.provider"
+            data-testid="settings-rerank-provider"
+            :disabled="!isOwner"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.provider)"
+          />
+          <small v-if="settingsStore.fieldErrors.provider" class="field-error">{{ settingsStore.fieldErrors.provider }}</small>
         </label>
         <label class="field">
           <span>Base URL</span>
-          <input v-model="settingsStore.rerankForm.baseUrl" :disabled="!isOwner" />
+          <input
+            v-model="settingsStore.rerankForm.baseUrl"
+            data-testid="settings-rerank-base-url"
+            :disabled="!isOwner"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.baseUrl)"
+          />
+          <small v-if="settingsStore.fieldErrors.baseUrl" class="field-error">{{ settingsStore.fieldErrors.baseUrl }}</small>
         </label>
         <label class="field">
           <span>Model</span>
-          <input v-model="settingsStore.rerankForm.model" :disabled="!isOwner" />
+          <input
+            v-model="settingsStore.rerankForm.model"
+            data-testid="settings-rerank-model"
+            :disabled="!isOwner"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.model)"
+          />
+          <small v-if="settingsStore.fieldErrors.model" class="field-error">{{ settingsStore.fieldErrors.model }}</small>
         </label>
         <label class="field field--full">
           <span>API Key</span>
@@ -179,8 +268,11 @@
             v-model="settingsStore.rerankForm.apiKey"
             type="password"
             placeholder="留空表示保持现状"
+            data-testid="settings-rerank-api-key"
             :disabled="!isOwner"
+            :aria-invalid="Boolean(settingsStore.fieldErrors.apiKey)"
           />
+          <small v-if="settingsStore.fieldErrors.apiKey" class="field-error">{{ settingsStore.fieldErrors.apiKey }}</small>
         </label>
       </div>
 
@@ -240,6 +332,9 @@ async function saveModel() {
   if (!isOwner.value) {
     return
   }
+  if (!window.confirm('模型配置会直接影响对话与 Embedding 调用，确认保存吗？')) {
+    return
+  }
   try {
     await settingsStore.saveModel()
   } catch {
@@ -248,6 +343,9 @@ async function saveModel() {
 }
 
 async function saveRag() {
+  if (!window.confirm('RAG 配置会影响检索、证据预算和回答质量，确认保存吗？')) {
+    return
+  }
   try {
     await settingsStore.saveRag()
   } catch {
@@ -340,6 +438,11 @@ async function saveRerank() {
 .toggle-field {
   display: grid;
   gap: 0.45rem;
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 0.82rem;
 }
 
 .field--full {

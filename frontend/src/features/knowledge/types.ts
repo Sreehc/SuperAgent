@@ -52,6 +52,7 @@ export interface KnowledgeDocumentDetail {
   status: string
   chunkCount: number
   errorMessage: string | null
+  parsedText: string | null
   metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string

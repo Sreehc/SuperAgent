@@ -48,6 +48,7 @@
             <td>{{ formatTime(item.updatedAt) }}</td>
             <td>
               <button class="table-link" type="button" @click="goDetail(item.id)">查看</button>
+              <button v-if="isAdmin" class="table-link" type="button" @click="goDetail(item.id)">编辑</button>
             </td>
           </tr>
         </tbody>

@@ -25,6 +25,8 @@ public record RagResponseDiagnostics(
             String model,
             String status,
             String skippedReason,
+            String errorMessage,
+            Integer latencyMs,
             int inputCount,
             int outputCount
     ) {

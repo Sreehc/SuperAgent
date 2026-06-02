@@ -46,6 +46,7 @@ public class DocumentController {
                 document.status().name(),
                 document.chunkCount(),
                 document.errorMessage(),
+                document.parsedText(),
                 metadata,
                 document.createdAt(),
                 document.updatedAt()
@@ -127,6 +128,7 @@ public class DocumentController {
             String status,
             int chunkCount,
             String errorMessage,
+            String parsedText,
             Map<String, Object> metadata,
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt

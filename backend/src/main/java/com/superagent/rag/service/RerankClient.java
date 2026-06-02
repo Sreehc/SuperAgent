@@ -5,5 +5,16 @@ import java.util.List;
 
 public interface RerankClient {
 
-    List<RagEvidence> rerank(String query, List<RagEvidence> evidences);
+    RerankResult rerank(String query, List<RagEvidence> evidences);
+
+    record RerankResult(
+            List<RagEvidence> evidences,
+            String provider,
+            String model,
+            String status,
+            String skippedReason,
+            String errorMessage,
+            Integer latencyMs
+    ) {
+    }
 }

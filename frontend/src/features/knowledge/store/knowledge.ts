@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   createKnowledgeBase,
+  deleteKnowledgeBase,
   getKnowledgeDocument,
   getKnowledgeBase,
   listKnowledgeBases,
@@ -36,6 +37,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const creatingKnowledgeBase = ref(false)
   const uploadingDocument = ref(false)
   const reprocessingDocument = ref(false)
+  const deletingKnowledgeBase = ref(false)
+  const savingKnowledgeBase = ref(false)
   const errorMessage = ref('')
   const keyword = ref('')
   const statusFilter = ref('')
@@ -168,6 +171,43 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     await updateStatus('archived')
   }
 
+  async function saveKnowledgeBase(payload: { name?: string; description?: string }) {
+    if (!selectedKnowledgeBase.value) {
+      return
+    }
+    savingKnowledgeBase.value = true
+    errorMessage.value = ''
+    try {
+      await updateKnowledgeBase(selectedKnowledgeBase.value.id, payload)
+      await Promise.all([fetchKnowledgeBases(), selectKnowledgeBase(selectedKnowledgeBase.value.id)])
+    } catch {
+      errorMessage.value = '知识库保存失败，请稍后重试。'
+      throw new Error(errorMessage.value)
+    } finally {
+      savingKnowledgeBase.value = false
+    }
+  }
+
+  async function removeKnowledgeBase() {
+    if (!selectedKnowledgeBase.value) {
+      return false
+    }
+    deletingKnowledgeBase.value = true
+    errorMessage.value = ''
+    try {
+      await deleteKnowledgeBase(selectedKnowledgeBase.value.id)
+      selectedKnowledgeBase.value = null
+      documents.value = []
+      await fetchKnowledgeBases()
+      return true
+    } catch {
+      errorMessage.value = '知识库删除失败，请稍后重试。'
+      return false
+    } finally {
+      deletingKnowledgeBase.value = false
+    }
+  }
+
   async function uploadDocument(payload: { file: File; title?: string; category?: string; tags?: string }) {
     if (!selectedKnowledgeBase.value) {
       return
@@ -211,6 +251,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     creatingKnowledgeBase,
     uploadingDocument,
     reprocessingDocument,
+    deletingKnowledgeBase,
+    savingKnowledgeBase,
     errorMessage,
     keyword,
     statusFilter,
@@ -225,6 +267,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     refreshDocuments,
     publishKnowledgeBase,
     archiveKnowledgeBase,
+    saveKnowledgeBase,
+    removeKnowledgeBase,
     uploadDocument,
     reprocessDocument,
   }

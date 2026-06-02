@@ -2,11 +2,11 @@ package com.superagent.chat.service;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.springframework.context.annotation.Primary;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-@Primary
 @Component
+@ConditionalOnProperty(name = "super-agent.ai.chat-provider", havingValue = "local-fake", matchIfMissing = true)
 public class FakeChatModelClient implements ChatModelClient {
 
     @Override
@@ -22,7 +22,16 @@ public class FakeChatModelClient implements ChatModelClient {
                 "请总结一下这次回答",
                 "继续展开下一步建议"
         );
-        return new ModelResponse(fullText, deltas, recommendations);
+        return new ModelResponse(
+                fullText,
+                deltas,
+                recommendations,
+                "local-fake",
+                "fake-chat-model",
+                request.userMessage() == null ? 0 : request.userMessage().length(),
+                fullText.length(),
+                "stop"
+        );
     }
 
     private List<String> slice(String text, int chunkSize) {

@@ -27,6 +27,9 @@ public class SuperAgentProperties {
     private final Ai ai = new Ai();
 
     @Valid
+    private final Redis redis = new Redis();
+
+    @Valid
     private final Security security = new Security();
 
     @Valid
@@ -52,6 +55,10 @@ public class SuperAgentProperties {
 
     public Ai getAi() {
         return ai;
+    }
+
+    public Redis getRedis() {
+        return redis;
     }
 
     public Security getSecurity() {
@@ -240,10 +247,22 @@ public class SuperAgentProperties {
         private Boolean rerankEnabled;
 
         @NotBlank
+        private String chatProvider = "local-fake";
+
+        @NotBlank
+        private String rerankProvider = "disabled";
+
+        @NotBlank
         private String embeddingProvider = "openai-compatible";
 
         @Min(1)
         private int embeddingDimension = 1536;
+
+        @Min(1)
+        private int embeddingMaxAttempts = 3;
+
+        @Min(0)
+        private long embeddingRetryBackoffMillis = 200L;
 
         public String getOpenaiCompatibleBaseUrl() {
             return openaiCompatibleBaseUrl;
@@ -285,6 +304,22 @@ public class SuperAgentProperties {
             this.rerankEnabled = rerankEnabled;
         }
 
+        public String getChatProvider() {
+            return chatProvider;
+        }
+
+        public void setChatProvider(String chatProvider) {
+            this.chatProvider = chatProvider;
+        }
+
+        public String getRerankProvider() {
+            return rerankProvider;
+        }
+
+        public void setRerankProvider(String rerankProvider) {
+            this.rerankProvider = rerankProvider;
+        }
+
         public String getEmbeddingProvider() {
             return embeddingProvider;
         }
@@ -299,6 +334,69 @@ public class SuperAgentProperties {
 
         public void setEmbeddingDimension(int embeddingDimension) {
             this.embeddingDimension = embeddingDimension;
+        }
+
+        public int getEmbeddingMaxAttempts() {
+            return embeddingMaxAttempts;
+        }
+
+        public void setEmbeddingMaxAttempts(int embeddingMaxAttempts) {
+            this.embeddingMaxAttempts = embeddingMaxAttempts;
+        }
+
+        public long getEmbeddingRetryBackoffMillis() {
+            return embeddingRetryBackoffMillis;
+        }
+
+        public void setEmbeddingRetryBackoffMillis(long embeddingRetryBackoffMillis) {
+            this.embeddingRetryBackoffMillis = embeddingRetryBackoffMillis;
+        }
+    }
+
+    public static class Redis {
+
+        @NotBlank
+        private String url = "redis://localhost:6379";
+
+        @NotNull
+        private Boolean enabled = true;
+
+        @Min(1)
+        private long conversationLockTtlSeconds = 300L;
+
+        @Min(1)
+        private long stopSignalTtlSeconds = 300L;
+
+        public String getUrl() {
+            return url;
+        }
+
+        public void setUrl(String url) {
+            this.url = url;
+        }
+
+        public Boolean getEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(Boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public long getConversationLockTtlSeconds() {
+            return conversationLockTtlSeconds;
+        }
+
+        public void setConversationLockTtlSeconds(long conversationLockTtlSeconds) {
+            this.conversationLockTtlSeconds = conversationLockTtlSeconds;
+        }
+
+        public long getStopSignalTtlSeconds() {
+            return stopSignalTtlSeconds;
+        }
+
+        public void setStopSignalTtlSeconds(long stopSignalTtlSeconds) {
+            this.stopSignalTtlSeconds = stopSignalTtlSeconds;
         }
     }
 

@@ -31,7 +31,16 @@ public class RagChatComposer {
                 knowledgeBaseId,
                 List.of(memoryContext, userQuestion)
         ));
-        return new RagAnswer(response.fullText(), response.deltas(), response.recommendations());
+        return new RagAnswer(
+                response.fullText(),
+                response.deltas(),
+                response.recommendations(),
+                response.provider(),
+                response.model(),
+                response.inputTokens(),
+                response.outputTokens(),
+                response.finishReason()
+        );
     }
 
     private String buildPrompt(String rewrittenQuestion, String memoryContext, List<RagEvidence> evidences) {
@@ -55,7 +64,16 @@ public class RagChatComposer {
 
     public RagAnswer noEvidence(String question) {
         String fullText = "未检索到足够证据，暂时无法基于知识库可靠回答“" + question + "”。请补充更具体的问题或上传相关文档。";
-        return new RagAnswer(fullText, slice(fullText, 18), List.of("换一种更具体的问法", "缩小知识范围后再试"));
+        return new RagAnswer(
+                fullText,
+                slice(fullText, 18),
+                List.of("换一种更具体的问法", "缩小知识范围后再试"),
+                "system",
+                "no-evidence-fallback",
+                null,
+                null,
+                "stop"
+        );
     }
 
     private List<String> slice(String text, int chunkSize) {

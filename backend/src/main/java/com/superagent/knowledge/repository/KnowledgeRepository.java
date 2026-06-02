@@ -17,6 +17,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -533,12 +534,33 @@ public class KnowledgeRepository {
             Integer chunkCount,
             String errorMessage
     ) {
+        return updateDocumentStatus(tenantId, documentId, status, chunkCount, errorMessage, null);
+    }
+
+    public KnowledgeDocument updateDocumentStatus(
+            long tenantId,
+            long documentId,
+            KnowledgeDocumentStatus status,
+            Integer chunkCount,
+            String errorMessage,
+            String parsedText
+    ) {
+        KnowledgeDocument existing = getKnowledgeDocument(tenantId, documentId).orElseThrow();
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("category", existing.category() == null ? "" : existing.category());
+        metadata.put("tags", existing.tags() == null ? List.of() : existing.tags());
+        if (parsedText != null) {
+            metadata.put("parsedText", parsedText);
+        } else if (existing.parsedText() != null && !existing.parsedText().isBlank()) {
+            metadata.put("parsedText", existing.parsedText());
+        }
         jdbcTemplate.update(connection -> {
             var statement = connection.prepareStatement("""
                     UPDATE knowledge_document
                     SET status = ?,
                         chunk_count = COALESCE(?, chunk_count),
                         error_message = ?,
+                        metadata = ?::jsonb,
                         updated_at = NOW()
                     WHERE tenant_id = ?
                       AND id = ?
@@ -551,8 +573,9 @@ public class KnowledgeRepository {
                 statement.setInt(2, chunkCount);
             }
             statement.setString(3, errorMessage);
-            statement.setLong(4, tenantId);
-            statement.setLong(5, documentId);
+            statement.setString(4, writeMetadata(metadata));
+            statement.setLong(5, tenantId);
+            statement.setLong(6, documentId);
             return statement;
         });
         return getKnowledgeDocument(tenantId, documentId).orElseThrow();
@@ -928,6 +951,7 @@ public class KnowledgeRepository {
                 KnowledgeDocumentStatus.valueOf(rs.getString("status")),
                 rs.getInt("chunk_count"),
                 rs.getString("error_message"),
+                metadata.get("parsedText") instanceof String parsedText && !parsedText.isBlank() ? parsedText : null,
                 metadata.get("category") instanceof String category && !category.isBlank() ? category : null,
                 metadata.get("tags") instanceof List<?> tags ? tags.stream().map(String::valueOf).toList() : List.of(),
                 rs.getLong("created_by"),

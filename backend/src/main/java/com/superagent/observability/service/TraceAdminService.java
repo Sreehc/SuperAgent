@@ -10,6 +10,8 @@ import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.observability.domain.AdminTraceDetail;
 import com.superagent.observability.domain.AdminTraceSummary;
+import com.superagent.observability.domain.RerankTraceDetail;
+import com.superagent.observability.domain.RetrievalTraceDetail;
 import com.superagent.observability.repository.TraceQueryRepository;
 import java.time.OffsetDateTime;
 import org.springframework.http.HttpStatus;
@@ -62,6 +64,44 @@ public class TraceAdminService {
         TenantContext tenantContext = requireTenantContext();
         return traceQueryRepository.findTraceDetail(tenantContext.tenantId(), exchangeId)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Trace not found"));
+    }
+
+    public ConversationService.PagedResult<RetrievalTraceDetail> listRetrievals(
+            Integer page,
+            Integer pageSize,
+            Long exchangeId,
+            String channel
+    ) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        int resolvedPage = normalizePage(page);
+        int resolvedPageSize = normalizePageSize(pageSize, 20, 100);
+        long total = traceQueryRepository.countRetrievals(tenantContext.tenantId(), exchangeId, channel);
+        return new ConversationService.PagedResult<>(
+                traceQueryRepository.listRetrievals(tenantContext.tenantId(), exchangeId, channel, resolvedPage, resolvedPageSize),
+                resolvedPage,
+                resolvedPageSize,
+                total
+        );
+    }
+
+    public ConversationService.PagedResult<RerankTraceDetail> listReranks(
+            Integer page,
+            Integer pageSize,
+            Long exchangeId,
+            String status
+    ) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        int resolvedPage = normalizePage(page);
+        int resolvedPageSize = normalizePageSize(pageSize, 20, 100);
+        long total = traceQueryRepository.countReranks(tenantContext.tenantId(), exchangeId, status);
+        return new ConversationService.PagedResult<>(
+                traceQueryRepository.listReranks(tenantContext.tenantId(), exchangeId, status, resolvedPage, resolvedPageSize),
+                resolvedPage,
+                resolvedPageSize,
+                total
+        );
     }
 
     private void requireAdminRole() {

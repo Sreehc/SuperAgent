@@ -36,6 +36,12 @@ export interface SecretUpdateResponse extends UpdateResponse {
   apiKeySet: boolean
 }
 
+export interface ValidationFieldError {
+  field?: string
+  parameter?: string
+  message: string
+}
+
 export interface UpdateModelSettingsRequest {
   baseUrl?: string
   chatModel?: string

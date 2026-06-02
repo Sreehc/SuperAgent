@@ -21,6 +21,7 @@
             v-for="stage in traceStore.selectedTrace.stages"
             :key="stage.stageId"
             class="timeline-item"
+            :class="{ 'timeline-item--failed': stage.status === 'failed' }"
           >
             <div>
               <strong>{{ stage.stageCode }}</strong>
@@ -33,7 +34,12 @@
         <section class="detail-panel">
           <article class="card-shell">
             <h3>阶段详情</h3>
-            <div v-for="stage in traceStore.selectedTrace.stages" :key="`detail-${stage.stageId}`" class="detail-block">
+            <div
+              v-for="stage in traceStore.selectedTrace.stages"
+              :key="`detail-${stage.stageId}`"
+              class="detail-block"
+              :class="{ 'detail-block--failed': stage.status === 'failed' }"
+            >
               <strong>{{ stage.stageCode }}</strong>
               <p>输入摘要：{{ stage.inputSummary || '-' }}</p>
               <p>输出摘要：{{ stage.outputSummary || '-' }}</p>
@@ -148,6 +154,16 @@ function formatDuration(durationMs: number) {
 .detail-block {
   padding: 0.8rem 0;
   border-bottom: 1px solid var(--line-soft);
+}
+
+.timeline-item--failed,
+.detail-block--failed {
+  border-color: rgba(166, 54, 32, 0.28);
+}
+
+.timeline-item--failed strong,
+.detail-block--failed strong {
+  color: #8f2f18;
 }
 
 .timeline-item {

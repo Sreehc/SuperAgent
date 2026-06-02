@@ -50,6 +50,12 @@
         </article>
 
         <article class="card-shell">
+          <h3>解析文本</h3>
+          <div v-if="!knowledgeStore.selectedDocument.parsedText" class="empty-line">当前无解析文本。</div>
+          <pre v-else class="parsed-text">{{ knowledgeStore.selectedDocument.parsedText }}</pre>
+        </article>
+
+        <article class="card-shell">
           <h3>切块预览</h3>
           <div v-if="knowledgeStore.documentChunks.length === 0" class="empty-line">当前无切块数据。</div>
           <div v-for="chunk in knowledgeStore.documentChunks" :key="chunk.id" class="chunk-card">
@@ -173,6 +179,15 @@ function formatFileSize(value: number) {
 .task-card {
   padding: 0.8rem 0;
   border-bottom: 1px solid var(--line-soft);
+}
+
+.parsed-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+  max-height: 24rem;
+  overflow: auto;
 }
 
 .eyebrow {

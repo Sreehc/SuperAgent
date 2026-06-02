@@ -62,6 +62,18 @@
           </tr>
         </tbody>
       </table>
+      <div v-if="traceStore.total > traceStore.pageSize" class="pagination">
+        <button class="ghost-button" type="button" :disabled="traceStore.page <= 1" @click="traceStore.goToPage(traceStore.page - 1)">上一页</button>
+        <span>第 {{ traceStore.page }} 页 / 共 {{ Math.ceil(traceStore.total / traceStore.pageSize) }} 页</span>
+        <button
+          class="ghost-button"
+          type="button"
+          :disabled="traceStore.page >= Math.ceil(traceStore.total / traceStore.pageSize)"
+          @click="traceStore.goToPage(traceStore.page + 1)"
+        >
+          下一页
+        </button>
+      </div>
     </section>
   </section>
 </template>
@@ -188,5 +200,13 @@ function formatDuration(durationMs: number) {
 .error-banner {
   margin: 0;
   color: #8e2e22;
+}
+
+.pagination {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.8rem;
 }
 </style>

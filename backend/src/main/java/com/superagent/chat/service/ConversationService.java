@@ -38,18 +38,24 @@ public class ConversationService {
     private final ConversationRepository conversationRepository;
     private final RagOrchestrationService ragOrchestrationService;
     private final ConversationStreamRegistry streamRegistry;
+    private final ConversationRunLockManager conversationRunLockManager;
+    private final ConversationExecutionPlanner conversationExecutionPlanner;
     private final Executor conversationExecutor = new SimpleAsyncTaskExecutor("conversation-stream-");
 
     public ConversationService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
             ConversationRepository conversationRepository,
             RagOrchestrationService ragOrchestrationService,
-            ConversationStreamRegistry streamRegistry
+            ConversationStreamRegistry streamRegistry,
+            ConversationRunLockManager conversationRunLockManager,
+            ConversationExecutionPlanner conversationExecutionPlanner
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.conversationRepository = conversationRepository;
         this.ragOrchestrationService = ragOrchestrationService;
         this.streamRegistry = streamRegistry;
+        this.conversationRunLockManager = conversationRunLockManager;
+        this.conversationExecutionPlanner = conversationExecutionPlanner;
     }
 
     public ConversationSession createConversation(String title, Long knowledgeBaseId, MemoryStrategy memoryStrategy) {
@@ -133,20 +139,23 @@ public class ConversationService {
         TenantContext tenantContext = requireTenantContext();
         AuthenticatedUserPrincipal principal = currentAuthenticatedUser.get();
 
-        if (streamRegistry.get(tenantContext.tenantId(), sessionId) != null) {
+        ConversationRunLockManager.ConversationRunLock runLock =
+                conversationRunLockManager.acquire(tenantContext.tenantId(), sessionId);
+        if (runLock == null) {
             throw new AppException(ErrorCode.CONFLICT, HttpStatus.CONFLICT, "Another generation is already running for this session");
         }
 
         SseEmitter emitter = new SseEmitter(0L);
         ConversationStreamRegistry.ActiveConversation activeConversation =
-                streamRegistry.register(tenantContext.tenantId(), sessionId, emitter);
+                streamRegistry.register(tenantContext.tenantId(), sessionId, emitter, runLock);
         if (activeConversation == null) {
+            conversationRunLockManager.release(tenantContext.tenantId(), sessionId, runLock.ownerToken());
             throw new AppException(ErrorCode.CONFLICT, HttpStatus.CONFLICT, "Another generation is already running for this session");
         }
 
-        emitter.onCompletion(() -> streamRegistry.remove(tenantContext.tenantId(), sessionId));
-        emitter.onTimeout(() -> streamRegistry.remove(tenantContext.tenantId(), sessionId));
-        emitter.onError(error -> streamRegistry.remove(tenantContext.tenantId(), sessionId));
+        emitter.onCompletion(() -> cleanupActiveConversation(tenantContext.tenantId(), sessionId));
+        emitter.onTimeout(() -> cleanupActiveConversation(tenantContext.tenantId(), sessionId));
+        emitter.onError(error -> cleanupActiveConversation(tenantContext.tenantId(), sessionId));
 
         conversationExecutor.execute(() -> {
             TenantContextHolder.set(tenantContext);
@@ -162,11 +171,10 @@ public class ConversationService {
     public StopResult stopConversation(long sessionId) {
         requireAccessibleSession(sessionId);
         TenantContext tenantContext = requireTenantContext();
-        ConversationStreamRegistry.ActiveConversation activeConversation = streamRegistry.get(tenantContext.tenantId(), sessionId);
-        if (activeConversation == null) {
+        boolean stopRequested = conversationRunLockManager.requestStop(tenantContext.tenantId(), sessionId);
+        if (!stopRequested) {
             return new StopResult(false, sessionId);
         }
-        activeConversation.requestStop();
         return new StopResult(true, sessionId);
     }
 
@@ -183,7 +191,7 @@ public class ConversationService {
 
         ConversationMessage userMessage = null;
         ConversationMessage assistantMessage = null;
-        long exchangeId = -1L;
+            long exchangeId = -1L;
         try {
             MemoryStrategy resolvedMemoryStrategy = request.memoryStrategy() == null ? session.memoryStrategy() : request.memoryStrategy();
             Long resolvedKnowledgeBaseId = request.knowledgeBaseId() == null ? session.knowledgeBaseId() : request.knowledgeBaseId();
@@ -199,23 +207,47 @@ public class ConversationService {
                     Map.of("userId", principal.userId())
             );
             conversationRepository.touchSession(sessionId, tenantId, userMessage.createdAt());
+            List<String> recentMessages = conversationRepository.findMessages(sessionId, tenantId, 1, 6).stream()
+                    .map(ConversationMessage::content)
+                    .toList();
+            ConversationExecutionPlanner.ExecutionPlan executionPlan = conversationExecutionPlanner.plan(
+                    request.message().trim(),
+                    resolvedKnowledgeBaseId,
+                    recentMessages
+            );
 
             var exchange = conversationRepository.createExchange(
                     tenantId,
                     sessionId,
                     userMessage.id(),
-                    ExecutionMode.RAG_QA,
+                    executionPlan.executionMode(),
                     "running",
-                    resolvedKnowledgeBaseId == null ? "direct_chat_with_memory_only" : "rag_with_knowledge_base",
-                    BigDecimal.valueOf(0.92d)
+                    executionPlan.routeReason(),
+                    executionPlan.routeConfidence()
             );
             exchangeId = exchange.id();
 
             sendEvent(emitter, "start", new StartEvent(exchangeId, userMessage.id()));
-            List<String> recentMessages = conversationRepository.findMessages(sessionId, tenantId, 1, 6).stream()
-                    .map(ConversationMessage::content)
-                    .toList();
+            emitTraceStage(
+                    exchangeId,
+                    tenantId,
+                    emitter,
+                    "execution_planning",
+                    "mode=" + executionPlan.executionMode() + ", steps=" + String.join(">", executionPlan.steps()),
+                    executionPlan.summary()
+            );
             emitTraceStage(exchangeId, tenantId, emitter, "memory_assembly", "recent_messages=" + recentMessages.size(), "已组装最近会话记忆");
+
+            if (executionPlan.executionMode() == ExecutionMode.CLARIFICATION) {
+                RagResponse clarificationResponse = RagResponse.clarification(
+                        request.message().trim(),
+                        "请补充更明确的对象、配置项或文档范围，我再继续回答。",
+                        executionPlan.summary()
+                );
+                streamAnswer(exchangeId, tenantId, sessionId, emitter, activeConversation, clarificationResponse, false);
+                return;
+            }
+
             RagResponse ragResponse = ragOrchestrationService.answer(
                     request.message().trim(),
                     resolvedKnowledgeBaseId,
@@ -229,93 +261,121 @@ public class ConversationService {
             persistRetrievalTrace(exchangeId, tenantId, emitter, ragResponse.diagnostics());
             persistRerankTrace(exchangeId, tenantId, emitter, ragResponse.diagnostics());
             emitTraceStage(exchangeId, tenantId, emitter, "prompt_assembly", "question=" + excerpt(ragResponse.rewrittenQuestion()), ragResponse.diagnostics().promptSummary());
-
-            StringBuilder fullText = new StringBuilder();
-            long modelStageId = createTraceStage(exchangeId, tenantId, "answer_generation", "prompt=" + ragResponse.diagnostics().promptSummary());
-            long generationStartedAt = System.nanoTime();
-            for (String delta : ragResponse.answer().deltas()) {
-                if (activeConversation.stopRequested()) {
-                    break;
-                }
-                fullText.append(delta);
-                sendEvent(emitter, "delta", new DeltaEvent(delta));
-                sleep(100L);
-            }
-            completeTraceStage(modelStageId, tenantId, "success", ragResponse.diagnostics().modelSummary(), null);
-            conversationRepository.createModelCallTrace(
-                    tenantId,
-                    exchangeId,
-                    modelStageId,
-                    "openai-compatible",
-                    "chat-model",
-                    "chat",
-                    ragResponse.diagnostics().promptSummary(),
-                    excerpt(fullText.toString()),
-                    null,
-                    null,
-                    (int) ((System.nanoTime() - generationStartedAt) / 1_000_000L),
-                    activeConversation.stopRequested() ? "stopped" : "success",
-                    null,
-                    Map.of(
-                            "rewrittenQuestion", ragResponse.rewrittenQuestion(),
-                            "recommendationCount", ragResponse.answer().recommendations().size()
-                    )
-            );
-            sendEvent(emitter, "trace_stage", new TraceStageEvent("answer_generation", "success", 80L));
-
-            String assistantStatus = activeConversation.stopRequested() ? "stopped" : "success";
-            assistantMessage = conversationRepository.createMessage(
-                    tenantId,
-                    sessionId,
-                    MessageRole.assistant,
-                    fullText.toString(),
-                    assistantStatus,
-                    null
-            );
-            conversationRepository.touchSession(sessionId, tenantId, assistantMessage.createdAt());
-
-            for (int index = 0; index < ragResponse.evidences().size(); index++) {
-                RagEvidence candidate = ragResponse.evidences().get(index);
-                var reference = conversationRepository.createReference(
-                        tenantId,
-                        exchangeId,
-                        candidate.documentId(),
-                        candidate.chunkId(),
-                        index + 1,
-                        candidate.documentTitle(),
-                        excerpt(candidate.content()),
-                        BigDecimal.valueOf(candidate.score()),
-                        "/documents/" + candidate.documentId()
-                );
-                sendEvent(emitter, "reference", new ReferenceEvent(
-                        reference.ordinal(),
-                        reference.documentId(),
-                        reference.chunkId(),
-                        reference.title(),
-                        reference.quote(),
-                        reference.score()
-                ));
-            }
-
-            if (!activeConversation.stopRequested()) {
-                sendEvent(emitter, "recommendation", new RecommendationEvent(ragResponse.answer().recommendations()));
-            }
-
-            conversationRepository.completeExchange(
-                    exchangeId,
-                    tenantId,
-                    assistantMessage.id(),
-                    activeConversation.stopRequested() ? "stopped" : "success"
-            );
-
-            sendEvent(emitter, "done", new DoneEvent(exchangeId, assistantMessage.id(), activeConversation.stopRequested()));
-            emitter.complete();
+            streamAnswer(exchangeId, tenantId, sessionId, emitter, activeConversation, ragResponse, true);
         } catch (AppException exception) {
             handleStreamError(tenantId, sessionId, exchangeId, emitter, exception.getErrorCode(), exception.getMessage());
         } catch (Exception exception) {
             handleStreamError(tenantId, sessionId, exchangeId, emitter, ErrorCode.MODEL_PROVIDER_ERROR, "RAG generation failed");
         } finally {
-            streamRegistry.remove(tenantId, sessionId);
+            cleanupActiveConversation(tenantId, sessionId);
+        }
+    }
+
+    private void streamAnswer(
+            long exchangeId,
+            long tenantId,
+            long sessionId,
+            SseEmitter emitter,
+            ConversationStreamRegistry.ActiveConversation activeConversation,
+            RagResponse ragResponse,
+            boolean emitReferences
+    ) {
+        StringBuilder fullText = new StringBuilder();
+        if (emitReferences) {
+            emitReferences(exchangeId, tenantId, emitter, ragResponse.evidences());
+        }
+        long modelStageId = createTraceStage(exchangeId, tenantId, "answer_generation", "prompt=" + ragResponse.diagnostics().promptSummary());
+        long generationStartedAt = System.nanoTime();
+        for (String delta : ragResponse.answer().deltas()) {
+            if (isStopRequested(activeConversation)) {
+                break;
+            }
+            fullText.append(delta);
+            sendEvent(emitter, "delta", new DeltaEvent(delta));
+            sleep(100L);
+        }
+        completeTraceStage(modelStageId, tenantId, "success", ragResponse.diagnostics().modelSummary(), null);
+        conversationRepository.createModelCallTrace(
+                tenantId,
+                exchangeId,
+                modelStageId,
+                ragResponse.answer().provider(),
+                ragResponse.answer().model(),
+                "chat",
+                ragResponse.diagnostics().promptSummary(),
+                excerpt(fullText.toString()),
+                ragResponse.answer().inputTokens(),
+                ragResponse.answer().outputTokens(),
+                (int) ((System.nanoTime() - generationStartedAt) / 1_000_000L),
+                isStopRequested(activeConversation) ? "stopped" : "success",
+                null,
+                Map.of(
+                        "rewrittenQuestion", ragResponse.rewrittenQuestion(),
+                        "recommendationCount", ragResponse.answer().recommendations().size(),
+                        "finishReason", ragResponse.answer().finishReason()
+                )
+        );
+        sendEvent(emitter, "trace_stage", new TraceStageEvent("answer_generation", "success", 80L));
+
+        String assistantStatus = isStopRequested(activeConversation) ? "stopped" : "success";
+        ConversationMessage assistantMessage = conversationRepository.createMessage(
+                tenantId,
+                sessionId,
+                MessageRole.assistant,
+                fullText.toString(),
+                assistantStatus,
+                null
+        );
+        conversationRepository.touchSession(sessionId, tenantId, assistantMessage.createdAt());
+
+        if (!isStopRequested(activeConversation)) {
+            sendEvent(emitter, "recommendation", new RecommendationEvent(ragResponse.answer().recommendations()));
+        }
+
+        conversationRepository.completeExchange(
+                exchangeId,
+                tenantId,
+                assistantMessage.id(),
+                isStopRequested(activeConversation) ? "stopped" : "success"
+        );
+
+        sendEvent(emitter, "done", new DoneEvent(exchangeId, assistantMessage.id(), isStopRequested(activeConversation)));
+        emitter.complete();
+    }
+
+    private void emitReferences(long exchangeId, long tenantId, SseEmitter emitter, List<RagEvidence> evidences) {
+        for (int index = 0; index < evidences.size(); index++) {
+            RagEvidence candidate = evidences.get(index);
+            var reference = conversationRepository.createReference(
+                    tenantId,
+                    exchangeId,
+                    candidate.documentId(),
+                    candidate.chunkId(),
+                    index + 1,
+                    candidate.documentTitle(),
+                    excerpt(candidate.content()),
+                    BigDecimal.valueOf(candidate.score()),
+                    "/documents/" + candidate.documentId()
+            );
+            sendEvent(emitter, "reference", new ReferenceEvent(
+                    reference.ordinal(),
+                    reference.documentId(),
+                    reference.chunkId(),
+                    reference.title(),
+                    reference.quote(),
+                    reference.score()
+            ));
+        }
+    }
+
+    private boolean isStopRequested(ConversationStreamRegistry.ActiveConversation activeConversation) {
+        return conversationRunLockManager.isStopRequested(activeConversation.tenantId(), activeConversation.sessionId());
+    }
+
+    private void cleanupActiveConversation(long tenantId, long sessionId) {
+        ConversationStreamRegistry.ActiveConversation removed = streamRegistry.remove(tenantId, sessionId);
+        if (removed != null) {
+            conversationRunLockManager.release(tenantId, sessionId, removed.runLock().ownerToken());
         }
     }
 
@@ -431,9 +491,9 @@ public class ConversationService {
                 rerankStep.skippedReason(),
                 rerankStep.inputCount(),
                 rerankStep.outputCount(),
-                null,
+                rerankStep.latencyMs(),
                 rerankStep.status(),
-                null,
+                rerankStep.errorMessage(),
                 Map.of()
         );
         completeTraceStage(
@@ -441,7 +501,7 @@ public class ConversationService {
                 tenantId,
                 rerankStep.status(),
                 rerankStep.enabled() ? "reranked=" + rerankStep.outputCount() : rerankStep.skippedReason(),
-                null
+                rerankStep.errorMessage()
         );
         sendEvent(emitter, "trace_stage", new TraceStageEvent("rerank", rerankStep.status(), 80L));
     }
@@ -538,8 +598,8 @@ public class ConversationService {
                         tenantId,
                         exchangeId,
                         errorStage.id(),
-                        "openai-compatible",
-                        "chat-model",
+                        null,
+                        null,
                         "chat",
                         null,
                         null,

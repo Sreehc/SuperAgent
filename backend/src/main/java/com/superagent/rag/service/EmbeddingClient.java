@@ -6,6 +6,10 @@ public interface EmbeddingClient {
 
     EmbeddingResult embed(List<String> inputs);
 
+    default EmbeddingResult embed(long tenantId, List<String> inputs) {
+        return embed(inputs);
+    }
+
     record EmbeddingResult(
             String provider,
             String model,

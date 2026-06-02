@@ -262,6 +262,14 @@ class KnowledgeIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString(StandardCharsets.UTF_8));
+        JsonNode processedDetail = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(processedDetail.path("data").path("parsedText").asText()).contains("第一段说明");
         assertThat(chunks.path("data").path("total").asInt()).isGreaterThan(0);
         assertThat(chunks.path("data").path("items").get(0).path("content").asText()).contains("说明");
 

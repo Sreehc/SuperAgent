@@ -11,9 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.chat.TestChatModelClientConfiguration;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.service.DocumentProcessingService;
 import com.superagent.rag.TestEmbeddingClientConfiguration;
+import com.superagent.rag.TestRerankClientConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +35,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 @SpringBootTest
-@Import(TestEmbeddingClientConfiguration.class)
+@Import({TestEmbeddingClientConfiguration.class, TestChatModelClientConfiguration.class, TestRerankClientConfiguration.class})
 class ConversationIntegrationTest {
 
     @Autowired
@@ -83,7 +85,15 @@ class ConversationIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode listJson = objectMapper.readTree(listResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
-        assertThat(listJson.path("data").path("items").get(0).path("title").asText()).isEqualTo("退款规则咨询");
+        assertThat(listJson.path("data").path("total").asInt()).isGreaterThanOrEqualTo(1);
+        JsonNode detailJson = objectMapper.readTree(mockMvc.perform(get("/api/v1/conversations/{sessionId}", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(detailJson.path("data").path("title").asText()).isEqualTo("退款规则咨询");
 
         MvcResult patchResponse = mockMvc.perform(patch("/api/v1/conversations/{sessionId}", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
@@ -135,6 +145,7 @@ class ConversationIntegrationTest {
         assertThat(body).contains("event:reference");
         assertThat(body).contains("event:recommendation");
         assertThat(body).contains("event:done");
+        assertThat(body).contains("execution_planning");
 
         Integer messageCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM conversation_message WHERE session_id = ?",
@@ -142,6 +153,36 @@ class ConversationIntegrationTest {
                 sessionId
         );
         assertThat(messageCount).isNotNull().isGreaterThanOrEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT route_reason FROM conversation_exchange WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                String.class,
+                sessionId
+        )).isEqualTo("knowledge_base_selected");
+    }
+
+    @Test
+    void shouldRouteAmbiguousMessageToClarificationMode() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long sessionId = createConversation(token, tenantId, "澄清测试").path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "这个怎么配？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("请补充更明确的对象");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT execution_mode FROM conversation_exchange WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                String.class,
+                sessionId
+        )).isEqualTo("CLARIFICATION");
     }
 
     @Test

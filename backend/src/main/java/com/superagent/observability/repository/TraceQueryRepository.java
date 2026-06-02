@@ -307,6 +307,100 @@ public class TraceQueryRepository {
         ));
     }
 
+    public long countRetrievals(long tenantId, Long exchangeId, String channel) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT COUNT(*)
+                FROM retrieval_trace
+                WHERE tenant_id = :tenantId
+                """);
+        MapSqlParameterSource params = buildRetrievalFilters(sql, tenantId, exchangeId, channel);
+        return jdbcTemplate.queryForObject(sql.toString(), params, Long.class);
+    }
+
+    public List<RetrievalTraceDetail> listRetrievals(long tenantId, Long exchangeId, String channel, int page, int pageSize) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT id, stage_id, sub_question_no, channel, query_text, filters, result_count,
+                       selected_count, latency_ms, created_at
+                FROM retrieval_trace
+                WHERE tenant_id = :tenantId
+                """);
+        MapSqlParameterSource params = buildRetrievalFilters(sql, tenantId, exchangeId, channel)
+                .addValue("limit", pageSize)
+                .addValue("offset", Math.max(page - 1, 0) * pageSize);
+        sql.append("""
+                ORDER BY created_at DESC, id DESC
+                LIMIT :limit OFFSET :offset
+                """);
+        List<RetrievalTraceDetail> retrievals = jdbcTemplate.query(sql.toString(), params, (rs, rowNum) -> new RetrievalTraceDetail(
+                rs.getLong("id"),
+                getNullableLong(rs, "stage_id"),
+                rs.getInt("sub_question_no"),
+                rs.getString("channel"),
+                rs.getString("query_text"),
+                parseJsonMap(rs.getObject("filters")),
+                rs.getInt("result_count"),
+                rs.getInt("selected_count"),
+                (Integer) rs.getObject("latency_ms"),
+                rs.getObject("created_at", OffsetDateTime.class),
+                List.of()
+        ));
+        return retrievals.stream()
+                .map(retrieval -> new RetrievalTraceDetail(
+                        retrieval.id(),
+                        retrieval.stageId(),
+                        retrieval.subQuestionNo(),
+                        retrieval.channel(),
+                        retrieval.queryText(),
+                        retrieval.filters(),
+                        retrieval.resultCount(),
+                        retrieval.selectedCount(),
+                        retrieval.latencyMs(),
+                        retrieval.createdAt(),
+                        loadRetrievalItemsForTraceId(tenantId, retrieval.id())
+                ))
+                .toList();
+    }
+
+    public long countReranks(long tenantId, Long exchangeId, String status) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT COUNT(*)
+                FROM rerank_trace
+                WHERE tenant_id = :tenantId
+                """);
+        MapSqlParameterSource params = buildRerankFilters(sql, tenantId, exchangeId, status);
+        return jdbcTemplate.queryForObject(sql.toString(), params, Long.class);
+    }
+
+    public List<RerankTraceDetail> listReranks(long tenantId, Long exchangeId, String status, int page, int pageSize) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT id, provider, model, enabled, skipped_reason, input_count, output_count,
+                       latency_ms, status, error_message, metadata, created_at
+                FROM rerank_trace
+                WHERE tenant_id = :tenantId
+                """);
+        MapSqlParameterSource params = buildRerankFilters(sql, tenantId, exchangeId, status)
+                .addValue("limit", pageSize)
+                .addValue("offset", Math.max(page - 1, 0) * pageSize);
+        sql.append("""
+                ORDER BY created_at DESC, id DESC
+                LIMIT :limit OFFSET :offset
+                """);
+        return jdbcTemplate.query(sql.toString(), params, (rs, rowNum) -> new RerankTraceDetail(
+                rs.getLong("id"),
+                rs.getString("provider"),
+                rs.getString("model"),
+                rs.getBoolean("enabled"),
+                rs.getString("skipped_reason"),
+                rs.getInt("input_count"),
+                rs.getInt("output_count"),
+                (Integer) rs.getObject("latency_ms"),
+                rs.getString("status"),
+                rs.getString("error_message"),
+                parseJsonMap(rs.getObject("metadata")),
+                rs.getObject("created_at", OffsetDateTime.class)
+        ));
+    }
+
     private MapSqlParameterSource buildTraceFilters(
             StringBuilder sql,
             long tenantId,
@@ -338,6 +432,57 @@ public class TraceQueryRepository {
             params.addValue("to", to);
         }
         return params;
+    }
+
+    private MapSqlParameterSource buildRetrievalFilters(StringBuilder sql, long tenantId, Long exchangeId, String channel) {
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("tenantId", tenantId);
+        if (exchangeId != null) {
+            sql.append(" AND exchange_id = :exchangeId ");
+            params.addValue("exchangeId", exchangeId);
+        }
+        if (channel != null && !channel.isBlank()) {
+            sql.append(" AND channel = :channel ");
+            params.addValue("channel", channel.trim());
+        }
+        return params;
+    }
+
+    private MapSqlParameterSource buildRerankFilters(StringBuilder sql, long tenantId, Long exchangeId, String status) {
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("tenantId", tenantId);
+        if (exchangeId != null) {
+            sql.append(" AND exchange_id = :exchangeId ");
+            params.addValue("exchangeId", exchangeId);
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" AND status = :status ");
+            params.addValue("status", status.trim());
+        }
+        return params;
+    }
+
+    private List<RetrievalTraceItemDetail> loadRetrievalItemsForTraceId(long tenantId, long retrievalTraceId) {
+        return jdbcTemplate.query("""
+                        SELECT id, document_id, chunk_id, rank_no, raw_score, fused_score, selected, metadata, created_at
+                        FROM retrieval_trace_item
+                        WHERE tenant_id = :tenantId
+                          AND retrieval_trace_id = :retrievalTraceId
+                        ORDER BY rank_no ASC, id ASC
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("retrievalTraceId", retrievalTraceId),
+                (rs, rowNum) -> new RetrievalTraceItemDetail(
+                        rs.getLong("id"),
+                        rs.getLong("document_id"),
+                        rs.getLong("chunk_id"),
+                        rs.getInt("rank_no"),
+                        rs.getBigDecimal("raw_score"),
+                        rs.getBigDecimal("fused_score"),
+                        rs.getBoolean("selected"),
+                        parseJsonMap(rs.getObject("metadata")),
+                        rs.getObject("created_at", OffsetDateTime.class)
+                )
+        );
     }
 
     private Map<String, Object> parseJsonMap(Object value) {

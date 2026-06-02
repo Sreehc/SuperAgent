@@ -87,6 +87,14 @@ public class DocumentProcessingService {
         knowledgeRepository.updateDocumentStatus(message.tenantId(), document.id(), KnowledgeDocumentStatus.parsing, null, null);
         try (InputStream inputStream = objectStorageService.open(document.objectKey())) {
             DocumentParserService.ParsedDocument parsed = documentParserService.parse(document.fileType(), inputStream);
+            knowledgeRepository.updateDocumentStatus(
+                    message.tenantId(),
+                    document.id(),
+                    KnowledgeDocumentStatus.parsing,
+                    null,
+                    null,
+                    parsed.content()
+            );
             knowledgeRepository.markTaskSuccess(
                     message.tenantId(),
                     parseTask.id(),
@@ -154,6 +162,7 @@ public class DocumentProcessingService {
         try {
             List<DocumentChunk> chunks = knowledgeRepository.listAllDocumentChunks(tenantId, document.id());
             EmbeddingClient.EmbeddingResult embeddingResult = embeddingClient.embed(
+                    tenantId,
                     chunks.stream().map(DocumentChunk::content).toList()
             );
             List<KnowledgeRepository.EmbeddingInsert> embeddings = java.util.stream.IntStream.range(0, chunks.size())

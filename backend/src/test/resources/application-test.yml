@@ -8,5 +8,7 @@ spring:
       auto-offset-reset: earliest
 
 super-agent:
+  redis:
+    enabled: false
   messaging:
     kafka-enabled: ${TEST_KAFKA_ENABLED:false}

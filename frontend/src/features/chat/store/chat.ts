@@ -1,6 +1,16 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { createConversation, defaultMemoryStrategy, getConversation, listConversations, listMessages, openMessageStream, stopConversation } from '../api'
+import {
+  createConversation,
+  defaultMemoryStrategy,
+  deleteConversation,
+  getConversation,
+  listConversations,
+  listMessages,
+  openMessageStream,
+  stopConversation,
+  updateConversation,
+} from '../api'
 import type { ConversationDetail, ConversationMessage, ConversationSummary, MemoryStrategy, StreamDeltaEvent, StreamDoneEvent, StreamErrorEvent, StreamRecommendationEvent, StreamReferenceEvent, StreamStartEvent, StreamTraceStageEvent } from '../types'
 import { listKnowledgeBases } from '../../knowledge/api'
 
@@ -54,8 +64,19 @@ export const useChatStore = defineStore('chat', () => {
   const selectedReference = ref<DisplayReference | null>(null)
   const availableKnowledgeBases = ref<Array<{ id: number; name: string }>>([])
   const selectedKnowledgeBaseId = ref<number | null>(null)
+  const keyword = ref('')
+  const editingConversationId = ref<number | null>(null)
+  const updatingConversation = ref(false)
+  const deletingConversation = ref(false)
 
   const hasMessages = computed(() => messages.value.length > 0)
+  const filteredConversations = computed(() => {
+    const search = keyword.value.trim().toLowerCase()
+    if (!search) {
+      return conversations.value
+    }
+    return conversations.value.filter((conversation) => conversation.title.toLowerCase().includes(search))
+  })
 
   async function bootstrap(sessionId?: number | null) {
     await fetchKnowledgeBaseOptions()
@@ -140,10 +161,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function attachReference(reference: DisplayReference) {
-    const assistantMessage = [...messages.value].reverse().find((message) => message.role === 'assistant')
-    if (!assistantMessage) {
-      return
-    }
+    const assistantMessage = ensureAssistantMessage()
     assistantMessage.references = [...assistantMessage.references, reference]
     selectedReference.value = reference
   }
@@ -348,8 +366,59 @@ export const useChatStore = defineStore('chat', () => {
     selectedKnowledgeBaseId.value = value
   }
 
+  async function renameConversation(sessionId: number, title: string) {
+    const value = title.trim()
+    if (!value) {
+      return
+    }
+    updatingConversation.value = true
+    try {
+      await updateConversation(sessionId, { title: value })
+      await fetchConversations()
+      if (selectedSessionId.value === sessionId) {
+        await selectConversation(sessionId)
+      }
+    } finally {
+      updatingConversation.value = false
+      editingConversationId.value = null
+    }
+  }
+
+  async function archiveConversation(sessionId: number) {
+    updatingConversation.value = true
+    try {
+      await updateConversation(sessionId, { status: 'archived' })
+      await fetchConversations()
+      if (selectedSessionId.value === sessionId && conversations.value.length > 0) {
+        await selectConversation(conversations.value[0].id)
+      }
+    } finally {
+      updatingConversation.value = false
+    }
+  }
+
+  async function removeConversation(sessionId: number) {
+    deletingConversation.value = true
+    try {
+      await deleteConversation(sessionId)
+      if (selectedSessionId.value === sessionId) {
+        clearOnRouteLeave()
+        selectedSessionId.value = null
+        selectedConversation.value = null
+        messages.value = []
+      }
+      await fetchConversations()
+      if (!selectedSessionId.value && conversations.value.length > 0) {
+        await selectConversation(conversations.value[0].id)
+      }
+    } finally {
+      deletingConversation.value = false
+    }
+  }
+
   return {
     conversations,
+    filteredConversations,
     selectedSessionId,
     selectedConversation,
     messages,
@@ -363,6 +432,10 @@ export const useChatStore = defineStore('chat', () => {
     selectedReference,
     availableKnowledgeBases,
     selectedKnowledgeBaseId,
+    keyword,
+    editingConversationId,
+    updatingConversation,
+    deletingConversation,
     hasMessages,
     bootstrap,
     fetchConversations,
@@ -373,5 +446,8 @@ export const useChatStore = defineStore('chat', () => {
     stopStreaming,
     clearOnRouteLeave,
     setSelectedKnowledgeBaseId,
+    renameConversation,
+    archiveConversation,
+    removeConversation,
   }
 })
