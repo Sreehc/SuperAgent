@@ -1,0 +1,75 @@
+{
+  "suiteKey": "agent-platform-regression",
+  "description": "Regression and release gate suite for RAG, Agent, recovery, graph and tool governance.",
+  "thresholds": {
+    "minPassRate": 0.85,
+    "minRecoveryRate": 0.95,
+    "toolTraceFieldCompleteness": 1.0,
+    "highRiskVisibilityRate": 1.0
+  },
+  "cases": [
+    {
+      "caseKey": "clarification-route",
+      "description": "Clarification mode should be selected for ambiguous requests.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldRouteAmbiguousMessageToClarificationMode test",
+      "tags": ["critical-e2e", "clarification"]
+    },
+    {
+      "caseKey": "rag-stream-regression",
+      "description": "Classic RAG streaming path should keep working.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldStreamMessageAndPersistAssistantReply test",
+      "tags": ["critical-e2e", "rag"]
+    },
+    {
+      "caseKey": "rag-no-evidence-regression",
+      "description": "RAG no-evidence handling should remain stable.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldReturnNoEvidenceResponseWhenKnowledgeBaseHasNoRelevantEvidence test",
+      "tags": ["critical-e2e", "rag"]
+    },
+    {
+      "caseKey": "agent-resume-api",
+      "description": "Backend resume endpoint should resume the latest run.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldResumeLatestAgentRunForConversation test",
+      "tags": ["critical-e2e", "agent", "recovery"]
+    },
+    {
+      "caseKey": "checkpoint-recovery",
+      "description": "Agent service should resume from the latest stable checkpoint without replaying stable steps.",
+      "cwd": "agent-service",
+      "command": "mvn -Dtest=AgentRunExecutionServiceTest#shouldResumeFromStableCheckpointWithoutRepeatingCompletedSteps test",
+      "tags": ["agent", "recovery"]
+    },
+    {
+      "caseKey": "tool-trace-structured-fields",
+      "description": "Tool trace payloads should expose structured output fields.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=AgentAdminIntegrationTest#shouldExposeAgentRunDetailAndTraceLinkage test",
+      "tags": ["agent", "tool-trace"]
+    },
+    {
+      "caseKey": "graph-rebuild-regression",
+      "description": "Document graph rebuild should keep versions, chunks and graph output aligned.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=KnowledgeIntegrationTest#shouldProcessDocumentAndExposeChunksTasksAndReprocess test",
+      "tags": ["critical-e2e", "graph"]
+    },
+    {
+      "caseKey": "graph-path-query",
+      "description": "Neo4j graph path query should return shortest path evidence.",
+      "cwd": "agent-service",
+      "command": "mvn -Dtest=Neo4jGraphQueryRepositoryTest#shouldReturnShortestPathPayloadForPathQuery test",
+      "tags": ["agent", "graph"]
+    },
+    {
+      "caseKey": "high-risk-tool-visibility",
+      "description": "High-risk tools must stay hidden until explicitly bound to the tenant.",
+      "cwd": "agent-service",
+      "command": "mvn -Dtest=ToolRegistryServiceTest#shouldHideHighRiskToolsWithoutExplicitTenantBinding test",
+      "tags": ["high-risk-visibility"]
+    }
+  ]
+}

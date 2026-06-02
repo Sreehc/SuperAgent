@@ -27,18 +27,31 @@ public class ToolRegistryService {
             if (!row.pluginEnabled()) {
                 continue;
             }
-            boolean hasExplicitBinding = row.toolId() != null && !row.toolId().isBlank();
             for (ToolSpec spec : parseManifest(row)) {
-                if (hasExplicitBinding) {
-                    if (spec.id().equals(row.toolId()) && row.toolEnabled()) {
+                boolean hasExplicitBinding = row.toolId() != null && !row.toolId().isBlank() && spec.id().equals(row.toolId());
+                boolean highRisk = isHighRisk(spec);
+                if (highRisk) {
+                    if (hasExplicitBinding && row.toolEnabled()) {
                         tools.put(spec.id(), spec);
                     }
-                } else {
-                    tools.putIfAbsent(spec.id(), spec);
+                    continue;
                 }
+                if (hasExplicitBinding) {
+                    if (row.toolEnabled()) {
+                        tools.put(spec.id(), spec);
+                    }
+                    continue;
+                }
+                tools.putIfAbsent(spec.id(), spec);
             }
         }
         return tools;
+    }
+
+    private boolean isHighRisk(ToolSpec spec) {
+        return "high".equalsIgnoreCase(spec.riskLevel())
+                || "http.request".equals(spec.id())
+                || "python.sandbox".equals(spec.id());
     }
 
     private List<ToolSpec> parseManifest(AgentRunRepository.EnabledToolRow row) {

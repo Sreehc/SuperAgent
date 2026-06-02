@@ -30,6 +30,7 @@
     {
       "id": "http.request",
       "kind": "http",
+      "riskLevel": "high",
       "supportsStreaming": false
     },
     {
@@ -40,6 +41,7 @@
     {
       "id": "python.sandbox",
       "kind": "python",
+      "riskLevel": "high",
       "supportsStreaming": false
     }
   ]
