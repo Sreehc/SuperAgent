@@ -23,6 +23,16 @@ public class ConversationExecutionPlanner {
             );
         }
 
+        if (knowledgeBaseId != null && looksLikeAgentTask(lower)) {
+            return new ExecutionPlan(
+                    ExecutionMode.REACT_AGENT,
+                    "open_ended_or_realtime_request_routed_to_agent",
+                    BigDecimal.valueOf(0.89d),
+                    "run_react_agent_pipeline",
+                    List.of("assemble_agent_memory", "select_tools", "execute_tools", "answer_with_agent_trace")
+            );
+        }
+
         if (knowledgeBaseId != null) {
             return new ExecutionPlan(
                     ExecutionMode.RAG_QA,
@@ -33,7 +43,7 @@ public class ConversationExecutionPlanner {
             );
         }
 
-        if (looksLikeOpenEndedOrRealtime(lower)) {
+        if (looksLikeAgentTask(lower)) {
             return new ExecutionPlan(
                     ExecutionMode.REACT_AGENT,
                     "open_ended_or_realtime_request_routed_to_agent",
@@ -72,14 +82,20 @@ public class ConversationExecutionPlanner {
                 || lower.contains("文档");
     }
 
-    private boolean looksLikeOpenEndedOrRealtime(String lower) {
+    private boolean looksLikeAgentTask(String lower) {
         return lower.contains("搜索")
                 || lower.contains("联网")
                 || lower.contains("今天")
                 || lower.contains("最新")
                 || lower.contains("实时")
                 || lower.contains("帮我规划")
-                || lower.contains("帮我执行");
+                || lower.contains("帮我执行")
+                || lower.contains("整理")
+                || lower.contains("总结")
+                || lower.contains("对比")
+                || lower.contains("比较")
+                || lower.contains("调用")
+                || lower.contains("然后");
     }
 
     public record ExecutionPlan(

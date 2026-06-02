@@ -37,7 +37,7 @@
 | 4 | 工具协议、插件注册中心与租户级启停 | 部分完成 | 已有最小工具抽象和 manifest 扫描骨架，但插件治理、审计和管理接口未完整 |
 | 5 | 联网工具、HTTP 工具与受控 Python 执行 | 部分完成 | 已有 `knowledge.search`、基础 `web.search/web.fetch`、`http.request`、`python.sandbox` 雏形，但真实 provider、审计和风控未完成 |
 | 6 | 摘要记忆与会话恢复策略 | 部分完成 | 记忆策略和摘要存储已接入，但摘要质量、压缩策略和长会话回归还未收口 |
-| 7 | 三层执行体系与公开恢复接口 | 部分完成 | `resume` 用户接口已补，三层路由有基础实现，但规则和回归覆盖不完整 |
+| 7 | 三层执行体系与公开恢复接口 | 已完成 | 三层路由、公开 resume 接口和同入口 Agent 流式桥接验证已收口 |
 | 8 | 知识治理升级、版本化与切块策略 | 部分完成 | 上传、处理、重处理、版本回写和多种切块策略已接入主链路，知识库/文档页也已接入域与 profile 选择和版本可见性，但治理控制台和更细的运营能力仍未收口 |
 | 9 | Neo4j 图谱与 `graph.query` 工具 | 已完成 | Neo4j 图谱同步、图谱查看/重建、多跳路径查询和 Neo4j 查询验证已收口 |
 | 10 | Trace 扩展、管理控制台与前端 Agent 时间线 | 已完成 | Trace 双视角、Agent/Tools 设置、Tools/Plugins 控制台、治理页和 Agent 时间线均已接通，且前端仍只展示解释性摘要 |
@@ -49,7 +49,7 @@
 
 1. 优先回头继续收口阶段 8，把治理后台更细的运营能力补齐。
 2. 阶段 4、5 仍有工具治理、高风险工具启停和真实联网 provider 的收尾工作。
-3. 阶段 6、7 仍需继续补记忆质量、压缩策略和三层路由回归覆盖。
+3. 阶段 6 仍需继续补记忆质量、压缩策略和长会话回归覆盖。
 
 当前已知阻塞记录：
 
@@ -489,12 +489,7 @@ Goal 描述：
 
 ## 阶段 7：三层执行体系与公开恢复接口
 
-当前状态：部分完成
-
-剩余项：
-
-- `CLARIFICATION / RAG_QA / REACT_AGENT` 路由规则仍需补更严格测试
-- 开放式任务、多步任务和歧义追问场景的回归集未完成
+当前状态：已完成
 
 参考文档：
 
@@ -533,6 +528,24 @@ Goal 描述：
 - 用户无需切换入口即可访问三种执行模式
 - Resume 能从最近未完成 run 恢复
 - 模式选择结果与预期一致
+
+本阶段完成记录：
+
+- `ConversationExecutionPlanner` 已稳定输出 `CLARIFICATION / RAG_QA / REACT_AGENT` 三种执行模式
+- 路由规则已覆盖：
+  - 歧义指代不清问题走 `CLARIFICATION`
+  - 明确知识问答走 `RAG_QA`
+  - 实时、多步、跨系统任务走 `REACT_AGENT`
+- `POST /api/v1/conversations/{sessionId}/resume` 已打通到最近未完成 Agent run
+- 同一聊天入口已验证可走：
+  - 澄清模式
+  - 经典 RAG
+  - Agent 流式桥接
+- 新增了知识库已选但请求具有实时 / 多步特征时仍升级到 Agent 的路由规则与测试
+
+本阶段验证：
+
+- `cd /Users/cheers/Desktop/workspace/SuperAgent/backend && ./mvnw -Dtest=ConversationExecutionPlannerTest,ConversationIntegrationTest test`
 
 下一阶段依赖：
 

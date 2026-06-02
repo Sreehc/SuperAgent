@@ -37,4 +37,20 @@ class ConversationExecutionPlannerTest {
         assertThat(plan.routeReason()).isEqualTo("open_ended_or_realtime_request_routed_to_agent");
         assertThat(plan.summary()).isEqualTo("run_react_agent_pipeline");
     }
+
+    @Test
+    void shouldRouteKnowledgeBaseRealtimeTaskToAgentMode() {
+        var plan = planner.plan("请联网搜索今天最新退款政策并结合知识库总结差异", 10L, List.of("上一个问题"));
+
+        assertThat(plan.executionMode()).isEqualTo(ExecutionMode.REACT_AGENT);
+        assertThat(plan.routeReason()).isEqualTo("open_ended_or_realtime_request_routed_to_agent");
+    }
+
+    @Test
+    void shouldKeepDirectQuestionWithoutKnowledgeBaseOnRagMode() {
+        var plan = planner.plan("退款规则是什么？", null, List.of("上一个问题"));
+
+        assertThat(plan.executionMode()).isEqualTo(ExecutionMode.RAG_QA);
+        assertThat(plan.routeReason()).isEqualTo("direct_chat_with_memory_only");
+    }
 }

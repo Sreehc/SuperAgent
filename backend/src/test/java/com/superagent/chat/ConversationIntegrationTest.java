@@ -1,7 +1,10 @@
 package com.superagent.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -23,6 +26,7 @@ import com.superagent.rag.TestEmbeddingClientConfiguration;
 import com.superagent.rag.TestRerankClientConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -200,6 +204,46 @@ class ConversationIntegrationTest {
                 String.class,
                 sessionId
         )).isEqualTo("CLARIFICATION");
+    }
+
+    @Test
+    void shouldRouteOpenEndedMessageToAgentAndBridgeAgentEvents() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long sessionId = createConversation(token, tenantId, "Agent 路由测试").path("data").path("id").asLong();
+
+        when(agentGatewayClient.createRun(any())).thenReturn(88L);
+        doAnswer(invocation -> {
+            AgentGatewayClient.AgentEventConsumer consumer = invocation.getArgument(2);
+            consumer.accept("agent_step", "{\"runId\":88,\"phase\":\"PLAN\",\"status\":\"success\",\"summary\":\"Agent 已开始规划\"}");
+            consumer.accept("tool_start", "{\"toolId\":\"web.search\",\"summary\":\"开始搜索\"}");
+            consumer.accept("delta", "{\"text\":\"这是 Agent 回答。\"}");
+            consumer.accept("recommendation", "{\"items\":[\"继续追问这个主题\"]}");
+            return null;
+        }).when(agentGatewayClient).streamRun(anyLong(), any(BooleanSupplier.class), any(AgentGatewayClient.AgentEventConsumer.class));
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "请联网搜索今天最新的退款政策变化"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("event:agent_step");
+        assertThat(body).contains("event:tool_start");
+        assertThat(body).contains("event:recommendation");
+        assertThat(body).contains("这是 Agent 回答。");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT execution_mode FROM conversation_exchange WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                String.class,
+                sessionId
+        )).isEqualTo("REACT_AGENT");
+        verify(agentGatewayClient).createRun(any());
+        verify(agentGatewayClient).streamRun(eq(88L), any(BooleanSupplier.class), any(AgentGatewayClient.AgentEventConsumer.class));
     }
 
     @Test
