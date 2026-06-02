@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -17,6 +18,10 @@ import org.springframework.stereotype.Service;
 public class GraphQueryService {
 
     private static final Pattern TERM_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{2,}|[\\u4e00-\\u9fa5]{2,8}");
+    private static final Pattern CN_RELATION_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,8}|[A-Za-z][A-Za-z0-9_-]{1,31})\\s*(?:和|与|跟|同)\\s*([\\u4e00-\\u9fa5]{2,8}|[A-Za-z][A-Za-z0-9_-]{1,31})(?=之间|的?(?:关系|联系|路径))(?:之间)?(?:的)?(?:关系|联系|路径)");
+    private static final Pattern EN_RELATION_PATTERN = Pattern.compile("(?:relationship|relation|path)\\s+(?:between|from)\\s+([A-Za-z][A-Za-z0-9_-]{1,31})\\s+(?:and|to)\\s+([A-Za-z][A-Za-z0-9_-]{1,31})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ARROW_RELATION_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,8}|[A-Za-z][A-Za-z0-9_-]{1,31})\\s*(?:->|→)\\s*([\\u4e00-\\u9fa5]{2,8}|[A-Za-z][A-Za-z0-9_-]{1,31})");
+    private static final Pattern MAX_HOPS_PATTERN = Pattern.compile("(\\d+)\\s*(?:跳|hops?)", Pattern.CASE_INSENSITIVE);
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final Neo4jGraphQueryRepository neo4jGraphQueryRepository;
@@ -30,37 +35,31 @@ public class GraphQueryService {
     }
 
     public Map<String, Object> query(long tenantId, String question, Long knowledgeBaseId, Long documentId, int limit) {
-        List<String> terms = extractTerms(question);
-        List<String> normalizedTerms = terms.stream().map(value -> value.toLowerCase(java.util.Locale.ROOT)).toList();
+        GraphQueryRequest request = buildRequest(question);
         Optional<Neo4jGraphQueryRepository.GraphQueryPayload> neo4jResult =
-                neo4jGraphQueryRepository.query(tenantId, normalizedTerms, knowledgeBaseId, documentId, limit);
+                neo4jGraphQueryRepository.query(tenantId, request, knowledgeBaseId, documentId, limit);
         if (neo4jResult.isPresent()) {
             return Map.of(
-                    "terms", terms,
+                    "terms", request.terms(),
                     "source", "neo4j",
+                    "queryMode", request.pathQuery() ? "path" : "entity_search",
                     "evidence", neo4jResult.get().evidence(),
                     "nodes", neo4jResult.get().nodes(),
                     "edges", neo4jResult.get().edges()
             );
         }
-        List<GraphHit> hits = findHits(tenantId, knowledgeBaseId, documentId, terms, limit);
+
+        List<GraphHit> hits = findHits(tenantId, knowledgeBaseId, documentId, request.terms(), limit);
         List<Map<String, Object>> evidence = hits.stream()
-                .map(hit -> Map.<String, Object>of(
-                        "knowledgeBaseId", hit.knowledgeBaseId(),
-                        "documentId", hit.documentId(),
-                        "documentTitle", hit.documentTitle(),
-                        "chunkId", hit.chunkId(),
-                        "chunkNo", hit.chunkNo(),
-                        "content", hit.content(),
-                        "score", hit.score()
-                ))
+                .map(hit -> buildFallbackEvidence(request, hit))
                 .toList();
         return Map.of(
-                "terms", terms,
+                "terms", request.terms(),
                 "source", "postgres_fallback",
+                "queryMode", request.pathQuery() ? "path" : "entity_search",
                 "evidence", evidence,
-                "nodes", buildNodes(terms, hits),
-                "edges", buildEdges(terms, hits)
+                "nodes", buildNodes(request, hits),
+                "edges", buildEdges(request, hits)
         );
     }
 
@@ -133,10 +132,29 @@ public class GraphQueryService {
         ));
     }
 
-    private List<Map<String, Object>> buildNodes(List<String> terms, List<GraphHit> hits) {
+    private Map<String, Object> buildFallbackEvidence(GraphQueryRequest request, GraphHit hit) {
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("knowledgeBaseId", hit.knowledgeBaseId());
+        evidence.put("documentId", hit.documentId());
+        evidence.put("documentTitle", hit.documentTitle());
+        evidence.put("chunkId", hit.chunkId());
+        evidence.put("chunkNo", hit.chunkNo());
+        evidence.put("content", hit.content());
+        evidence.put("score", hit.score());
+        evidence.put("queryMode", request.pathQuery() ? "path" : "entity_search");
+        if (request.pathQuery()) {
+            evidence.put("sourceEntity", request.sourceEntity());
+            evidence.put("targetEntity", request.targetEntity());
+            evidence.put("path", request.sourceEntity() + " -> " + "Chunk " + hit.chunkNo() + " -> " + request.targetEntity());
+            evidence.put("hopCount", 2);
+        }
+        return evidence;
+    }
+
+    private List<Map<String, Object>> buildNodes(GraphQueryRequest request, List<GraphHit> hits) {
         List<Map<String, Object>> nodes = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
-        for (String term : terms) {
+        for (String term : request.terms()) {
             String id = "entity:" + slugify(term);
             if (seen.add(id)) {
                 nodes.add(Map.of("id", id, "type", "Entity", "label", term));
@@ -155,13 +173,13 @@ public class GraphQueryService {
         return nodes;
     }
 
-    private List<Map<String, Object>> buildEdges(List<String> terms, List<GraphHit> hits) {
+    private List<Map<String, Object>> buildEdges(GraphQueryRequest request, List<GraphHit> hits) {
         List<Map<String, Object>> edges = new ArrayList<>();
         for (GraphHit hit : hits) {
             String documentId = "document:" + hit.documentId();
             String chunkId = "chunk:" + hit.chunkId();
             edges.add(Map.of("sourceId", documentId, "targetId", chunkId, "type", "CONTAINS"));
-            for (String term : terms) {
+            for (String term : request.terms()) {
                 if (hit.content().contains(term)) {
                     edges.add(Map.of(
                             "sourceId", chunkId,
@@ -171,14 +189,77 @@ public class GraphQueryService {
                 }
             }
         }
-        for (int index = 0; index < terms.size() - 1; index++) {
+        if (request.pathQuery() && request.sourceEntity() != null && request.targetEntity() != null) {
             edges.add(Map.of(
-                    "sourceId", "entity:" + slugify(terms.get(index)),
-                    "targetId", "entity:" + slugify(terms.get(index + 1)),
+                    "sourceId", "entity:" + slugify(request.sourceEntity()),
+                    "targetId", "entity:" + slugify(request.targetEntity()),
+                    "type", "RELATES_TO"
+            ));
+        }
+        for (int index = 0; index < request.terms().size() - 1; index++) {
+            edges.add(Map.of(
+                    "sourceId", "entity:" + slugify(request.terms().get(index)),
+                    "targetId", "entity:" + slugify(request.terms().get(index + 1)),
                     "type", "RELATES_TO"
             ));
         }
         return edges;
+    }
+
+    private GraphQueryRequest buildRequest(String question) {
+        List<String> terms = extractTerms(question);
+        List<String> normalizedTerms = terms.stream().map(value -> value.toLowerCase(Locale.ROOT)).toList();
+        RelationIntent relationIntent = extractRelationIntent(question);
+        if (relationIntent == null) {
+            return new GraphQueryRequest(terms, normalizedTerms, null, null, false, 4);
+        }
+
+        Set<String> mergedTerms = new LinkedHashSet<>();
+        mergedTerms.add(relationIntent.sourceEntity());
+        mergedTerms.add(relationIntent.targetEntity());
+        mergedTerms.addAll(terms);
+        List<String> enrichedTerms = List.copyOf(mergedTerms);
+        return new GraphQueryRequest(
+                enrichedTerms,
+                enrichedTerms.stream().map(value -> value.toLowerCase(Locale.ROOT)).toList(),
+                relationIntent.sourceEntity(),
+                relationIntent.targetEntity(),
+                true,
+                relationIntent.maxHops()
+        );
+    }
+
+    private RelationIntent extractRelationIntent(String question) {
+        String normalizedQuestion = question == null ? "" : question.trim();
+        if (normalizedQuestion.isBlank()) {
+            return null;
+        }
+
+        Matcher matcher = CN_RELATION_PATTERN.matcher(normalizedQuestion);
+        if (matcher.find()) {
+            return new RelationIntent(normalizeEntityCandidate(matcher.group(1)), normalizeEntityCandidate(matcher.group(2)), extractMaxHops(normalizedQuestion));
+        }
+        matcher = EN_RELATION_PATTERN.matcher(normalizedQuestion);
+        if (matcher.find()) {
+            return new RelationIntent(normalizeEntityCandidate(matcher.group(1)), normalizeEntityCandidate(matcher.group(2)), extractMaxHops(normalizedQuestion));
+        }
+        matcher = ARROW_RELATION_PATTERN.matcher(normalizedQuestion);
+        if (matcher.find()) {
+            return new RelationIntent(normalizeEntityCandidate(matcher.group(1)), normalizeEntityCandidate(matcher.group(2)), extractMaxHops(normalizedQuestion));
+        }
+        return null;
+    }
+
+    private int extractMaxHops(String question) {
+        Matcher matcher = MAX_HOPS_PATTERN.matcher(question == null ? "" : question);
+        if (matcher.find()) {
+            try {
+                return Math.max(2, Math.min(6, Integer.parseInt(matcher.group(1))));
+            } catch (NumberFormatException ignored) {
+                return 4;
+            }
+        }
+        return 4;
     }
 
     private List<String> extractTerms(String question) {
@@ -194,7 +275,16 @@ public class GraphQueryService {
     }
 
     private String slugify(String value) {
-        return value == null ? "unknown" : value.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}]+", "-").replaceAll("(^-|-$)", "").toLowerCase();
+        return value == null ? "unknown" : value.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}]+", "-").replaceAll("(^-|-$)", "").toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeEntityCandidate(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim()
+                .replaceAll("(之间的|之间|的)$", "")
+                .trim();
     }
 
     private record GraphHit(
@@ -205,6 +295,13 @@ public class GraphQueryService {
             int chunkNo,
             String content,
             double score
+    ) {
+    }
+
+    private record RelationIntent(
+            String sourceEntity,
+            String targetEntity,
+            int maxHops
     ) {
     }
 }

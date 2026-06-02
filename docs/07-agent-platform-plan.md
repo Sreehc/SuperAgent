@@ -39,7 +39,7 @@
 | 6 | 摘要记忆与会话恢复策略 | 部分完成 | 记忆策略和摘要存储已接入，但摘要质量、压缩策略和长会话回归还未收口 |
 | 7 | 三层执行体系与公开恢复接口 | 部分完成 | `resume` 用户接口已补，三层路由有基础实现，但规则和回归覆盖不完整 |
 | 8 | 知识治理升级、版本化与切块策略 | 部分完成 | 上传、处理、重处理、版本回写和多种切块策略已接入主链路，知识库/文档页也已接入域与 profile 选择和版本可见性，但治理控制台和更细的运营能力仍未收口 |
-| 9 | Neo4j 图谱与 `graph.query` 工具 | 部分完成 | Neo4j 持久化、图谱同步回写、`graph.query`、文档详情图谱查看/重建和治理页图谱文档入口已落地，但图路径查询能力和更深入的治理能力仍未收口 |
+| 9 | Neo4j 图谱与 `graph.query` 工具 | 已完成 | Neo4j 图谱同步、图谱查看/重建、多跳路径查询和 Neo4j 查询验证已收口 |
 | 10 | Trace 扩展、管理控制台与前端 Agent 时间线 | 已完成 | Trace 双视角、Agent/Tools 设置、Tools/Plugins 控制台、治理页和 Agent 时间线均已接通，且前端仍只展示解释性摘要 |
 | 11 | 评测框架、回放集与上线门禁 | 未开始 | 还缺 `agent-eval`、恢复成功率校验、工具轨迹断言和 CI 门禁 |
 
@@ -47,9 +47,9 @@
 
 如果继续按计划模式推进，建议优先顺序固定为：
 
-1. 优先继续收口阶段 9，把图路径查询、图谱治理深度和 Neo4j 验证补齐。
-2. 再推进阶段 11，建立 `agent-eval`、回放集和 CI 门禁。
-3. 阶段 8 的治理页已形成可运营入口，但更细粒度的运营能力仍可继续增强。
+1. 优先推进阶段 11，建立 `agent-eval`、回放集和 CI 门禁。
+2. 再回头继续收口阶段 8，把治理后台更细的运营能力补齐。
+3. 阶段 4、5、6、7 仍是“部分完成”，后续应按治理、联网工具、记忆和路由规则补齐残余能力。
 
 当前已知阻塞记录：
 
@@ -595,13 +595,7 @@ Goal 描述：
 
 ## 阶段 9：Neo4j 图谱与 graph.query 工具
 
-当前状态：部分完成
-
-剩余项：
-
-- `Neo4j` 持久化与同步已接入，但图路径、多跳关系和更强的实体检索能力仍较弱
-- `graph.query` 已接入 `agent-service`，但还缺更强的图路径/实体关系查询能力
-- 图谱治理页已接入文档入口，但更完整的独立图谱治理后台仍未完成
+当前状态：已完成
 
 参考文档：
 
@@ -646,6 +640,22 @@ Goal 描述：
 - 管理台可查看文档结构图和关系图
 - Agent 能通过 `graph.query` 获取图谱证据
 - 图谱不可用时现有 RAG 不受阻塞
+
+本阶段完成记录：
+
+- 文档处理流水线已生成 `KnowledgeBase`、`Document`、`Section`、`Chunk`、`Entity` 五类节点，并同步 `CONTAINS`、`NEXT`、`MENTIONS`、`RELATES_TO` 四类边
+- 图谱同步状态已回写 PostgreSQL，且图谱同步失败不会阻塞经典 RAG 文档进入 `ready`
+- 文档图谱查看与重建接口已打通：
+  - `GET /api/v1/documents/{documentId}/graph`
+  - `POST /api/v1/documents/{documentId}/graph/rebuild`
+- `graph.query` 已支持多跳路径查询优先、术语检索兜底，并可返回结构化路径证据
+- `agent-service` 已补 Neo4j 查询层测试，验证最短路径查询语义与返回结构
+- `backend` 已有图谱同步、图谱查看、图谱重建和降级相关验证
+
+本阶段验证：
+
+- `cd /Users/cheers/Desktop/workspace/SuperAgent/agent-service && mvn -Dtest=GraphQueryServiceTest,Neo4jGraphQueryRepositoryTest test`
+- `cd /Users/cheers/Desktop/workspace/SuperAgent/backend && ./mvnw -Dtest=DocumentGraphServiceTest,KnowledgeIntegrationTest test`
 
 下一阶段依赖：
 
