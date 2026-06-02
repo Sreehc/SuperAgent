@@ -38,7 +38,7 @@
 | 5 | 联网工具、HTTP 工具与受控 Python 执行 | 部分完成 | 已有 `knowledge.search`、基础 `web.search/web.fetch`、`http.request`、`python.sandbox` 雏形，但真实 provider、审计和风控未完成 |
 | 6 | 摘要记忆与会话恢复策略 | 已完成 | 多策略记忆、摘要刷新和默认 Agent 记忆策略已接入并补齐回归测试 |
 | 7 | 三层执行体系与公开恢复接口 | 已完成 | 三层路由、公开 resume 接口和同入口 Agent 流式桥接验证已收口 |
-| 8 | 知识治理升级、版本化与切块策略 | 部分完成 | 上传、处理、重处理、版本回写和多种切块策略已接入主链路，知识库/文档页也已接入域与 profile 选择和版本可见性，但治理控制台和更细的运营能力仍未收口 |
+| 8 | 知识治理升级、版本化与切块策略 | 已完成 | 知识治理控制台、版本化、切块策略、重处理替换索引和治理接口已形成可运营闭环 |
 | 9 | Neo4j 图谱与 `graph.query` 工具 | 已完成 | Neo4j 图谱同步、图谱查看/重建、多跳路径查询和 Neo4j 查询验证已收口 |
 | 10 | Trace 扩展、管理控制台与前端 Agent 时间线 | 已完成 | Trace 双视角、Agent/Tools 设置、Tools/Plugins 控制台、治理页和 Agent 时间线均已接通，且前端仍只展示解释性摘要 |
 | 11 | 评测框架、回放集与上线门禁 | 已完成 | 固定回放集、`agent-eval` runner、阈值门禁和 CI workflow 已落地 |
@@ -47,9 +47,9 @@
 
 如果继续按计划模式推进，建议优先顺序固定为：
 
-1. 优先回头继续收口阶段 8，把治理后台更细的运营能力补齐。
-2. 阶段 4、5 仍有工具治理、高风险工具启停和真实联网 provider 的收尾工作。
-3. 阶段 4、5 之后，阶段 8 仍是知识治理后台完整收口的主要剩余项。
+1. 当前剩余主阶段为 4 和 5，重点是工具治理完整性、高风险工具启停与真实联网 provider。
+2. 评测门禁已经就位，后续每次改造都应继续通过 `agent-eval` 再推进。
+3. 当前没有新的基础设施阻塞，剩余工作主要集中在工具平台能力深度。
 
 当前已知阻塞记录：
 
@@ -564,14 +564,7 @@ Goal 描述：
 
 ## 阶段 8：知识治理升级、版本化与切块策略
 
-当前状态：部分完成
-
-剩余项：
-
-- 管理台层面的知识域、版本、切块策略页面还未补齐
-- 知识域和切块 profile 的更细粒度运营策略仍未实现
-- 版本治理尚未覆盖更多后台筛选、失败回放和操作审计
-- 目前前端只补了知识库上传和文档详情可见性，未形成独立治理工作台
+当前状态：已完成
 
 参考文档：
 
@@ -612,6 +605,23 @@ Goal 描述：
 - 后台可管理知识域、版本和切块策略
 - 文档版本切换不会破坏现有检索主链路
 - 知识库治理进入可运营状态
+
+本阶段完成记录：
+
+- 已具备知识治理控制台页面：`/governance`
+- 已具备知识域管理能力与接口：
+  - `GET/POST/PATCH /api/v1/admin/knowledge-domains`
+- 已具备切块策略管理能力与接口：
+  - `GET/POST/PATCH /api/v1/admin/chunking-profiles`
+- 已具备文档版本查看能力与接口：
+  - `GET /api/v1/documents/{documentId}/versions`
+- 文档上传、切块 profile 绑定、重处理替换索引、版本切换和图谱重建已接入同一治理链路
+- 一期切块策略 `recursive / markdown_heading / slide_section` 已接入处理流水线和治理入口
+
+本阶段验证：
+
+- `cd /Users/cheers/Desktop/workspace/SuperAgent/backend && ./mvnw -Dtest=KnowledgeIntegrationTest test`
+- `cd /Users/cheers/Desktop/workspace/SuperAgent/frontend && npm run build`
 
 可并行：
 
