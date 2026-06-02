@@ -112,3 +112,23 @@ super-agent:
     total-evidence-char-limit: ${RAG_TOTAL_EVIDENCE_CHAR_LIMIT:12000}
     min-relevance-score: ${RAG_MIN_RELEVANCE_SCORE:0.35}
     max-sub-questions: ${RAG_MAX_SUB_QUESTIONS:4}
+  agent:
+    service-base-url: ${AGENT_SERVICE_BASE_URL:http://localhost:18081}
+    enabled-default: ${AGENT_ENABLED_DEFAULT:false}
+    max-model-steps: ${AGENT_MAX_MODEL_STEPS:8}
+    max-tool-calls: ${AGENT_MAX_TOOL_CALLS:10}
+    checkpoint-enabled: ${AGENT_CHECKPOINT_ENABLED:true}
+    code-execution-enabled: ${CODE_EXECUTION_ENABLED:false}
+  tools:
+    web-search-enabled: ${WEB_SEARCH_ENABLED:true}
+    http-tool-enabled: ${HTTP_TOOL_ENABLED:false}
+    graph-tool-enabled: ${GRAPH_TOOL_ENABLED:false}
+    code-execution-enabled: ${CODE_EXECUTION_ENABLED:false}
+    tool-timeout-ms: ${TOOL_TIMEOUT_MS:10000}
+    search-provider: ${SEARCH_PROVIDER:tavily}
+    allowed-http-domains: ${ALLOWED_HTTP_DOMAINS:}
+  graph:
+    neo4j-uri: ${NEO4J_URI:bolt://localhost:7687}
+    neo4j-username: ${NEO4J_USERNAME:neo4j}
+    neo4j-password: ${NEO4J_PASSWORD:password}
+    enabled: ${GRAPH_ENABLED:false}

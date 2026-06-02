@@ -28,6 +28,30 @@ export interface RerankSettings {
   apiKeySet: boolean
 }
 
+export interface AgentSettings {
+  enabled: boolean
+  maxModelSteps: number
+  maxToolCalls: number
+  checkpointEnabled: boolean
+  defaultMemoryStrategy: string
+  webSearchEnabled: boolean
+  httpToolEnabled: boolean
+  graphToolEnabled: boolean
+  codeExecutionEnabled: boolean
+  toolTimeoutMs: number
+  allowedHttpDomains: string[]
+}
+
+export interface ToolSettings {
+  webSearchEnabled: boolean
+  httpToolEnabled: boolean
+  graphToolEnabled: boolean
+  codeExecutionEnabled: boolean
+  toolTimeoutMs: number
+  searchProvider: string
+  allowedHttpDomains: string[]
+}
+
 export interface UpdateResponse {
   updated: boolean
 }
@@ -69,4 +93,28 @@ export interface UpdateRerankSettingsRequest {
   baseUrl?: string
   model?: string
   apiKey?: string
+}
+
+export interface UpdateAgentSettingsRequest {
+  enabled?: boolean
+  maxModelSteps?: number
+  maxToolCalls?: number
+  checkpointEnabled?: boolean
+  defaultMemoryStrategy?: string
+  webSearchEnabled?: boolean
+  httpToolEnabled?: boolean
+  graphToolEnabled?: boolean
+  codeExecutionEnabled?: boolean
+  toolTimeoutMs?: number
+  allowedHttpDomains?: string[]
+}
+
+export interface UpdateToolSettingsRequest {
+  webSearchEnabled?: boolean
+  httpToolEnabled?: boolean
+  graphToolEnabled?: boolean
+  codeExecutionEnabled?: boolean
+  toolTimeoutMs?: number
+  searchProvider?: string
+  allowedHttpDomains?: string[]
 }

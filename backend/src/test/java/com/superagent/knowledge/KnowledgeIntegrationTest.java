@@ -51,6 +51,11 @@ class KnowledgeIntegrationTest {
     @BeforeEach
     void cleanKnowledgeTables() {
         jdbcTemplate.execute("DELETE FROM tenant_runtime_setting");
+        jdbcTemplate.execute("DELETE FROM tool_call_artifact");
+        jdbcTemplate.execute("DELETE FROM tool_call_trace");
+        jdbcTemplate.execute("DELETE FROM agent_checkpoint");
+        jdbcTemplate.execute("DELETE FROM agent_run_step");
+        jdbcTemplate.execute("DELETE FROM agent_run");
         jdbcTemplate.execute("DELETE FROM conversation_reference");
         jdbcTemplate.execute("DELETE FROM retrieval_trace_item");
         jdbcTemplate.execute("DELETE FROM rerank_trace");
@@ -64,7 +69,10 @@ class KnowledgeIntegrationTest {
         jdbcTemplate.execute("DELETE FROM document_task");
         jdbcTemplate.execute("DELETE FROM document_embedding");
         jdbcTemplate.execute("DELETE FROM document_chunk");
+        jdbcTemplate.execute("DELETE FROM knowledge_document_version");
         jdbcTemplate.execute("DELETE FROM knowledge_document");
+        jdbcTemplate.execute("DELETE FROM chunking_profile");
+        jdbcTemplate.execute("DELETE FROM knowledge_domain");
         jdbcTemplate.execute("DELETE FROM knowledge_base");
     }
 
@@ -224,17 +232,21 @@ class KnowledgeIntegrationTest {
     void shouldProcessDocumentAndExposeChunksTasksAndReprocess() throws Exception {
         LoginSession owner = login("admin", "password123");
         long knowledgeBaseId = createKnowledgeBase(owner, "文档处理测试", "published");
+        long domainId = createKnowledgeDomain(owner, "ops", "运维域");
+        long markdownProfileId = createChunkingProfile(owner, "md-heading", "Markdown 标题切块", "markdown_heading", true);
 
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "guide.txt",
-                "text/plain",
-                ("第一段说明。\n\n第二段说明，包含更多文字。\n第三段说明。").getBytes(StandardCharsets.UTF_8)
+                "text/markdown",
+                ("# 第一章\n第一段说明。\n\n## 第二章\n第二段说明，包含更多文字。\n### 第三章\n第三段说明。").getBytes(StandardCharsets.UTF_8)
         );
 
         MvcResult uploadResponse = mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
                         .file(file)
                         .param("title", "处理链路文档")
+                        .param("knowledgeDomainId", String.valueOf(domainId))
+                        .param("chunkingProfileId", String.valueOf(markdownProfileId))
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
                         .header("X-Tenant-Id", owner.tenantId()))
                 .andExpect(status().isOk())
@@ -242,6 +254,9 @@ class KnowledgeIntegrationTest {
         JsonNode uploaded = objectMapper.readTree(uploadResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
         long documentId = uploaded.path("data").path("id").asLong();
         long parseTaskId = uploaded.path("data").path("taskId").asLong();
+        assertThat(uploaded.path("data").path("knowledgeDomainId").asLong()).isEqualTo(domainId);
+        assertThat(uploaded.path("data").path("chunkingProfileId").asLong()).isEqualTo(markdownProfileId);
+        assertThat(uploaded.path("data").path("activeVersionNo").asInt()).isEqualTo(1);
 
         JsonNode documentDetail = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}", documentId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
@@ -252,6 +267,9 @@ class KnowledgeIntegrationTest {
                 .getContentAsString(StandardCharsets.UTF_8));
         assertThat(documentDetail.path("data").path("title").asText()).isEqualTo("处理链路文档");
         assertThat(documentDetail.path("data").path("status").asText()).isEqualTo("uploaded");
+        assertThat(documentDetail.path("data").path("knowledgeDomainId").asLong()).isEqualTo(domainId);
+        assertThat(documentDetail.path("data").path("chunkingProfileId").asLong()).isEqualTo(markdownProfileId);
+        assertThat(documentDetail.path("data").path("activeVersionNo").asInt()).isEqualTo(1);
 
         documentProcessingService.process(new DocumentTaskMessage(owner.tenantId(), documentId, parseTaskId, "test"));
 
@@ -270,8 +288,12 @@ class KnowledgeIntegrationTest {
                 .getResponse()
                 .getContentAsString(StandardCharsets.UTF_8));
         assertThat(processedDetail.path("data").path("parsedText").asText()).contains("第一段说明");
+        assertThat(processedDetail.path("data").path("activeVersionNo").asInt()).isEqualTo(1);
         assertThat(chunks.path("data").path("total").asInt()).isGreaterThan(0);
         assertThat(chunks.path("data").path("items").get(0).path("content").asText()).contains("说明");
+        assertThat(chunks.path("data").path("items").get(0).path("metadata").path("strategy").asText()).isEqualTo("markdown_heading");
+        assertThat(chunks.path("data").path("items").get(0).path("metadata").path("chunkingProfileId").asLong()).isEqualTo(markdownProfileId);
+        assertThat(chunks.path("data").path("items").get(0).path("metadata").path("versionNo").asInt()).isEqualTo(1);
 
         JsonNode tasks = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/tasks", documentId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
@@ -293,18 +315,45 @@ class KnowledgeIntegrationTest {
                 Integer.class,
                 documentId
         )).isGreaterThan(0);
+        JsonNode versions = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/versions", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(versions.path("data").get(0).path("versionNo").asInt()).isEqualTo(1);
+        assertThat(versions.path("data").get(0).path("chunkingProfileId").asLong()).isEqualTo(markdownProfileId);
+        assertThat(versions.path("data").get(0).path("status").asText()).isEqualTo("ready");
+        assertThat(versions.path("data").get(0).path("chunkCount").asInt()).isGreaterThan(0);
+        JsonNode initialGraph = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/graph", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(initialGraph.path("data").path("nodes").isArray()).isTrue();
+        assertThat(initialGraph.path("data").path("edges").isArray()).isTrue();
+        assertThat(initialGraph.path("data").path("versionGraphSyncStatus").asText()).isEqualTo("ready");
+        assertThat(initialGraph.toString()).contains("KnowledgeBase");
+        assertThat(initialGraph.toString()).contains("Chunk");
 
         int originalChunkCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM document_chunk WHERE document_id = ?",
                 Integer.class,
                 documentId
         );
+        long slideProfileId = createChunkingProfile(owner, "slide-section", "Slide 分段切块", "slide_section", false);
 
         MvcResult reprocessResponse = mockMvc.perform(post("/api/v1/documents/{documentId}/reprocess", documentId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
                         .header("X-Tenant-Id", owner.tenantId())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("reason", "重试处理"))))
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "reason", "重试处理",
+                                "chunkingProfileId", slideProfileId
+                        ))))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode reprocessed = objectMapper.readTree(reprocessResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
@@ -318,6 +367,24 @@ class KnowledgeIntegrationTest {
                 documentId
         );
         assertThat(processedChunkCount).isEqualTo(originalChunkCount);
+        JsonNode reprocessedDetail = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(reprocessedDetail.path("data").path("activeVersionNo").asInt()).isEqualTo(2);
+        JsonNode versionListAfterReprocess = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/versions", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(versionListAfterReprocess.path("data").get(0).path("versionNo").asInt()).isEqualTo(2);
+        assertThat(versionListAfterReprocess.path("data").get(0).path("chunkingProfileId").asLong()).isEqualTo(slideProfileId);
+        assertThat(versionListAfterReprocess.path("data").get(0).path("status").asText()).isEqualTo("ready");
         Integer duplicateChunkNoCount = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM (
@@ -335,6 +402,28 @@ class KnowledgeIntegrationTest {
                 documentId
         );
         assertThat(embeddingCount).isEqualTo(processedChunkCount);
+        JsonNode chunksAfterReprocess = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/chunks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("metadata").path("strategy").asText()).isEqualTo("slide_section");
+        assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("metadata").path("versionNo").asInt()).isEqualTo(2);
+        assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("metadata").path("chunkingProfileId").asLong()).isEqualTo(slideProfileId);
+        JsonNode rebuiltGraph = objectMapper.readTree(mockMvc.perform(post("/api/v1/documents/{documentId}/graph/rebuild", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(rebuiltGraph.path("data").path("versionNo").asInt()).isEqualTo(2);
+        assertThat(rebuiltGraph.path("data").path("documentGraphSyncStatus").asText()).isEqualTo("ready");
+        assertThat(rebuiltGraph.path("data").path("nodes").isArray()).isTrue();
+        assertThat(rebuiltGraph.path("data").path("edges").isArray()).isTrue();
+        assertThat(rebuiltGraph.toString()).contains("MENTIONS");
 
         int parseAttemptCount = jdbcTemplate.queryForObject(
                 "SELECT attempt_count FROM document_task WHERE id = ?",
@@ -447,6 +536,40 @@ class KnowledgeIntegrationTest {
                         .content(objectMapper.writeValueAsString(Map.of("status", status))))
                 .andExpect(status().isOk());
         return knowledgeBaseId;
+    }
+
+    private long createKnowledgeDomain(LoginSession owner, String code, String name) throws Exception {
+        MvcResult response = mockMvc.perform(post("/api/v1/admin/knowledge-domains")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "code", code,
+                                "name", name,
+                                "description", name + "描述"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(response.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("id").asLong();
+    }
+
+    private long createChunkingProfile(LoginSession owner, String code, String name, String strategy, boolean isDefault) throws Exception {
+        MvcResult response = mockMvc.perform(post("/api/v1/admin/chunking-profiles")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "code", code,
+                                "name", name,
+                                "strategy", strategy,
+                                "isDefault", isDefault,
+                                "config", Map.of()
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(response.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("id").asLong();
     }
 
     private LoginSession login(String username, String password) throws Exception {

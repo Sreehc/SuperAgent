@@ -1,14 +1,18 @@
 package com.superagent.settings.web;
 
+import com.superagent.chat.domain.MemoryStrategy;
 import com.superagent.common.api.ApiResponse;
+import com.superagent.settings.domain.AgentSettings;
 import com.superagent.settings.domain.ModelSettings;
 import com.superagent.settings.domain.RagSettings;
 import com.superagent.settings.domain.RerankSettings;
+import com.superagent.settings.domain.ToolSettings;
 import com.superagent.settings.service.RuntimeSettingsService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -110,6 +114,70 @@ public class AdminSettingsController {
         return ApiResponse.success(new SecretUpdateResponse(result.updated(), result.apiKeySet()));
     }
 
+    @GetMapping("/agent")
+    public ApiResponse<AgentSettingsItem> getAgentSettings() {
+        AgentSettings settings = runtimeSettingsService.getAgentSettings();
+        return ApiResponse.success(new AgentSettingsItem(
+                settings.enabled(),
+                settings.maxModelSteps(),
+                settings.maxToolCalls(),
+                settings.checkpointEnabled(),
+                settings.defaultMemoryStrategy().name(),
+                settings.webSearchEnabled(),
+                settings.httpToolEnabled(),
+                settings.graphToolEnabled(),
+                settings.codeExecutionEnabled(),
+                settings.toolTimeoutMs(),
+                settings.allowedHttpDomains()
+        ));
+    }
+
+    @PatchMapping("/agent")
+    public ApiResponse<UpdateResponse> updateAgentSettings(@Valid @RequestBody UpdateAgentSettingsRequest request) {
+        RuntimeSettingsService.UpdateResult result = runtimeSettingsService.updateAgentSettings(new RuntimeSettingsService.AgentSettingsPatch(
+                request.enabled(),
+                request.maxModelSteps(),
+                request.maxToolCalls(),
+                request.checkpointEnabled(),
+                request.defaultMemoryStrategy(),
+                request.webSearchEnabled(),
+                request.httpToolEnabled(),
+                request.graphToolEnabled(),
+                request.codeExecutionEnabled(),
+                request.toolTimeoutMs(),
+                request.allowedHttpDomains()
+        ));
+        return ApiResponse.success(new UpdateResponse(result.updated()));
+    }
+
+    @GetMapping("/tools")
+    public ApiResponse<ToolSettingsItem> getToolSettings() {
+        ToolSettings settings = runtimeSettingsService.getToolSettings();
+        return ApiResponse.success(new ToolSettingsItem(
+                settings.webSearchEnabled(),
+                settings.httpToolEnabled(),
+                settings.graphToolEnabled(),
+                settings.codeExecutionEnabled(),
+                settings.toolTimeoutMs(),
+                settings.searchProvider(),
+                settings.allowedHttpDomains()
+        ));
+    }
+
+    @PatchMapping("/tools")
+    public ApiResponse<UpdateResponse> updateToolSettings(@Valid @RequestBody UpdateToolSettingsRequest request) {
+        RuntimeSettingsService.UpdateResult result = runtimeSettingsService.updateToolSettings(new RuntimeSettingsService.ToolSettingsPatch(
+                request.webSearchEnabled(),
+                request.httpToolEnabled(),
+                request.graphToolEnabled(),
+                request.codeExecutionEnabled(),
+                request.toolTimeoutMs(),
+                request.searchProvider(),
+                request.allowedHttpDomains()
+        ));
+        return ApiResponse.success(new UpdateResponse(result.updated()));
+    }
+
     public record ModelSettingsItem(
             String provider,
             String baseUrl,
@@ -172,6 +240,58 @@ public class AdminSettingsController {
             @Size(max = 500) String baseUrl,
             @Size(max = 128) String model,
             @Size(max = 512) String apiKey
+    ) {
+    }
+
+    public record AgentSettingsItem(
+            boolean enabled,
+            int maxModelSteps,
+            int maxToolCalls,
+            boolean checkpointEnabled,
+            String defaultMemoryStrategy,
+            boolean webSearchEnabled,
+            boolean httpToolEnabled,
+            boolean graphToolEnabled,
+            boolean codeExecutionEnabled,
+            int toolTimeoutMs,
+            List<String> allowedHttpDomains
+    ) {
+    }
+
+    public record UpdateAgentSettingsRequest(
+            Boolean enabled,
+            @Min(1) Integer maxModelSteps,
+            @Min(1) Integer maxToolCalls,
+            Boolean checkpointEnabled,
+            MemoryStrategy defaultMemoryStrategy,
+            Boolean webSearchEnabled,
+            Boolean httpToolEnabled,
+            Boolean graphToolEnabled,
+            Boolean codeExecutionEnabled,
+            @Min(100) Integer toolTimeoutMs,
+            List<String> allowedHttpDomains
+    ) {
+    }
+
+    public record ToolSettingsItem(
+            boolean webSearchEnabled,
+            boolean httpToolEnabled,
+            boolean graphToolEnabled,
+            boolean codeExecutionEnabled,
+            int toolTimeoutMs,
+            String searchProvider,
+            List<String> allowedHttpDomains
+    ) {
+    }
+
+    public record UpdateToolSettingsRequest(
+            Boolean webSearchEnabled,
+            Boolean httpToolEnabled,
+            Boolean graphToolEnabled,
+            Boolean codeExecutionEnabled,
+            @Min(100) Integer toolTimeoutMs,
+            @Size(max = 64) String searchProvider,
+            List<String> allowedHttpDomains
     ) {
     }
 

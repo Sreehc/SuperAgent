@@ -8,10 +8,28 @@ import {
   listConversations,
   listMessages,
   openMessageStream,
+  resumeConversation,
   stopConversation,
   updateConversation,
 } from '../api'
-import type { ConversationDetail, ConversationMessage, ConversationSummary, MemoryStrategy, StreamDeltaEvent, StreamDoneEvent, StreamErrorEvent, StreamRecommendationEvent, StreamReferenceEvent, StreamStartEvent, StreamTraceStageEvent } from '../types'
+import type {
+  ConversationDetail,
+  ConversationMessage,
+  ConversationSummary,
+  MemoryStrategy,
+  StreamAgentStepEvent,
+  StreamCheckpointEvent,
+  StreamDeltaEvent,
+  StreamDoneEvent,
+  StreamErrorEvent,
+  StreamRecommendationEvent,
+  StreamReferenceEvent,
+  StreamResumeEvent,
+  StreamStartEvent,
+  StreamToolResultEvent,
+  StreamToolStartEvent,
+  StreamTraceStageEvent,
+} from '../types'
 import { listKnowledgeBases } from '../../knowledge/api'
 
 interface DisplayReference {
@@ -29,19 +47,27 @@ interface DisplayMessage extends ConversationMessage {
 
 interface StreamState {
   exchangeId: number | null
+  runId: number | null
   stage: string | null
   recommendations: string[]
   error: string
   stopped: boolean
+  timeline: Array<{
+    type: 'agent_step' | 'tool_start' | 'tool_result' | 'checkpoint' | 'resume'
+    title: string
+    summary: string
+  }>
 }
 
 function createEmptyStreamState(): StreamState {
   return {
     exchangeId: null,
+    runId: null,
     stage: null,
     recommendations: [],
     error: '',
     stopped: false,
+    timeline: [],
   }
 }
 
@@ -223,8 +249,57 @@ export const useChatStore = defineStore('chat', () => {
         streamState.value.recommendations = event.questions
         break
       }
+      case 'agent_step': {
+        const event = parsed as StreamAgentStepEvent
+        streamState.value.runId = event.runId
+        streamState.value.timeline = [
+          ...streamState.value.timeline,
+          { type: 'agent_step', title: `${event.phase} #${event.stepNo}`, summary: event.summary },
+        ]
+        streamState.value.stage = `${event.phase} · ${event.status}`
+        break
+      }
+      case 'tool_start': {
+        const event = parsed as StreamToolStartEvent
+        streamState.value.runId = event.runId
+        streamState.value.timeline = [
+          ...streamState.value.timeline,
+          { type: 'tool_start', title: event.toolId, summary: event.summary },
+        ]
+        break
+      }
+      case 'tool_result': {
+        const event = parsed as StreamToolResultEvent
+        streamState.value.runId = event.runId
+        streamState.value.timeline = [
+          ...streamState.value.timeline,
+          { type: 'tool_result', title: `${event.toolId} · ${event.status}`, summary: event.summary },
+        ]
+        break
+      }
+      case 'checkpoint': {
+        const event = parsed as StreamCheckpointEvent
+        streamState.value.runId = event.runId
+        streamState.value.timeline = [
+          ...streamState.value.timeline,
+          { type: 'checkpoint', title: `Checkpoint #${event.checkpointNo}`, summary: `${event.phase} · ${event.stable ? 'stable' : 'pending'}` },
+        ]
+        break
+      }
+      case 'resume': {
+        const event = parsed as StreamResumeEvent
+        streamState.value.runId = event.runId
+        streamState.value.timeline = [
+          ...streamState.value.timeline,
+          { type: 'resume', title: '恢复执行', summary: event.status },
+        ]
+        break
+      }
       case 'done': {
         const event = parsed as StreamDoneEvent
+        if (event.runId) {
+          streamState.value.runId = event.runId
+        }
         const assistantMessage = [...messages.value].reverse().find((message) => message.role === 'assistant')
         if (assistantMessage) {
           assistantMessage.status = event.stopped ? 'stopped' : 'success'
@@ -235,6 +310,9 @@ export const useChatStore = defineStore('chat', () => {
       case 'error': {
         const event = parsed as StreamErrorEvent
         streamState.value.error = event.message
+        if (event.runId) {
+          streamState.value.runId = event.runId
+        }
         const assistantMessage = [...messages.value].reverse().find((message) => message.role === 'assistant')
         if (assistantMessage) {
           assistantMessage.status = 'error'
@@ -353,6 +431,18 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function resumeConversationRun() {
+    if (!selectedSessionId.value) {
+      return
+    }
+    const response = await resumeConversation(selectedSessionId.value)
+    streamState.value.runId = response.data.runId
+    streamState.value.timeline = [
+      ...streamState.value.timeline,
+      { type: 'resume', title: '恢复请求', summary: response.data.resumed ? '已提交恢复请求' : '恢复请求未接受' },
+    ]
+  }
+
   function clearOnRouteLeave() {
     activeAbortController.value?.abort()
     activeAbortController.value = null
@@ -444,6 +534,7 @@ export const useChatStore = defineStore('chat', () => {
     selectConversation,
     sendMessage,
     stopStreaming,
+    resumeConversationRun,
     clearOnRouteLeave,
     setSelectedKnowledgeBaseId,
     renameConversation,

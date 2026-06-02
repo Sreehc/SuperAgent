@@ -1,0 +1,46 @@
+{
+  "pluginId": "core-tools",
+  "displayName": "Core Tools",
+  "version": "0.1.0",
+  "riskLevel": "standard",
+  "permissions": [
+    "knowledge.search",
+    "web.search",
+    "web.fetch",
+    "http.request",
+    "graph.query",
+    "python.sandbox"
+  ],
+  "tools": [
+    {
+      "id": "knowledge.search",
+      "kind": "knowledge",
+      "supportsStreaming": false
+    },
+    {
+      "id": "web.search",
+      "kind": "web",
+      "supportsStreaming": false
+    },
+    {
+      "id": "web.fetch",
+      "kind": "web",
+      "supportsStreaming": false
+    },
+    {
+      "id": "http.request",
+      "kind": "http",
+      "supportsStreaming": false
+    },
+    {
+      "id": "graph.query",
+      "kind": "graph",
+      "supportsStreaming": false
+    },
+    {
+      "id": "python.sandbox",
+      "kind": "python",
+      "supportsStreaming": false
+    }
+  ]
+}

@@ -12,3 +12,5 @@ super-agent:
     enabled: false
   messaging:
     kafka-enabled: ${TEST_KAFKA_ENABLED:false}
+  graph:
+    enabled: false

@@ -281,14 +281,36 @@ public class TraceQueryRepository {
         );
 
         AdminTraceSummary item = summary.getFirst();
-        String routeReason = jdbcTemplate.queryForObject("""
-                        SELECT route_reason
-                        FROM conversation_exchange
-                        WHERE tenant_id = :tenantId
-                          AND id = :exchangeId
+        Map<String, Object> exchangeMeta = jdbcTemplate.queryForObject("""
+                        SELECT route_reason,
+                               (
+                                   SELECT ar.id
+                                   FROM agent_run ar
+                                   WHERE ar.tenant_id = ce.tenant_id
+                                     AND ar.exchange_id = ce.id
+                                   ORDER BY ar.created_at DESC, ar.id DESC
+                                   LIMIT 1
+                               ) AS agent_run_id,
+                               (
+                                   SELECT ar.status
+                                   FROM agent_run ar
+                                   WHERE ar.tenant_id = ce.tenant_id
+                                     AND ar.exchange_id = ce.id
+                                   ORDER BY ar.created_at DESC, ar.id DESC
+                                   LIMIT 1
+                               ) AS agent_run_status
+                        FROM conversation_exchange ce
+                        WHERE ce.tenant_id = :tenantId
+                          AND ce.id = :exchangeId
                         """,
                 params,
-                String.class
+                (rs, rowNum) -> {
+                    Map<String, Object> metadata = new LinkedHashMap<>();
+                    metadata.put("routeReason", rs.getString("route_reason"));
+                    metadata.put("agentRunId", getNullableLong(rs, "agent_run_id"));
+                    metadata.put("agentRunStatus", rs.getString("agent_run_status"));
+                    return metadata;
+                }
         );
         return Optional.of(new AdminTraceDetail(
                 item.exchangeId(),
@@ -296,7 +318,9 @@ public class TraceQueryRepository {
                 item.userId(),
                 item.executionMode(),
                 item.status(),
-                routeReason,
+                (String) exchangeMeta.get("routeReason"),
+                (Long) exchangeMeta.get("agentRunId"),
+                (String) exchangeMeta.get("agentRunStatus"),
                 item.startedAt(),
                 item.finishedAt(),
                 item.durationMs(),

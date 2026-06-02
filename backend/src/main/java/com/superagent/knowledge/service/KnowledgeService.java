@@ -13,11 +13,14 @@ import com.superagent.knowledge.domain.DocumentChunk;
 import com.superagent.knowledge.domain.DocumentTask;
 import com.superagent.knowledge.domain.DocumentTaskStatus;
 import com.superagent.knowledge.domain.DocumentTaskType;
+import com.superagent.knowledge.domain.ChunkingProfile;
 import com.superagent.knowledge.domain.KnowledgeBase;
 import com.superagent.knowledge.domain.KnowledgeBaseStatus;
 import com.superagent.knowledge.domain.KnowledgeBaseVisibility;
+import com.superagent.knowledge.domain.KnowledgeDomain;
 import com.superagent.knowledge.domain.KnowledgeDocument;
 import com.superagent.knowledge.domain.KnowledgeDocumentStatus;
+import com.superagent.knowledge.domain.KnowledgeDocumentVersion;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.messaging.DocumentTaskProducer;
 import com.superagent.knowledge.repository.KnowledgeRepository;
@@ -25,6 +28,7 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -43,6 +47,7 @@ public class KnowledgeService {
     private final SuperAgentProperties properties;
     private final ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider;
     private final ObjectProvider<DocumentProcessingService> documentProcessingServiceProvider;
+    private final DocumentGraphService documentGraphService;
 
     public KnowledgeService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
@@ -50,7 +55,8 @@ public class KnowledgeService {
             ObjectStorageService objectStorageService,
             SuperAgentProperties properties,
             ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider,
-            ObjectProvider<DocumentProcessingService> documentProcessingServiceProvider
+            ObjectProvider<DocumentProcessingService> documentProcessingServiceProvider,
+            DocumentGraphService documentGraphService
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.knowledgeRepository = knowledgeRepository;
@@ -58,6 +64,7 @@ public class KnowledgeService {
         this.properties = properties;
         this.documentTaskProducerProvider = documentTaskProducerProvider;
         this.documentProcessingServiceProvider = documentProcessingServiceProvider;
+        this.documentGraphService = documentGraphService;
     }
 
     public KnowledgeBase createKnowledgeBase(String name, String description, KnowledgeBaseVisibility visibility) {
@@ -130,7 +137,9 @@ public class KnowledgeService {
             MultipartFile file,
             String title,
             String category,
-            String tags
+            String tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId
     ) {
         requireAdminRole();
         KnowledgeBase knowledgeBase = requireKnowledgeBase(knowledgeBaseId);
@@ -138,6 +147,11 @@ public class KnowledgeService {
 
         TenantContext tenantContext = requireTenantContext();
         AuthenticatedUserPrincipal principal = currentAuthenticatedUser.get();
+        KnowledgeDomain domain = knowledgeDomainId == null
+                ? null
+                : knowledgeRepository.getKnowledgeDomain(tenantContext.tenantId(), knowledgeDomainId)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Knowledge domain not found"));
+        ChunkingProfile chunkingProfile = resolveChunkingProfile(tenantContext.tenantId(), chunkingProfileId);
         String fileName = file.getOriginalFilename() == null ? "document" : file.getOriginalFilename();
         String fileType = extractExtension(fileName);
         String resolvedTitle = title == null || title.isBlank() ? fileName : title.trim();
@@ -154,6 +168,8 @@ public class KnowledgeService {
         KnowledgeDocument document = knowledgeRepository.createKnowledgeDocument(
                 tenantContext.tenantId(),
                 knowledgeBase.id(),
+                domain == null ? null : domain.id(),
+                chunkingProfile == null ? null : chunkingProfile.id(),
                 resolvedTitle,
                 fileName,
                 fileType,
@@ -164,6 +180,22 @@ public class KnowledgeService {
                 normalizeNullable(category),
                 resolvedTags,
                 principal.userId()
+        );
+        knowledgeRepository.createDocumentVersion(
+                tenantContext.tenantId(),
+                document.id(),
+                1,
+                chunkingProfile == null ? null : chunkingProfile.id(),
+                "uploaded",
+                principal.userId(),
+                buildVersionMetadata(
+                        "upload",
+                        domain == null ? null : domain.id(),
+                        chunkingProfile == null ? "recursive" : chunkingProfile.strategy(),
+                        null
+                ),
+                0,
+                "pending"
         );
         DocumentTask task = knowledgeRepository.createDocumentTask(
                 tenantContext.tenantId(),
@@ -210,10 +242,117 @@ public class KnowledgeService {
         return new PagedResult<>(items, resolvedPage, resolvedPageSize, total);
     }
 
+    public KnowledgeDomain createKnowledgeDomain(String code, String name, String description) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        return knowledgeRepository.createKnowledgeDomain(
+                tenantContext.tenantId(),
+                code.trim(),
+                requireName(name),
+                normalizeNullable(description),
+                Map.of()
+        );
+    }
+
+    public List<KnowledgeDomain> listKnowledgeDomains() {
+        requireAdminRole();
+        return knowledgeRepository.listKnowledgeDomains(requireTenantContext().tenantId());
+    }
+
+    public KnowledgeDomain updateKnowledgeDomain(long id, String name, String description, String status) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        KnowledgeDomain existing = knowledgeRepository.getKnowledgeDomain(tenantContext.tenantId(), id)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Knowledge domain not found"));
+        return knowledgeRepository.updateKnowledgeDomain(
+                tenantContext.tenantId(),
+                id,
+                name == null || name.isBlank() ? existing.name() : name.trim(),
+                description == null ? existing.description() : normalizeNullable(description),
+                status == null || status.isBlank() ? existing.status() : status.trim(),
+                existing.metadata()
+        );
+    }
+
+    public ChunkingProfile createChunkingProfile(String code, String name, String strategy, boolean isDefault, Map<String, Object> config) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        return knowledgeRepository.createChunkingProfile(
+                tenantContext.tenantId(),
+                code.trim(),
+                requireName(name),
+                strategy,
+                config == null ? Map.of() : config,
+                isDefault
+        );
+    }
+
+    public List<ChunkingProfile> listChunkingProfiles() {
+        requireAdminRole();
+        return knowledgeRepository.listChunkingProfiles(requireTenantContext().tenantId());
+    }
+
+    public ChunkingProfile updateChunkingProfile(long id, String name, String strategy, Boolean isDefault, String status, Map<String, Object> config) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        ChunkingProfile existing = knowledgeRepository.getChunkingProfile(tenantContext.tenantId(), id)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Chunking profile not found"));
+        return knowledgeRepository.updateChunkingProfile(
+                tenantContext.tenantId(),
+                id,
+                name == null || name.isBlank() ? existing.name() : name.trim(),
+                strategy == null || strategy.isBlank() ? existing.strategy() : strategy.trim(),
+                config == null ? existing.config() : config,
+                isDefault == null ? existing.isDefault() : isDefault,
+                status == null || status.isBlank() ? existing.status() : status.trim()
+        );
+    }
+
+    public List<KnowledgeDocumentVersion> listDocumentVersions(long documentId) {
+        KnowledgeDocument document = requireVisibleDocument(documentId);
+        return knowledgeRepository.listDocumentVersions(requireTenantContext().tenantId(), document.id());
+    }
+
     public ReprocessDocumentResult reprocessDocument(long documentId, String reason) {
+        return reprocessDocument(documentId, reason, null);
+    }
+
+    public ReprocessDocumentResult reprocessDocument(long documentId, String reason, Long chunkingProfileId) {
         requireAdminRole();
         KnowledgeDocument document = requireKnowledgeDocument(documentId);
         TenantContext tenantContext = requireTenantContext();
+        ChunkingProfile chunkingProfile = resolveChunkingProfile(tenantContext.tenantId(), chunkingProfileId == null ? document.chunkingProfileId() : chunkingProfileId);
+        int nextVersion = knowledgeRepository.listDocumentVersions(tenantContext.tenantId(), document.id()).stream()
+                .mapToInt(KnowledgeDocumentVersion::versionNo)
+                .max()
+                .orElse(0) + 1;
+        knowledgeRepository.createDocumentVersion(
+                tenantContext.tenantId(),
+                document.id(),
+                nextVersion,
+                chunkingProfile == null ? null : chunkingProfile.id(),
+                "reprocessing",
+                currentAuthenticatedUser.get().userId(),
+                buildVersionMetadata(
+                        "manual_reprocess",
+                        document.knowledgeDomainId(),
+                        chunkingProfile == null ? "recursive" : chunkingProfile.strategy(),
+                        reason
+                ),
+                0,
+                "pending"
+        );
+        knowledgeRepository.updateDocumentStatus(
+                tenantContext.tenantId(),
+                document.id(),
+                KnowledgeDocumentStatus.uploaded,
+                0,
+                null,
+                null,
+                nextVersion,
+                "pending",
+                null
+        );
         DocumentTask task = knowledgeRepository.createDocumentTask(
                 tenantContext.tenantId(),
                 document.id(),
@@ -250,6 +389,21 @@ public class KnowledgeService {
         return knowledgeRepository.listDocumentTasks(tenantContext.tenantId(), document.id());
     }
 
+    public DocumentGraphService.DocumentGraphSnapshot getDocumentGraph(long documentId) {
+        KnowledgeDocument document = requireVisibleDocument(documentId);
+        TenantContext tenantContext = requireTenantContext();
+        KnowledgeBase knowledgeBase = requireVisibleKnowledgeBase(document.knowledgeBaseId());
+        return documentGraphService.buildGraph(tenantContext.tenantId(), knowledgeBase, document);
+    }
+
+    public DocumentGraphService.DocumentGraphSnapshot rebuildDocumentGraph(long documentId) {
+        requireAdminRole();
+        KnowledgeDocument document = requireKnowledgeDocument(documentId);
+        TenantContext tenantContext = requireTenantContext();
+        KnowledgeBase knowledgeBase = requireKnowledgeBase(document.knowledgeBaseId());
+        return documentGraphService.synchronizeGraph(tenantContext.tenantId(), knowledgeBase, document);
+    }
+
     private KnowledgeBase requireVisibleKnowledgeBase(long knowledgeBaseId) {
         TenantContext tenantContext = requireTenantContext();
         return knowledgeRepository.getKnowledgeBase(tenantContext.tenantId(), knowledgeBaseId)
@@ -273,6 +427,35 @@ public class KnowledgeService {
         TenantContext tenantContext = requireTenantContext();
         return knowledgeRepository.getKnowledgeDocument(tenantContext.tenantId(), documentId)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Document not found"));
+    }
+
+    private ChunkingProfile resolveChunkingProfile(long tenantId, Long chunkingProfileId) {
+        if (chunkingProfileId != null) {
+            return knowledgeRepository.getChunkingProfile(tenantId, chunkingProfileId)
+                    .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Chunking profile not found"));
+        }
+        return knowledgeRepository.listChunkingProfiles(tenantId).stream()
+                .filter(profile -> profile.isDefault() && "active".equalsIgnoreCase(profile.status()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Map<String, Object> buildVersionMetadata(
+            String trigger,
+            Long knowledgeDomainId,
+            String chunkingStrategy,
+            String reason
+    ) {
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("trigger", trigger);
+        metadata.put("chunkingStrategy", chunkingStrategy == null || chunkingStrategy.isBlank() ? "recursive" : chunkingStrategy);
+        if (knowledgeDomainId != null) {
+            metadata.put("knowledgeDomainId", knowledgeDomainId);
+        }
+        if (reason != null && !reason.isBlank()) {
+            metadata.put("reason", reason.trim());
+        }
+        return metadata;
     }
 
     private void requireAdminRole() {

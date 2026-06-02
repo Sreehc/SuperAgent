@@ -52,6 +52,11 @@ class TraceAdminIntegrationTest {
     @BeforeEach
     void cleanTables() {
         jdbcTemplate.execute("DELETE FROM tenant_runtime_setting");
+        jdbcTemplate.execute("DELETE FROM tool_call_artifact");
+        jdbcTemplate.execute("DELETE FROM tool_call_trace");
+        jdbcTemplate.execute("DELETE FROM agent_checkpoint");
+        jdbcTemplate.execute("DELETE FROM agent_run_step");
+        jdbcTemplate.execute("DELETE FROM agent_run");
         jdbcTemplate.execute("DELETE FROM conversation_reference");
         jdbcTemplate.execute("DELETE FROM retrieval_trace_item");
         jdbcTemplate.execute("DELETE FROM rerank_trace");
@@ -65,7 +70,10 @@ class TraceAdminIntegrationTest {
         jdbcTemplate.execute("DELETE FROM document_task");
         jdbcTemplate.execute("DELETE FROM document_embedding");
         jdbcTemplate.execute("DELETE FROM document_chunk");
+        jdbcTemplate.execute("DELETE FROM knowledge_document_version");
         jdbcTemplate.execute("DELETE FROM knowledge_document");
+        jdbcTemplate.execute("DELETE FROM chunking_profile");
+        jdbcTemplate.execute("DELETE FROM knowledge_domain");
         jdbcTemplate.execute("DELETE FROM knowledge_base");
     }
 

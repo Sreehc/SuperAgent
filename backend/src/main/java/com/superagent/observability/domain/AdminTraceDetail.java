@@ -10,6 +10,8 @@ public record AdminTraceDetail(
         String executionMode,
         String status,
         String routeReason,
+        Long agentRunId,
+        String agentRunStatus,
         OffsetDateTime startedAt,
         OffsetDateTime finishedAt,
         long durationMs,

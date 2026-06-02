@@ -45,6 +45,9 @@ export interface KnowledgeDocumentListItem {
 export interface KnowledgeDocumentDetail {
   id: number
   knowledgeBaseId: number
+  knowledgeDomainId: number | null
+  chunkingProfileId: number | null
+  activeVersionNo: number
   title: string
   fileName: string
   fileType: string
@@ -101,4 +104,64 @@ export interface UploadDocumentResponse {
   title: string
   status: string
   taskId: number
+  knowledgeDomainId: number | null
+  chunkingProfileId: number | null
+  activeVersionNo: number
+}
+
+export interface KnowledgeDomainItem {
+  id: number
+  code: string
+  name: string
+  description: string | null
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChunkingProfileItem {
+  id: number
+  code: string
+  name: string
+  strategy: string
+  isDefault: boolean
+  status: string
+  config: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocumentVersionItem {
+  id: number
+  documentId: number
+  versionNo: number
+  chunkingProfileId: number | null
+  status: string
+  chunkCount: number
+  graphSyncStatus: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocumentGraphNodeItem {
+  id: string
+  type: string
+  label: string
+  metadata: Record<string, unknown>
+}
+
+export interface DocumentGraphEdgeItem {
+  sourceId: string
+  targetId: string
+  type: string
+  metadata: Record<string, unknown>
+}
+
+export interface DocumentGraphDetail {
+  documentId: number
+  versionNo: number
+  documentGraphSyncStatus: string
+  versionGraphSyncStatus: string
+  nodes: DocumentGraphNodeItem[]
+  edges: DocumentGraphEdgeItem[]
 }

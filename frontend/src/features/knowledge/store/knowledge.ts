@@ -3,22 +3,31 @@ import { computed, ref } from 'vue'
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
+  getDocumentGraph,
   getKnowledgeDocument,
   getKnowledgeBase,
+  listChunkingProfiles,
+  listDocumentVersions,
+  listKnowledgeDomains,
   listKnowledgeBases,
   listKnowledgeDocumentChunks,
   listKnowledgeDocumentTasks,
   listKnowledgeDocuments,
+  rebuildDocumentGraph,
   reprocessKnowledgeDocument,
   updateKnowledgeBase,
   uploadKnowledgeDocument,
 } from '../api'
 import type {
+  ChunkingProfileItem,
   CreateKnowledgeBaseRequest,
   DocumentChunkItem,
+  DocumentGraphDetail,
   DocumentTaskItem,
+  DocumentVersionItem,
   KnowledgeBaseDetail,
   KnowledgeBaseListItem,
+  KnowledgeDomainItem,
   KnowledgeDocumentDetail,
   KnowledgeDocumentListItem,
   KnowledgeBaseStatus,
@@ -31,12 +40,19 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const documents = ref<KnowledgeDocumentListItem[]>([])
   const documentChunks = ref<DocumentChunkItem[]>([])
   const documentTasks = ref<DocumentTaskItem[]>([])
+  const knowledgeDomains = ref<KnowledgeDomainItem[]>([])
+  const chunkingProfiles = ref<ChunkingProfileItem[]>([])
+  const documentVersions = ref<DocumentVersionItem[]>([])
+  const documentGraph = ref<DocumentGraphDetail | null>(null)
   const loadingKnowledgeBases = ref(false)
   const loadingDocuments = ref(false)
   const loadingDocumentDetail = ref(false)
+  const loadingGovernanceOptions = ref(false)
+  const loadingDocumentGraph = ref(false)
   const creatingKnowledgeBase = ref(false)
   const uploadingDocument = ref(false)
   const reprocessingDocument = ref(false)
+  const rebuildingDocumentGraph = ref(false)
   const deletingKnowledgeBase = ref(false)
   const savingKnowledgeBase = ref(false)
   const errorMessage = ref('')
@@ -123,32 +139,43 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function selectDocument(documentId: number) {
     loadingDocumentDetail.value = true
+    loadingDocumentGraph.value = true
     errorMessage.value = ''
     try {
-      const [documentResponse, chunkResponse, taskResponse] = await Promise.all([
+      const [documentResponse, chunkResponse, taskResponse, versionResponse, graphResponse] = await Promise.allSettled([
         getKnowledgeDocument(documentId),
         listKnowledgeDocumentChunks(documentId, { pageSize: 20 }),
         listKnowledgeDocumentTasks(documentId),
+        listDocumentVersions(documentId),
+        getDocumentGraph(documentId),
       ])
-      selectedDocument.value = documentResponse.data
-      documentChunks.value = chunkResponse.data.items
-      documentTasks.value = taskResponse.data
+
+      if (documentResponse.status !== 'fulfilled' || chunkResponse.status !== 'fulfilled' || taskResponse.status !== 'fulfilled') {
+        throw new Error('document detail load failed')
+      }
+
+      selectedDocument.value = documentResponse.value.data
+      documentChunks.value = chunkResponse.value.data.items
+      documentTasks.value = taskResponse.value.data
+      documentVersions.value = versionResponse.status === 'fulfilled' ? versionResponse.value.data : []
+      documentGraph.value = graphResponse.status === 'fulfilled' ? graphResponse.value.data : null
     } catch {
       errorMessage.value = '文档详情加载失败，请稍后重试。'
       throw new Error(errorMessage.value)
     } finally {
       loadingDocumentDetail.value = false
+      loadingDocumentGraph.value = false
     }
   }
 
-  async function reprocessDocument(reason?: string) {
+  async function reprocessDocument(payload?: { reason?: string; chunkingProfileId?: number | null }) {
     if (!selectedDocument.value) {
       return
     }
     reprocessingDocument.value = true
     errorMessage.value = ''
     try {
-      await reprocessKnowledgeDocument(selectedDocument.value.id, reason)
+      await reprocessKnowledgeDocument(selectedDocument.value.id, payload)
       await selectDocument(selectedDocument.value.id)
     } catch {
       errorMessage.value = '文档重处理触发失败，请稍后重试。'
@@ -208,7 +235,14 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
-  async function uploadDocument(payload: { file: File; title?: string; category?: string; tags?: string }) {
+  async function uploadDocument(payload: {
+    file: File
+    title?: string
+    category?: string
+    tags?: string
+    knowledgeDomainId?: number | null
+    chunkingProfileId?: number | null
+  }) {
     if (!selectedKnowledgeBase.value) {
       return
     }
@@ -222,6 +256,48 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       throw new Error(errorMessage.value)
     } finally {
       uploadingDocument.value = false
+    }
+  }
+
+  async function fetchGovernanceOptions(force = false) {
+    if (!force && knowledgeDomains.value.length > 0 && chunkingProfiles.value.length > 0) {
+      return
+    }
+    loadingGovernanceOptions.value = true
+    errorMessage.value = ''
+    try {
+      const [domainResponse, profileResponse] = await Promise.all([
+        listKnowledgeDomains(),
+        listChunkingProfiles(),
+      ])
+      knowledgeDomains.value = domainResponse.data
+      chunkingProfiles.value = profileResponse.data
+    } catch {
+      errorMessage.value = '治理配置加载失败，请稍后重试。'
+    } finally {
+      loadingGovernanceOptions.value = false
+    }
+  }
+
+  async function rebuildCurrentDocumentGraph() {
+    if (!selectedDocument.value) {
+      return
+    }
+    rebuildingDocumentGraph.value = true
+    loadingDocumentGraph.value = true
+    errorMessage.value = ''
+    try {
+      const response = await rebuildDocumentGraph(selectedDocument.value.id)
+      documentGraph.value = response.data
+      const versions = await listDocumentVersions(selectedDocument.value.id)
+      documentVersions.value = versions.data
+      const detail = await getKnowledgeDocument(selectedDocument.value.id)
+      selectedDocument.value = detail.data
+    } catch {
+      errorMessage.value = '图谱重建失败，请稍后重试。'
+    } finally {
+      rebuildingDocumentGraph.value = false
+      loadingDocumentGraph.value = false
     }
   }
 
@@ -245,12 +321,19 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     documents,
     documentChunks,
     documentTasks,
+    knowledgeDomains,
+    chunkingProfiles,
+    documentVersions,
+    documentGraph,
     loadingKnowledgeBases,
     loadingDocuments,
     loadingDocumentDetail,
+    loadingGovernanceOptions,
+    loadingDocumentGraph,
     creatingKnowledgeBase,
     uploadingDocument,
     reprocessingDocument,
+    rebuildingDocumentGraph,
     deletingKnowledgeBase,
     savingKnowledgeBase,
     errorMessage,
@@ -271,5 +354,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     removeKnowledgeBase,
     uploadDocument,
     reprocessDocument,
+    fetchGovernanceOptions,
+    rebuildCurrentDocumentGraph,
   }
 })

@@ -3,7 +3,9 @@ import { createRouter as createVueRouter, createWebHistory, type RouteLocationNo
 import AppShell from './shells/AppShell.vue'
 import { useAuthStore } from '../features/auth/store/auth'
 import { LoginPage } from '../features/auth/pages'
+import { ToolsConsolePage } from '../features/agent/pages'
 import { ChatWorkspacePage } from '../features/chat/pages'
+import { GovernanceConsolePage } from '../features/governance/pages'
 import { DocumentDetailPage, KnowledgeDetailPage, KnowledgeListPage } from '../features/knowledge/pages'
 import { PermissionDeniedPage } from '../features/placeholders/pages'
 import { SettingsPage } from '../features/settings/pages'
@@ -114,6 +116,26 @@ export function createRouter(pinia: Pinia) {
               requiresAuth: true,
               roles: ['OWNER', 'ADMIN'],
               menuLabel: '设置',
+            },
+          },
+          {
+            path: '/tools',
+            name: 'tools',
+            component: ToolsConsolePage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: 'Tools',
+            },
+          },
+          {
+            path: '/governance',
+            name: 'governance',
+            component: GovernanceConsolePage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: '治理',
             },
           },
           {

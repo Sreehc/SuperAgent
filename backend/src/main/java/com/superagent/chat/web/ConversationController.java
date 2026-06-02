@@ -124,6 +124,11 @@ public class ConversationController {
         return ApiResponse.success(conversationService.stopConversation(sessionId));
     }
 
+    @PostMapping("/{sessionId}/resume")
+    public ApiResponse<ConversationService.ResumeResult> resumeConversation(@PathVariable long sessionId) {
+        return ApiResponse.success(conversationService.resumeConversation(sessionId));
+    }
+
     private ConversationSummary toSummary(ConversationSession session) {
         return new ConversationSummary(
                 session.id(),

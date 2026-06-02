@@ -20,6 +20,7 @@
         <option value="">全部模式</option>
         <option value="RAG_QA">RAG_QA</option>
         <option value="CLARIFICATION">CLARIFICATION</option>
+        <option value="REACT_AGENT">REACT_AGENT</option>
       </select>
       <input v-model="traceStore.userIdFilter" type="search" placeholder="按用户 ID 筛选" @keyup.enter="traceStore.fetchTraces" />
       <button class="ghost-button" data-testid="trace-refresh" type="button" @click="traceStore.fetchTraces">刷新</button>

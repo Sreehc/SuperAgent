@@ -4,7 +4,7 @@
       <div>
         <p class="eyebrow">/settings</p>
         <h2>运行时设置</h2>
-        <p>模型、RAG 和 rerank 配置统一在这里查看和维护，密钥只展示“已设置”状态。</p>
+        <p>模型、RAG、Agent 和工具策略统一在这里维护，密钥只展示“已设置”状态。</p>
       </div>
       <button class="ghost-button" type="button" data-testid="settings-refresh" @click="reload">刷新</button>
     </header>
@@ -218,7 +218,7 @@
       </div>
     </section>
 
-    <section v-else class="card-shell panel">
+    <section v-else-if="activeTab === 'rerank'" class="card-shell panel">
       <div class="panel__header">
         <div>
           <h3>Rerank 设置</h3>
@@ -289,6 +289,127 @@
         </button>
       </div>
     </section>
+
+    <section v-else-if="activeTab === 'agent'" class="card-shell panel">
+      <div class="panel__header">
+        <div>
+          <h3>Agent 设置</h3>
+          <p>控制 Agent 是否启用、步数上限、Checkpoint 和默认记忆策略。</p>
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <label class="toggle-field">
+          <span>Enabled</span>
+          <input v-model="settingsStore.agentForm.enabled" type="checkbox" />
+        </label>
+        <label class="toggle-field">
+          <span>Checkpoint</span>
+          <input v-model="settingsStore.agentForm.checkpointEnabled" type="checkbox" />
+        </label>
+        <label class="toggle-field">
+          <span>Web Search</span>
+          <input v-model="settingsStore.agentForm.webSearchEnabled" type="checkbox" />
+        </label>
+        <label class="toggle-field">
+          <span>HTTP Tool</span>
+          <input v-model="settingsStore.agentForm.httpToolEnabled" type="checkbox" />
+        </label>
+        <label class="toggle-field">
+          <span>Graph Tool</span>
+          <input v-model="settingsStore.agentForm.graphToolEnabled" type="checkbox" />
+        </label>
+        <label class="toggle-field">
+          <span>Code Execution</span>
+          <input v-model="settingsStore.agentForm.codeExecutionEnabled" type="checkbox" />
+        </label>
+        <label class="field">
+          <span>Max Model Steps</span>
+          <input v-model.number="settingsStore.agentForm.maxModelSteps" type="number" min="1" />
+        </label>
+        <label class="field">
+          <span>Max Tool Calls</span>
+          <input v-model.number="settingsStore.agentForm.maxToolCalls" type="number" min="1" />
+        </label>
+        <label class="field">
+          <span>Tool Timeout (ms)</span>
+          <input v-model.number="settingsStore.agentForm.toolTimeoutMs" type="number" min="100" />
+        </label>
+        <label class="field">
+          <span>Default Memory Strategy</span>
+          <select v-model="settingsStore.agentForm.defaultMemoryStrategy">
+            <option value="NONE">NONE</option>
+            <option value="SLIDING_WINDOW">SLIDING_WINDOW</option>
+            <option value="SUMMARY_WINDOW">SUMMARY_WINDOW</option>
+            <option value="SUMMARY_PLUS_WINDOW">SUMMARY_PLUS_WINDOW</option>
+          </select>
+        </label>
+        <label class="field field--full">
+          <span>Allowed HTTP Domains</span>
+          <textarea
+            v-model="settingsStore.agentForm.allowedHttpDomainsText"
+            rows="5"
+            placeholder="example.com&#10;api.example.com"
+          />
+        </label>
+      </div>
+
+      <div class="panel__footer">
+        <button class="pill-button" type="button" :disabled="settingsStore.savingTab === 'agent'" @click="saveAgent">
+          {{ settingsStore.savingTab === 'agent' ? '保存中...' : '保存 Agent 设置' }}
+        </button>
+      </div>
+    </section>
+
+    <section v-else class="card-shell panel">
+      <div class="panel__header">
+        <div>
+          <h3>Tools 设置</h3>
+          <p>控制搜索 provider、HTTP allowlist 和高风险工具开关。</p>
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <label class="toggle-field">
+          <span>Web Search</span>
+          <input v-model="settingsStore.toolForm.webSearchEnabled" type="checkbox" />
+        </label>
+        <label class="toggle-field">
+          <span>HTTP Tool</span>
+          <input v-model="settingsStore.toolForm.httpToolEnabled" type="checkbox" />
+        </label>
+        <label class="toggle-field">
+          <span>Graph Tool</span>
+          <input v-model="settingsStore.toolForm.graphToolEnabled" type="checkbox" />
+        </label>
+        <label class="toggle-field">
+          <span>Code Execution</span>
+          <input v-model="settingsStore.toolForm.codeExecutionEnabled" type="checkbox" />
+        </label>
+        <label class="field">
+          <span>Search Provider</span>
+          <input v-model="settingsStore.toolForm.searchProvider" />
+        </label>
+        <label class="field">
+          <span>Tool Timeout (ms)</span>
+          <input v-model.number="settingsStore.toolForm.toolTimeoutMs" type="number" min="100" />
+        </label>
+        <label class="field field--full">
+          <span>Allowed HTTP Domains</span>
+          <textarea
+            v-model="settingsStore.toolForm.allowedHttpDomainsText"
+            rows="5"
+            placeholder="example.com&#10;api.example.com"
+          />
+        </label>
+      </div>
+
+      <div class="panel__footer">
+        <button class="pill-button" type="button" :disabled="settingsStore.savingTab === 'tools'" @click="saveTools">
+          {{ settingsStore.savingTab === 'tools' ? '保存中...' : '保存 Tools 设置' }}
+        </button>
+      </div>
+    </section>
   </section>
 </template>
 
@@ -299,12 +420,14 @@ import { useSettingsStore } from '../store/settings'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
-const activeTab = ref<'model' | 'rag' | 'rerank'>('model')
+const activeTab = ref<'model' | 'rag' | 'rerank' | 'agent' | 'tools'>('model')
 
 const tabs = [
   { id: 'model', label: '模型' },
   { id: 'rag', label: 'RAG' },
   { id: 'rerank', label: 'Rerank' },
+  { id: 'agent', label: 'Agent' },
+  { id: 'tools', label: 'Tools' },
 ] as const
 
 const isOwner = computed(() => authStore.currentRole === 'OWNER')
@@ -362,6 +485,28 @@ async function saveRerank() {
   }
   try {
     await settingsStore.saveRerank()
+  } catch {
+    // Store already exposed the error.
+  }
+}
+
+async function saveAgent() {
+  if (!window.confirm('Agent 设置会影响执行上限、Checkpoint 和工具策略，确认保存吗？')) {
+    return
+  }
+  try {
+    await settingsStore.saveAgent()
+  } catch {
+    // Store already exposed the error.
+  }
+}
+
+async function saveTools() {
+  if (!window.confirm('Tools 设置会影响联网、HTTP 和代码执行权限，确认保存吗？')) {
+    return
+  }
+  try {
+    await settingsStore.saveTools()
   } catch {
     // Store already exposed the error.
   }
@@ -450,11 +595,17 @@ async function saveRerank() {
 }
 
 .field input,
+.field select,
+.field textarea,
 .toggle-field input {
   padding: 0.85rem 0.95rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.84);
+}
+
+.field textarea {
+  resize: vertical;
 }
 
 .toggle-field {

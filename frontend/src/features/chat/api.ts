@@ -59,6 +59,10 @@ export function stopConversation(sessionId: number) {
   return apiPost<{ stopped: boolean; sessionId: number }, undefined>(`/conversations/${sessionId}/stop`)
 }
 
+export function resumeConversation(sessionId: number) {
+  return apiPost<{ resumed: boolean; sessionId: number; runId: number }, undefined>(`/conversations/${sessionId}/resume`)
+}
+
 export function openMessageStream(
   sessionId: number,
   payload: StreamMessageRequest,

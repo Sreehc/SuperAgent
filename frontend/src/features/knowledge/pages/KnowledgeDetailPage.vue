@@ -35,17 +35,32 @@
     <section v-if="isAdmin" class="card-shell upload-form">
       <div>
         <h3>上传文档</h3>
-        <p>阶段 5 仅接通文件上传、MinIO 写入和初始任务落库。</p>
+        <p>上传时可直接绑定知识域和切块策略，进入版本化处理链路。</p>
       </div>
       <form class="upload-form__grid" @submit.prevent="submitUpload">
         <input ref="fileInput" data-testid="document-upload-file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
         <input v-model="uploadTitle" type="text" placeholder="文档标题（可选）" />
         <input v-model="uploadCategory" type="text" placeholder="业务分类（可选）" />
         <input v-model="uploadTags" type="text" placeholder="标签，逗号分隔" />
+        <select v-model="uploadKnowledgeDomainId">
+          <option value="">不绑定知识域</option>
+          <option v-for="domain in knowledgeStore.knowledgeDomains" :key="domain.id" :value="`${domain.id}`">
+            {{ domain.name }} · {{ domain.code }}
+          </option>
+        </select>
+        <select v-model="uploadChunkingProfileId">
+          <option value="">默认切块策略</option>
+          <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">
+            {{ profile.name }} · {{ profile.strategy }}
+          </option>
+        </select>
         <button class="pill-button" data-testid="document-upload-submit" type="submit" :disabled="knowledgeStore.uploadingDocument || !selectedFile">
           {{ knowledgeStore.uploadingDocument ? '上传中...' : '上传文档' }}
         </button>
       </form>
+      <p class="form-hint">
+        已加载 {{ knowledgeStore.knowledgeDomains.length }} 个知识域、{{ knowledgeStore.chunkingProfiles.length }} 个切块策略。
+      </p>
     </section>
 
     <section class="card-shell filters">
@@ -120,6 +135,8 @@ const selectedFile = ref<File | null>(null)
 const uploadTitle = ref('')
 const uploadCategory = ref('')
 const uploadTags = ref('')
+const uploadKnowledgeDomainId = ref('')
+const uploadChunkingProfileId = ref('')
 const editing = ref(false)
 const editName = ref('')
 const editDescription = ref('')
@@ -127,7 +144,7 @@ const editDescription = ref('')
 const isAdmin = computed(() => ['OWNER', 'ADMIN'].includes(authStore.currentRole ?? ''))
 
 onMounted(async () => {
-  await loadCurrentKnowledgeBase()
+  await Promise.all([loadCurrentKnowledgeBase(), loadGovernanceOptions()])
 })
 
 watch(
@@ -161,11 +178,15 @@ async function submitUpload() {
     title: uploadTitle.value,
     category: uploadCategory.value,
     tags: uploadTags.value,
+    knowledgeDomainId: parseSelectedId(uploadKnowledgeDomainId.value),
+    chunkingProfileId: parseSelectedId(uploadChunkingProfileId.value),
   })
   selectedFile.value = null
   uploadTitle.value = ''
   uploadCategory.value = ''
   uploadTags.value = ''
+  uploadKnowledgeDomainId.value = ''
+  uploadChunkingProfileId.value = ''
   if (fileInput.value) {
     fileInput.value.value = ''
   }
@@ -191,6 +212,21 @@ async function removeKnowledgeBase() {
   if (deleted) {
     await router.push('/knowledge')
   }
+}
+
+async function loadGovernanceOptions() {
+  if (!isAdmin.value) {
+    return
+  }
+  await knowledgeStore.fetchGovernanceOptions()
+}
+
+function parseSelectedId(value: string) {
+  if (!value) {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
 function formatTime(value: string) {
@@ -262,11 +298,18 @@ function formatFileSize(value: number) {
 
 .filters input,
 .filters select,
-.upload-form__grid input {
+.upload-form__grid input,
+.upload-form__grid select {
   padding: 0.8rem 0.95rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.84);
+}
+
+.form-hint {
+  margin: 0.8rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
 }
 
 .table {

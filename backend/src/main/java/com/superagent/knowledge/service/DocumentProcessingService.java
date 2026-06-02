@@ -7,6 +7,7 @@ import com.superagent.knowledge.domain.DocumentChunk;
 import com.superagent.knowledge.domain.DocumentTask;
 import com.superagent.knowledge.domain.DocumentTaskStatus;
 import com.superagent.knowledge.domain.DocumentTaskType;
+import com.superagent.knowledge.domain.KnowledgeDocumentVersion;
 import com.superagent.knowledge.domain.KnowledgeDocument;
 import com.superagent.knowledge.domain.KnowledgeDocumentStatus;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
@@ -16,6 +17,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -31,6 +33,7 @@ public class DocumentProcessingService {
     private final RecursiveChunker recursiveChunker;
     private final EmbeddingClient embeddingClient;
     private final TransactionTemplate transactionTemplate;
+    private final DocumentGraphService documentGraphService;
 
     public DocumentProcessingService(
             KnowledgeRepository knowledgeRepository,
@@ -38,7 +41,8 @@ public class DocumentProcessingService {
             DocumentParserService documentParserService,
             RecursiveChunker recursiveChunker,
             EmbeddingClient embeddingClient,
-            TransactionTemplate transactionTemplate
+            TransactionTemplate transactionTemplate,
+            DocumentGraphService documentGraphService
     ) {
         this.knowledgeRepository = knowledgeRepository;
         this.objectStorageService = objectStorageService;
@@ -46,6 +50,7 @@ public class DocumentProcessingService {
         this.recursiveChunker = recursiveChunker;
         this.embeddingClient = embeddingClient;
         this.transactionTemplate = transactionTemplate;
+        this.documentGraphService = documentGraphService;
     }
 
     public void process(DocumentTaskMessage message) {
@@ -84,7 +89,26 @@ public class DocumentProcessingService {
         if (knowledgeRepository.tryMarkTaskRunning(message.tenantId(), parseTask.id()).isEmpty()) {
             return;
         }
-        knowledgeRepository.updateDocumentStatus(message.tenantId(), document.id(), KnowledgeDocumentStatus.parsing, null, null);
+        KnowledgeDocumentVersion version = resolveActiveVersion(message.tenantId(), document);
+        knowledgeRepository.updateDocumentVersion(
+                message.tenantId(),
+                version.id(),
+                "parsing",
+                null,
+                "pending",
+                version.metadata()
+        );
+        knowledgeRepository.updateDocumentStatus(
+                message.tenantId(),
+                document.id(),
+                KnowledgeDocumentStatus.parsing,
+                null,
+                null,
+                null,
+                version.versionNo(),
+                "pending",
+                null
+        );
         try (InputStream inputStream = objectStorageService.open(document.objectKey())) {
             DocumentParserService.ParsedDocument parsed = documentParserService.parse(document.fileType(), inputStream);
             knowledgeRepository.updateDocumentStatus(
@@ -93,12 +117,23 @@ public class DocumentProcessingService {
                     KnowledgeDocumentStatus.parsing,
                     null,
                     null,
-                    parsed.content()
+                    parsed.content(),
+                    version.versionNo(),
+                    "pending",
+                    null
             );
             knowledgeRepository.markTaskSuccess(
                     message.tenantId(),
                     parseTask.id(),
                     "Parsed " + parsed.charCount() + " chars"
+            );
+            knowledgeRepository.updateDocumentVersion(
+                    message.tenantId(),
+                    version.id(),
+                    "parsed",
+                    null,
+                    "pending",
+                    mergeVersionMetadata(version.metadata(), Map.of("parsedCharCount", parsed.charCount()))
             );
             DocumentTask chunkTask = knowledgeRepository.createDocumentTask(
                     message.tenantId(),
@@ -107,21 +142,40 @@ public class DocumentProcessingService {
                     DocumentTaskStatus.pending,
                     "Chunk parsed content from task " + parseTask.id()
             );
-            processChunkTask(message.tenantId(), document, parsed.content(), chunkTask.id());
+            processChunkTask(message.tenantId(), document, version, parsed.content(), chunkTask.id());
         } catch (Exception exception) {
-            failDocument(message.tenantId(), document.id(), parseTask.id(), exception);
+            failDocument(message.tenantId(), document.id(), parseTask.id(), version, exception);
             throw wrapIfNecessary(exception);
         }
     }
 
-    protected void processChunkTask(long tenantId, KnowledgeDocument document, String content, long chunkTaskId) {
+    protected void processChunkTask(long tenantId, KnowledgeDocument document, KnowledgeDocumentVersion version, String content, long chunkTaskId) {
         if (knowledgeRepository.tryMarkTaskRunning(tenantId, chunkTaskId).isEmpty()) {
             return;
         }
         try {
             transactionTemplate.executeWithoutResult(status -> {
-                knowledgeRepository.updateDocumentStatus(tenantId, document.id(), KnowledgeDocumentStatus.chunking, null, null);
-                List<RecursiveChunker.ChunkCandidate> candidates = recursiveChunker.chunk(content);
+                knowledgeRepository.updateDocumentVersion(
+                        tenantId,
+                        version.id(),
+                        "chunking",
+                        null,
+                        "pending",
+                        version.metadata()
+                );
+                knowledgeRepository.updateDocumentStatus(
+                        tenantId,
+                        document.id(),
+                        KnowledgeDocumentStatus.chunking,
+                        null,
+                        null,
+                        null,
+                        version.versionNo(),
+                        "pending",
+                        null
+                );
+                ChunkingPlan chunkingPlan = buildChunkingPlan(document, version, content);
+                List<RecursiveChunker.ChunkCandidate> candidates = chunkingPlan.candidates();
                 List<KnowledgeRepository.ChunkInsert> inserts = candidates.stream()
                         .map(candidate -> new KnowledgeRepository.ChunkInsert(
                                 null,
@@ -131,15 +185,33 @@ public class DocumentProcessingService {
                                 hashContent(candidate.content()),
                                 candidate.content().length(),
                                 null,
-                                Map.of(
-                                        "strategy", "recursive",
-                                        "sourceTaskId", chunkTaskId
-                                )
+                                buildChunkMetadata(chunkingPlan.strategy(), version, chunkTaskId)
                         ))
                         .toList();
                 knowledgeRepository.replaceDocumentChunks(tenantId, document.id(), inserts);
                 knowledgeRepository.markTaskSuccess(tenantId, chunkTaskId, "Generated " + inserts.size() + " chunks");
-                knowledgeRepository.updateDocumentStatus(tenantId, document.id(), KnowledgeDocumentStatus.embedding, inserts.size(), null);
+                knowledgeRepository.updateDocumentVersion(
+                        tenantId,
+                        version.id(),
+                        "embedding",
+                        inserts.size(),
+                        "pending",
+                        mergeVersionMetadata(version.metadata(), Map.of(
+                                "chunkingStrategy", chunkingPlan.strategy(),
+                                "chunkCount", inserts.size()
+                        ))
+                );
+                knowledgeRepository.updateDocumentStatus(
+                        tenantId,
+                        document.id(),
+                        KnowledgeDocumentStatus.embedding,
+                        inserts.size(),
+                        null,
+                        null,
+                        version.versionNo(),
+                        "pending",
+                        null
+                );
             });
             DocumentTask embedTask = knowledgeRepository.createDocumentTask(
                     tenantId,
@@ -148,14 +220,14 @@ public class DocumentProcessingService {
                     DocumentTaskStatus.pending,
                     "Embed chunks from task " + chunkTaskId
             );
-            processEmbedTask(tenantId, document, embedTask.id());
+            processEmbedTask(tenantId, document, version, embedTask.id());
         } catch (Exception exception) {
-            failDocument(tenantId, document.id(), chunkTaskId, exception);
+            failDocument(tenantId, document.id(), chunkTaskId, version, exception);
             throw wrapIfNecessary(exception);
         }
     }
 
-    protected void processEmbedTask(long tenantId, KnowledgeDocument document, long embedTaskId) {
+    protected void processEmbedTask(long tenantId, KnowledgeDocument document, KnowledgeDocumentVersion version, long embedTaskId) {
         if (knowledgeRepository.tryMarkTaskRunning(tenantId, embedTaskId).isEmpty()) {
             return;
         }
@@ -181,18 +253,59 @@ public class DocumentProcessingService {
                         embeddings
                 );
                 knowledgeRepository.markTaskSuccess(tenantId, embedTaskId, "Embedded " + embeddings.size() + " chunks");
-                knowledgeRepository.updateDocumentStatus(tenantId, document.id(), KnowledgeDocumentStatus.ready, chunks.size(), null);
+                knowledgeRepository.updateDocumentVersion(
+                        tenantId,
+                        version.id(),
+                        "ready",
+                        chunks.size(),
+                        "pending",
+                        mergeVersionMetadata(version.metadata(), Map.of(
+                                "embeddingProvider", embeddingResult.provider(),
+                                "embeddingModel", embeddingResult.model(),
+                                "embeddingDimension", embeddingResult.dimension()
+                        ))
+                );
+                knowledgeRepository.updateDocumentStatus(
+                        tenantId,
+                        document.id(),
+                        KnowledgeDocumentStatus.ready,
+                        chunks.size(),
+                        null,
+                        null,
+                        version.versionNo(),
+                        "pending",
+                        null
+                );
             });
+            trySynchronizeGraph(tenantId, document);
         } catch (Exception exception) {
-            failDocument(tenantId, document.id(), embedTaskId, exception);
+            failDocument(tenantId, document.id(), embedTaskId, version, exception);
             throw wrapIfNecessary(exception);
         }
     }
 
-    private void failDocument(long tenantId, long documentId, long taskId, Exception exception) {
+    private void failDocument(long tenantId, long documentId, long taskId, KnowledgeDocumentVersion version, Exception exception) {
         String errorMessage = safeError(exception);
         knowledgeRepository.markTaskFailed(tenantId, taskId, errorMessage);
-        knowledgeRepository.updateDocumentStatus(tenantId, documentId, KnowledgeDocumentStatus.failed, null, errorMessage);
+        knowledgeRepository.updateDocumentVersion(
+                tenantId,
+                version.id(),
+                "failed",
+                null,
+                "failed",
+                mergeVersionMetadata(version.metadata(), Map.of("error", errorMessage))
+        );
+        knowledgeRepository.updateDocumentStatus(
+                tenantId,
+                documentId,
+                KnowledgeDocumentStatus.failed,
+                null,
+                errorMessage,
+                null,
+                version.versionNo(),
+                "failed",
+                errorMessage
+        );
     }
 
     private RuntimeException wrapIfNecessary(Exception exception) {
@@ -217,5 +330,112 @@ public class DocumentProcessingService {
         } catch (Exception exception) {
             throw new AppException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, "Failed to hash chunk content");
         }
+    }
+
+    private void trySynchronizeGraph(long tenantId, KnowledgeDocument document) {
+        try {
+            KnowledgeDocument refreshed = knowledgeRepository.getKnowledgeDocument(tenantId, document.id()).orElseThrow();
+            com.superagent.knowledge.domain.KnowledgeBase knowledgeBase = knowledgeRepository.getKnowledgeBase(tenantId, refreshed.knowledgeBaseId())
+                    .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Knowledge base not found"));
+            documentGraphService.synchronizeGraph(tenantId, knowledgeBase, refreshed);
+        } catch (Exception exception) {
+            // Graph sync is best-effort. The document stays ready for classic RAG.
+        }
+    }
+
+    private KnowledgeDocumentVersion resolveActiveVersion(long tenantId, KnowledgeDocument document) {
+        return knowledgeRepository.findLatestDocumentVersion(tenantId, document.id())
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Document version not found"));
+    }
+
+    private ChunkingPlan buildChunkingPlan(KnowledgeDocument document, KnowledgeDocumentVersion version, String content) {
+        String strategy = extractStrategy(document, version);
+        if ("markdown_heading".equalsIgnoreCase(strategy)) {
+            return new ChunkingPlan(strategy, chunkMarkdownByHeading(content));
+        }
+        if ("slide_section".equalsIgnoreCase(strategy)) {
+            return new ChunkingPlan(strategy, chunkSlideSections(content));
+        }
+        return new ChunkingPlan("recursive", recursiveChunker.chunk(content));
+    }
+
+    private String extractStrategy(KnowledgeDocument document, KnowledgeDocumentVersion version) {
+        Object metadataValue = version.metadata().get("chunkingStrategy");
+        if (metadataValue instanceof String strategy && !strategy.isBlank()) {
+            return strategy;
+        }
+        if (document.chunkingProfileId() != null && version.chunkingProfileId() != null) {
+            return "recursive";
+        }
+        return "recursive";
+    }
+
+    private List<RecursiveChunker.ChunkCandidate> chunkMarkdownByHeading(String content) {
+        String normalized = content == null ? "" : content.trim();
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+        String[] blocks = normalized.split("(?m)(?=^#{1,6}\\s)");
+        List<RecursiveChunker.ChunkCandidate> chunks = new java.util.ArrayList<>();
+        for (String block : blocks) {
+            String candidate = block.trim();
+            if (candidate.isBlank()) {
+                continue;
+            }
+            chunks.add(new RecursiveChunker.ChunkCandidate(chunks.size() + 1, candidate));
+        }
+        if (chunks.isEmpty()) {
+            return recursiveChunker.chunk(content);
+        }
+        return chunks;
+    }
+
+    private List<RecursiveChunker.ChunkCandidate> chunkSlideSections(String content) {
+        String normalized = content == null ? "" : content.trim();
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+        String[] blocks = normalized.split("(?im)(?=^(slide\\s*\\d+|page\\s*\\d+|第\\s*\\d+\\s*[页章节]|#{1,6}\\s))");
+        List<RecursiveChunker.ChunkCandidate> chunks = new java.util.ArrayList<>();
+        for (String block : blocks) {
+            String candidate = block.trim();
+            if (candidate.isBlank()) {
+                continue;
+            }
+            chunks.add(new RecursiveChunker.ChunkCandidate(chunks.size() + 1, candidate));
+        }
+        if (chunks.isEmpty()) {
+            return recursiveChunker.chunk(content);
+        }
+        return chunks;
+    }
+
+    private Map<String, Object> mergeVersionMetadata(Map<String, Object> base, Map<String, Object> patch) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (base != null) {
+            merged.putAll(base);
+        }
+        if (patch != null) {
+            patch.forEach((key, value) -> {
+                if (value != null) {
+                    merged.put(key, value);
+                }
+            });
+        }
+        return merged;
+    }
+
+    private Map<String, Object> buildChunkMetadata(String strategy, KnowledgeDocumentVersion version, long chunkTaskId) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("strategy", strategy);
+        metadata.put("versionNo", version.versionNo());
+        metadata.put("sourceTaskId", chunkTaskId);
+        if (version.chunkingProfileId() != null) {
+            metadata.put("chunkingProfileId", version.chunkingProfileId());
+        }
+        return metadata;
+    }
+
+    private record ChunkingPlan(String strategy, List<RecursiveChunker.ChunkCandidate> candidates) {
     }
 }

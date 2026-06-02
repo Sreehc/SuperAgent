@@ -30,11 +30,11 @@ class ConversationExecutionPlannerTest {
     }
 
     @Test
-    void shouldRouteOpenEndedQuestionToReservedAgentMode() {
+    void shouldRouteOpenEndedQuestionToAgentMode() {
         var plan = planner.plan("请搜索今天最新的退款政策变化", null, List.of());
 
-        assertThat(plan.executionMode()).isEqualTo(ExecutionMode.REACT_AGENT_RESERVED);
-        assertThat(plan.routeReason()).isEqualTo("open_ended_or_realtime_request_reserved_for_agent");
-        assertThat(plan.summary()).isEqualTo("fallback_to_non_agent_response");
+        assertThat(plan.executionMode()).isEqualTo(ExecutionMode.REACT_AGENT);
+        assertThat(plan.routeReason()).isEqualTo("open_ended_or_realtime_request_routed_to_agent");
+        assertThat(plan.summary()).isEqualTo("run_react_agent_pipeline");
     }
 }

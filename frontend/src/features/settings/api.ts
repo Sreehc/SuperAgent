@@ -1,13 +1,17 @@
 import axios from 'axios'
 import { apiGet, http } from '../../api/http'
 import type {
+  AgentSettings,
   ModelSettings,
   RagSettings,
   RerankSettings,
   SecretUpdateResponse,
+  ToolSettings,
+  UpdateAgentSettingsRequest,
   UpdateModelSettingsRequest,
   UpdateRagSettingsRequest,
   UpdateRerankSettingsRequest,
+  UpdateToolSettingsRequest,
   UpdateResponse,
   ValidationFieldError,
 } from './types'
@@ -56,6 +60,32 @@ export async function updateRerankSettings(payload: UpdateRerankSettingsRequest)
   try {
     const response = await http.patch('/admin/settings/rerank', payload)
     return response.data as { success: boolean; code: string; message: string; data: SecretUpdateResponse; traceId: string }
+  } catch (error) {
+    throw normalizeSettingsError(error)
+  }
+}
+
+export function getAgentSettings() {
+  return apiGet<AgentSettings>('/admin/settings/agent')
+}
+
+export async function updateAgentSettings(payload: UpdateAgentSettingsRequest) {
+  try {
+    const response = await http.patch('/admin/settings/agent', payload)
+    return response.data as { success: boolean; code: string; message: string; data: UpdateResponse; traceId: string }
+  } catch (error) {
+    throw normalizeSettingsError(error)
+  }
+}
+
+export function getToolSettings() {
+  return apiGet<ToolSettings>('/admin/settings/tools')
+}
+
+export async function updateToolSettings(payload: UpdateToolSettingsRequest) {
+  try {
+    const response = await http.patch('/admin/settings/tools', payload)
+    return response.data as { success: boolean; code: string; message: string; data: UpdateResponse; traceId: string }
   } catch (error) {
     throw normalizeSettingsError(error)
   }

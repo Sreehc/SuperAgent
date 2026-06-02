@@ -1,4 +1,4 @@
-export type MemoryStrategy = 'NONE' | 'SLIDING_WINDOW'
+export type MemoryStrategy = 'NONE' | 'SLIDING_WINDOW' | 'SUMMARY_WINDOW' | 'SUMMARY_PLUS_WINDOW'
 
 export type ConversationStatus = 'active' | 'archived' | 'deleted'
 
@@ -89,14 +89,52 @@ export interface StreamRecommendationEvent {
   questions: string[]
 }
 
+export interface StreamAgentStepEvent {
+  runId: number
+  stepNo: number
+  phase: string
+  status: string
+  summary: string
+}
+
+export interface StreamToolStartEvent {
+  runId: number
+  toolId: string
+  stepNo: number
+  summary: string
+}
+
+export interface StreamToolResultEvent {
+  runId: number
+  toolId: string
+  status: string
+  summary: string
+  output?: Record<string, unknown>
+}
+
+export interface StreamCheckpointEvent {
+  runId: number
+  checkpointNo: number
+  phase: string
+  stable: boolean
+}
+
+export interface StreamResumeEvent {
+  runId: number
+  status: string
+}
+
 export interface StreamDoneEvent {
-  exchangeId: number
-  assistantMessageId: number
+  exchangeId?: number
+  assistantMessageId?: number
+  runId?: number
+  status?: string
   stopped: boolean
 }
 
 export interface StreamErrorEvent {
   code: string
   message: string
-  exchangeId: number | null
+  exchangeId?: number | null
+  runId?: number | null
 }

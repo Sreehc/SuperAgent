@@ -5,15 +5,19 @@ import com.superagent.auth.security.AuthenticatedUserPrincipal;
 import com.superagent.auth.security.CurrentAuthenticatedUser;
 import com.superagent.auth.security.TenantContext;
 import com.superagent.auth.security.TenantContextHolder;
+import com.superagent.chat.domain.MemoryStrategy;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.infra.config.SuperAgentProperties;
+import com.superagent.settings.domain.AgentSettings;
 import com.superagent.settings.domain.ModelSettings;
 import com.superagent.settings.domain.RagSettings;
 import com.superagent.settings.domain.RerankSettings;
+import com.superagent.settings.domain.ToolSettings;
 import com.superagent.settings.repository.AuditLogRepository;
 import com.superagent.settings.repository.RuntimeSettingsRepository;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -25,6 +29,8 @@ public class RuntimeSettingsService {
     private static final String MODEL_SECTION = "model";
     private static final String RAG_SECTION = "rag";
     private static final String RERANK_SECTION = "rerank";
+    private static final String AGENT_SECTION = "agent";
+    private static final String TOOLS_SECTION = "tools";
 
     private final CurrentAuthenticatedUser currentAuthenticatedUser;
     private final RuntimeSettingsRepository runtimeSettingsRepository;
@@ -163,6 +169,72 @@ public class RuntimeSettingsService {
         return new SecretUpdateResult(true, merged.apiKeySet());
     }
 
+    public AgentSettings getAgentSettings() {
+        requireOwnerOrAdmin();
+        return resolveAgentSettings(requireTenantContext().tenantId());
+    }
+
+    @Transactional
+    public UpdateResult updateAgentSettings(AgentSettingsPatch patch) {
+        AuthenticatedUserPrincipal principal = requireOwnerOrAdmin();
+        TenantContext tenantContext = requireTenantContext();
+        AgentSettings existing = resolveAgentSettings(tenantContext.tenantId());
+        AgentSettings merged = new AgentSettings(
+                patch.enabled() == null ? existing.enabled() : patch.enabled(),
+                patch.maxModelSteps() == null ? existing.maxModelSteps() : patch.maxModelSteps(),
+                patch.maxToolCalls() == null ? existing.maxToolCalls() : patch.maxToolCalls(),
+                patch.checkpointEnabled() == null ? existing.checkpointEnabled() : patch.checkpointEnabled(),
+                patch.defaultMemoryStrategy() == null ? existing.defaultMemoryStrategy() : patch.defaultMemoryStrategy(),
+                patch.webSearchEnabled() == null ? existing.webSearchEnabled() : patch.webSearchEnabled(),
+                patch.httpToolEnabled() == null ? existing.httpToolEnabled() : patch.httpToolEnabled(),
+                patch.graphToolEnabled() == null ? existing.graphToolEnabled() : patch.graphToolEnabled(),
+                patch.codeExecutionEnabled() == null ? existing.codeExecutionEnabled() : patch.codeExecutionEnabled(),
+                patch.toolTimeoutMs() == null ? existing.toolTimeoutMs() : patch.toolTimeoutMs(),
+                patch.allowedHttpDomains() == null ? existing.allowedHttpDomains() : patch.allowedHttpDomains()
+        );
+        runtimeSettingsRepository.upsertSection(tenantContext.tenantId(), AGENT_SECTION, toStorageMap(merged));
+        auditLogRepository.append(
+                tenantContext.tenantId(),
+                principal.userId(),
+                "settings.agent.updated",
+                "runtime_setting",
+                null,
+                toStorageMap(merged)
+        );
+        return new UpdateResult(true);
+    }
+
+    public ToolSettings getToolSettings() {
+        requireOwnerOrAdmin();
+        return resolveToolSettings(requireTenantContext().tenantId());
+    }
+
+    @Transactional
+    public UpdateResult updateToolSettings(ToolSettingsPatch patch) {
+        AuthenticatedUserPrincipal principal = requireOwnerOrAdmin();
+        TenantContext tenantContext = requireTenantContext();
+        ToolSettings existing = resolveToolSettings(tenantContext.tenantId());
+        ToolSettings merged = new ToolSettings(
+                patch.webSearchEnabled() == null ? existing.webSearchEnabled() : patch.webSearchEnabled(),
+                patch.httpToolEnabled() == null ? existing.httpToolEnabled() : patch.httpToolEnabled(),
+                patch.graphToolEnabled() == null ? existing.graphToolEnabled() : patch.graphToolEnabled(),
+                patch.codeExecutionEnabled() == null ? existing.codeExecutionEnabled() : patch.codeExecutionEnabled(),
+                patch.toolTimeoutMs() == null ? existing.toolTimeoutMs() : patch.toolTimeoutMs(),
+                firstNonBlank(patch.searchProvider(), existing.searchProvider()),
+                patch.allowedHttpDomains() == null ? existing.allowedHttpDomains() : patch.allowedHttpDomains()
+        );
+        runtimeSettingsRepository.upsertSection(tenantContext.tenantId(), TOOLS_SECTION, toStorageMap(merged));
+        auditLogRepository.append(
+                tenantContext.tenantId(),
+                principal.userId(),
+                "settings.tools.updated",
+                "runtime_setting",
+                null,
+                toStorageMap(merged)
+        );
+        return new UpdateResult(true);
+    }
+
     public RagSettings resolveRagSettingsForCurrentTenant() {
         TenantContext tenantContext = TenantContextHolder.get();
         if (tenantContext == null) {
@@ -207,6 +279,36 @@ public class RuntimeSettingsService {
                 getNullableString(overrides, "baseUrl"),
                 getNullableString(overrides, "model"),
                 getNullableString(overrides, "apiKey")
+        );
+    }
+
+    public AgentSettings resolveAgentSettings(long tenantId) {
+        Map<String, Object> overrides = runtimeSettingsRepository.findSection(tenantId, AGENT_SECTION).orElse(Map.of());
+        return new AgentSettings(
+                getBoolean(overrides, "enabled", properties.getAgent().getEnabledDefault()),
+                getInt(overrides, "maxModelSteps", properties.getAgent().getMaxModelSteps()),
+                getInt(overrides, "maxToolCalls", properties.getAgent().getMaxToolCalls()),
+                getBoolean(overrides, "checkpointEnabled", properties.getAgent().getCheckpointEnabled()),
+                getMemoryStrategy(overrides, "defaultMemoryStrategy", MemoryStrategy.SUMMARY_PLUS_WINDOW),
+                getBoolean(overrides, "webSearchEnabled", properties.getTools().getWebSearchEnabled()),
+                getBoolean(overrides, "httpToolEnabled", properties.getTools().getHttpToolEnabled()),
+                getBoolean(overrides, "graphToolEnabled", properties.getTools().getGraphToolEnabled()),
+                getBoolean(overrides, "codeExecutionEnabled", properties.getAgent().getCodeExecutionEnabled()),
+                getInt(overrides, "toolTimeoutMs", properties.getTools().getToolTimeoutMs()),
+                getStringList(overrides, "allowedHttpDomains", properties.getTools().getAllowedHttpDomains())
+        );
+    }
+
+    public ToolSettings resolveToolSettings(long tenantId) {
+        Map<String, Object> overrides = runtimeSettingsRepository.findSection(tenantId, TOOLS_SECTION).orElse(Map.of());
+        return new ToolSettings(
+                getBoolean(overrides, "webSearchEnabled", properties.getTools().getWebSearchEnabled()),
+                getBoolean(overrides, "httpToolEnabled", properties.getTools().getHttpToolEnabled()),
+                getBoolean(overrides, "graphToolEnabled", properties.getTools().getGraphToolEnabled()),
+                getBoolean(overrides, "codeExecutionEnabled", properties.getTools().getCodeExecutionEnabled()),
+                getInt(overrides, "toolTimeoutMs", properties.getTools().getToolTimeoutMs()),
+                getString(overrides, "searchProvider", properties.getTools().getSearchProvider()),
+                getStringList(overrides, "allowedHttpDomains", properties.getTools().getAllowedHttpDomains())
         );
     }
 
@@ -262,6 +364,34 @@ public class RuntimeSettingsService {
         return map;
     }
 
+    private Map<String, Object> toStorageMap(AgentSettings settings) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("enabled", settings.enabled());
+        map.put("maxModelSteps", settings.maxModelSteps());
+        map.put("maxToolCalls", settings.maxToolCalls());
+        map.put("checkpointEnabled", settings.checkpointEnabled());
+        map.put("defaultMemoryStrategy", settings.defaultMemoryStrategy().name());
+        map.put("webSearchEnabled", settings.webSearchEnabled());
+        map.put("httpToolEnabled", settings.httpToolEnabled());
+        map.put("graphToolEnabled", settings.graphToolEnabled());
+        map.put("codeExecutionEnabled", settings.codeExecutionEnabled());
+        map.put("toolTimeoutMs", settings.toolTimeoutMs());
+        map.put("allowedHttpDomains", settings.allowedHttpDomains());
+        return map;
+    }
+
+    private Map<String, Object> toStorageMap(ToolSettings settings) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("webSearchEnabled", settings.webSearchEnabled());
+        map.put("httpToolEnabled", settings.httpToolEnabled());
+        map.put("graphToolEnabled", settings.graphToolEnabled());
+        map.put("codeExecutionEnabled", settings.codeExecutionEnabled());
+        map.put("toolTimeoutMs", settings.toolTimeoutMs());
+        map.put("searchProvider", settings.searchProvider());
+        map.put("allowedHttpDomains", settings.allowedHttpDomains());
+        return map;
+    }
+
     private AuthenticatedUserPrincipal requireOwnerOrAdmin() {
         AuthenticatedUserPrincipal principal = currentAuthenticatedUser.get();
         if (principal.currentRole() != TenantRole.OWNER && principal.currentRole() != TenantRole.ADMIN) {
@@ -307,6 +437,14 @@ public class RuntimeSettingsService {
         return value == null ? null : value.toString();
     }
 
+    private List<String> getStringList(Map<String, Object> source, String key, List<String> fallback) {
+        Object value = source.get(key);
+        if (value instanceof List<?> list) {
+            return list.stream().map(String::valueOf).filter(item -> !item.isBlank()).toList();
+        }
+        return fallback;
+    }
+
     private boolean getBoolean(Map<String, Object> source, String key, boolean fallback) {
         Object value = source.get(key);
         if (value == null) {
@@ -329,6 +467,18 @@ public class RuntimeSettingsService {
             return fallback;
         }
         return value instanceof Number number ? number.doubleValue() : Double.parseDouble(value.toString());
+    }
+
+    private MemoryStrategy getMemoryStrategy(Map<String, Object> source, String key, MemoryStrategy fallback) {
+        Object value = source.get(key);
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return MemoryStrategy.valueOf(String.valueOf(value));
+        } catch (IllegalArgumentException exception) {
+            return fallback;
+        }
     }
 
     public record ModelSettingsPatch(
@@ -360,6 +510,32 @@ public class RuntimeSettingsService {
             String baseUrl,
             String model,
             String apiKey
+    ) {
+    }
+
+    public record AgentSettingsPatch(
+            Boolean enabled,
+            Integer maxModelSteps,
+            Integer maxToolCalls,
+            Boolean checkpointEnabled,
+            MemoryStrategy defaultMemoryStrategy,
+            Boolean webSearchEnabled,
+            Boolean httpToolEnabled,
+            Boolean graphToolEnabled,
+            Boolean codeExecutionEnabled,
+            Integer toolTimeoutMs,
+            List<String> allowedHttpDomains
+    ) {
+    }
+
+    public record ToolSettingsPatch(
+            Boolean webSearchEnabled,
+            Boolean httpToolEnabled,
+            Boolean graphToolEnabled,
+            Boolean codeExecutionEnabled,
+            Integer toolTimeoutMs,
+            String searchProvider,
+            List<String> allowedHttpDomains
     ) {
     }
 

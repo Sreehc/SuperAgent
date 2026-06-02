@@ -1,16 +1,20 @@
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 import {
+  getAgentSettings,
   getModelSettings,
   getRagSettings,
   getRerankSettings,
+  getToolSettings,
   SettingsValidationError,
+  updateAgentSettings,
   updateModelSettings,
   updateRagSettings,
   updateRerankSettings,
+  updateToolSettings,
 } from '../api'
 
-type SettingsTab = 'model' | 'rag' | 'rerank'
+type SettingsTab = 'model' | 'rag' | 'rerank' | 'agent' | 'tools'
 
 export const useSettingsStore = defineStore('settings', () => {
   const loading = ref(false)
@@ -51,16 +55,42 @@ export const useSettingsStore = defineStore('settings', () => {
     apiKeySet: false,
   })
 
+  const agentForm = reactive({
+    enabled: true,
+    maxModelSteps: 6,
+    maxToolCalls: 6,
+    checkpointEnabled: true,
+    defaultMemoryStrategy: 'SUMMARY_PLUS_WINDOW',
+    webSearchEnabled: true,
+    httpToolEnabled: false,
+    graphToolEnabled: true,
+    codeExecutionEnabled: false,
+    toolTimeoutMs: 10000,
+    allowedHttpDomainsText: '',
+  })
+
+  const toolForm = reactive({
+    webSearchEnabled: true,
+    httpToolEnabled: false,
+    graphToolEnabled: true,
+    codeExecutionEnabled: false,
+    toolTimeoutMs: 10000,
+    searchProvider: 'tavily',
+    allowedHttpDomainsText: '',
+  })
+
   async function loadAll() {
     loading.value = true
     errorMessage.value = ''
     successMessage.value = ''
     clearFieldErrors()
     try {
-      const [modelResponse, ragResponse, rerankResponse] = await Promise.all([
+      const [modelResponse, ragResponse, rerankResponse, agentResponse, toolResponse] = await Promise.all([
         getModelSettings(),
         getRagSettings(),
         getRerankSettings(),
+        getAgentSettings(),
+        getToolSettings(),
       ])
 
       Object.assign(modelForm, {
@@ -81,6 +111,16 @@ export const useSettingsStore = defineStore('settings', () => {
         model: rerankResponse.data.model ?? '',
         apiKey: '',
         apiKeySet: rerankResponse.data.apiKeySet,
+      })
+
+      Object.assign(agentForm, {
+        ...agentResponse.data,
+        allowedHttpDomainsText: agentResponse.data.allowedHttpDomains.join('\n'),
+      })
+
+      Object.assign(toolForm, {
+        ...toolResponse.data,
+        allowedHttpDomainsText: toolResponse.data.allowedHttpDomains.join('\n'),
       })
     } catch {
       errorMessage.value = '设置加载失败，请刷新后重试。'
@@ -165,6 +205,66 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function saveAgent() {
+    savingTab.value = 'agent'
+    errorMessage.value = ''
+    successMessage.value = ''
+    clearFieldErrors()
+    try {
+      await updateAgentSettings({
+        enabled: agentForm.enabled,
+        maxModelSteps: agentForm.maxModelSteps,
+        maxToolCalls: agentForm.maxToolCalls,
+        checkpointEnabled: agentForm.checkpointEnabled,
+        defaultMemoryStrategy: agentForm.defaultMemoryStrategy,
+        webSearchEnabled: agentForm.webSearchEnabled,
+        httpToolEnabled: agentForm.httpToolEnabled,
+        graphToolEnabled: agentForm.graphToolEnabled,
+        codeExecutionEnabled: agentForm.codeExecutionEnabled,
+        toolTimeoutMs: agentForm.toolTimeoutMs,
+        allowedHttpDomains: parseDomainLines(agentForm.allowedHttpDomainsText),
+      })
+      successMessage.value = 'Agent 设置已保存。'
+    } catch (error) {
+      if (applyValidationError(error)) {
+        errorMessage.value = 'Agent 设置校验失败，请修正高亮字段。'
+        throw error
+      }
+      errorMessage.value = 'Agent 设置保存失败，请稍后重试。'
+      throw new Error(errorMessage.value)
+    } finally {
+      savingTab.value = null
+    }
+  }
+
+  async function saveTools() {
+    savingTab.value = 'tools'
+    errorMessage.value = ''
+    successMessage.value = ''
+    clearFieldErrors()
+    try {
+      await updateToolSettings({
+        webSearchEnabled: toolForm.webSearchEnabled,
+        httpToolEnabled: toolForm.httpToolEnabled,
+        graphToolEnabled: toolForm.graphToolEnabled,
+        codeExecutionEnabled: toolForm.codeExecutionEnabled,
+        toolTimeoutMs: toolForm.toolTimeoutMs,
+        searchProvider: toolForm.searchProvider,
+        allowedHttpDomains: parseDomainLines(toolForm.allowedHttpDomainsText),
+      })
+      successMessage.value = 'Tools 设置已保存。'
+    } catch (error) {
+      if (applyValidationError(error)) {
+        errorMessage.value = 'Tools 设置校验失败，请修正高亮字段。'
+        throw error
+      }
+      errorMessage.value = 'Tools 设置保存失败，请稍后重试。'
+      throw new Error(errorMessage.value)
+    } finally {
+      savingTab.value = null
+    }
+  }
+
   function clearFieldErrors() {
     Object.keys(fieldErrors).forEach((key) => {
       delete fieldErrors[key]
@@ -184,6 +284,13 @@ export const useSettingsStore = defineStore('settings', () => {
     return Object.keys(fieldErrors).length > 0
   }
 
+  function parseDomainLines(value: string) {
+    return value
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
   return {
     loading,
     savingTab,
@@ -193,9 +300,13 @@ export const useSettingsStore = defineStore('settings', () => {
     modelForm,
     ragForm,
     rerankForm,
+    agentForm,
+    toolForm,
     loadAll,
     saveModel,
     saveRag,
     saveRerank,
+    saveAgent,
+    saveTools,
   }
 })

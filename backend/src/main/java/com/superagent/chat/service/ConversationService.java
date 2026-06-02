@@ -1,5 +1,8 @@
 package com.superagent.chat.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.agent.service.AgentGatewayClient;
 import com.superagent.auth.domain.TenantRole;
 import com.superagent.auth.security.AuthenticatedUserPrincipal;
 import com.superagent.auth.security.CurrentAuthenticatedUser;
@@ -22,6 +25,7 @@ import com.superagent.rag.service.RagOrchestrationService;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,28 +38,40 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Service
 public class ConversationService {
 
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
+
     private final CurrentAuthenticatedUser currentAuthenticatedUser;
     private final ConversationRepository conversationRepository;
     private final RagOrchestrationService ragOrchestrationService;
+    private final ConversationMemoryService conversationMemoryService;
     private final ConversationStreamRegistry streamRegistry;
     private final ConversationRunLockManager conversationRunLockManager;
     private final ConversationExecutionPlanner conversationExecutionPlanner;
+    private final AgentGatewayClient agentGatewayClient;
+    private final ObjectMapper objectMapper;
     private final Executor conversationExecutor = new SimpleAsyncTaskExecutor("conversation-stream-");
 
     public ConversationService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
             ConversationRepository conversationRepository,
             RagOrchestrationService ragOrchestrationService,
+            ConversationMemoryService conversationMemoryService,
             ConversationStreamRegistry streamRegistry,
             ConversationRunLockManager conversationRunLockManager,
-            ConversationExecutionPlanner conversationExecutionPlanner
+            ConversationExecutionPlanner conversationExecutionPlanner,
+            AgentGatewayClient agentGatewayClient,
+            ObjectMapper objectMapper
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.conversationRepository = conversationRepository;
         this.ragOrchestrationService = ragOrchestrationService;
+        this.conversationMemoryService = conversationMemoryService;
         this.streamRegistry = streamRegistry;
         this.conversationRunLockManager = conversationRunLockManager;
         this.conversationExecutionPlanner = conversationExecutionPlanner;
+        this.agentGatewayClient = agentGatewayClient;
+        this.objectMapper = objectMapper;
     }
 
     public ConversationSession createConversation(String title, Long knowledgeBaseId, MemoryStrategy memoryStrategy) {
@@ -178,6 +194,20 @@ public class ConversationService {
         return new StopResult(true, sessionId);
     }
 
+    public ResumeResult resumeConversation(long sessionId) {
+        requireAccessibleSession(sessionId);
+        TenantContext tenantContext = requireTenantContext();
+        var latestExchange = conversationRepository.findLatestExchangeBySessionId(tenantContext.tenantId(), sessionId)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "No exchange found for session"));
+        if (latestExchange.executionMode() != ExecutionMode.REACT_AGENT) {
+            throw new AppException(ErrorCode.CONFLICT, HttpStatus.CONFLICT, "Latest exchange is not an agent run");
+        }
+        long runId = conversationRepository.findLatestAgentRunIdByExchangeId(tenantContext.tenantId(), latestExchange.id())
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "No agent run found for session"));
+        boolean accepted = agentGatewayClient.resumeRun(runId);
+        return new ResumeResult(accepted, sessionId, runId);
+    }
+
     private void generateConversation(
             ConversationSession session,
             AuthenticatedUserPrincipal principal,
@@ -207,9 +237,7 @@ public class ConversationService {
                     Map.of("userId", principal.userId())
             );
             conversationRepository.touchSession(sessionId, tenantId, userMessage.createdAt());
-            List<String> recentMessages = conversationRepository.findMessages(sessionId, tenantId, 1, 6).stream()
-                    .map(ConversationMessage::content)
-                    .toList();
+            List<String> recentMessages = conversationMemoryService.buildContext(sessionId, tenantId, resolvedMemoryStrategy);
             ConversationExecutionPlanner.ExecutionPlan executionPlan = conversationExecutionPlanner.plan(
                     request.message().trim(),
                     resolvedKnowledgeBaseId,
@@ -248,6 +276,23 @@ public class ConversationService {
                 return;
             }
 
+            if (executionPlan.executionMode() == ExecutionMode.REACT_AGENT) {
+                streamAgentRun(
+                        session,
+                        principal,
+                        tenantContext,
+                        exchangeId,
+                        userMessage,
+                        request.message().trim(),
+                        resolvedKnowledgeBaseId,
+                        recentMessages,
+                        resolvedMemoryStrategy,
+                        emitter,
+                        activeConversation
+                );
+                return;
+            }
+
             RagResponse ragResponse = ragOrchestrationService.answer(
                     request.message().trim(),
                     resolvedKnowledgeBaseId,
@@ -267,7 +312,74 @@ public class ConversationService {
         } catch (Exception exception) {
             handleStreamError(tenantId, sessionId, exchangeId, emitter, ErrorCode.MODEL_PROVIDER_ERROR, "RAG generation failed");
         } finally {
+            conversationMemoryService.refreshSummaryIfNeeded(tenantId, sessionId);
             cleanupActiveConversation(tenantId, sessionId);
+        }
+    }
+
+    private void streamAgentRun(
+            ConversationSession session,
+            AuthenticatedUserPrincipal principal,
+            TenantContext tenantContext,
+            long exchangeId,
+            ConversationMessage userMessage,
+            String question,
+            Long knowledgeBaseId,
+            List<String> recentMessages,
+            MemoryStrategy memoryStrategy,
+            SseEmitter emitter,
+            ConversationStreamRegistry.ActiveConversation activeConversation
+    ) {
+        long tenantId = tenantContext.tenantId();
+        long runId = agentGatewayClient.createRun(new AgentGatewayClient.CreateRunRequest(
+                tenantId,
+                session.id(),
+                exchangeId,
+                userMessage.id(),
+                principal.userId(),
+                question,
+                knowledgeBaseId,
+                memoryStrategy,
+                recentMessages
+        ));
+        emitTraceStage(exchangeId, tenantId, emitter, "agent_dispatch", "run_id=" + runId, "agent_service_dispatched");
+
+        StringBuilder fullText = new StringBuilder();
+        try {
+            agentGatewayClient.streamRun(runId, () -> isStopRequested(activeConversation), (eventName, dataJson) -> {
+                if ("delta".equals(eventName)) {
+                    Map<String, Object> payload = objectMapper.readValue(dataJson, MAP_TYPE);
+                    fullText.append(String.valueOf(payload.getOrDefault("text", "")));
+                } else if ("error".equals(eventName)) {
+                    Map<String, Object> payload = objectMapper.readValue(dataJson, MAP_TYPE);
+                    throw new AppException(
+                            ErrorCode.AGENT_SERVICE_ERROR,
+                            HttpStatus.BAD_GATEWAY,
+                            String.valueOf(payload.getOrDefault("message", "Agent execution failed"))
+                    );
+                }
+
+                Object payload = objectMapper.readValue(dataJson, Object.class);
+                sendEvent(emitter, eventName, payload);
+            });
+
+            String assistantStatus = isStopRequested(activeConversation) ? "stopped" : "success";
+            ConversationMessage assistantMessage = conversationRepository.createMessage(
+                    tenantId,
+                    session.id(),
+                    MessageRole.assistant,
+                    fullText.toString(),
+                    assistantStatus,
+                    null
+            );
+            conversationRepository.touchSession(session.id(), tenantId, assistantMessage.createdAt());
+            conversationRepository.completeExchange(exchangeId, tenantId, assistantMessage.id(), assistantStatus);
+            sendEvent(emitter, "done", new DoneEvent(exchangeId, assistantMessage.id(), isStopRequested(activeConversation)));
+            emitter.complete();
+        } catch (AppException exception) {
+            handleStreamError(tenantId, session.id(), exchangeId, emitter, exception.getErrorCode(), exception.getMessage());
+        } catch (Exception exception) {
+            handleStreamError(tenantId, session.id(), exchangeId, emitter, ErrorCode.AGENT_SERVICE_ERROR, "Agent execution failed");
         }
     }
 
@@ -703,6 +815,9 @@ public class ConversationService {
     }
 
     public record StopResult(boolean stopped, long sessionId) {
+    }
+
+    public record ResumeResult(boolean resumed, long sessionId, long runId) {
     }
 
     public record StartEvent(long exchangeId, long messageId) {

@@ -6,11 +6,14 @@ import com.superagent.knowledge.domain.DocumentChunk;
 import com.superagent.knowledge.domain.DocumentTask;
 import com.superagent.knowledge.domain.DocumentTaskStatus;
 import com.superagent.knowledge.domain.DocumentTaskType;
+import com.superagent.knowledge.domain.ChunkingProfile;
 import com.superagent.knowledge.domain.KnowledgeBase;
 import com.superagent.knowledge.domain.KnowledgeBaseStatus;
 import com.superagent.knowledge.domain.KnowledgeBaseVisibility;
+import com.superagent.knowledge.domain.KnowledgeDomain;
 import com.superagent.knowledge.domain.KnowledgeDocument;
 import com.superagent.knowledge.domain.KnowledgeDocumentStatus;
+import com.superagent.knowledge.domain.KnowledgeDocumentVersion;
 import com.superagent.rag.domain.RetrievalResult;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -41,6 +44,9 @@ public class KnowledgeRepository {
     private final RowMapper<KnowledgeDocument> knowledgeDocumentRowMapper = (rs, rowNum) -> mapKnowledgeDocument(rs);
     private final RowMapper<DocumentTask> documentTaskRowMapper = (rs, rowNum) -> mapDocumentTask(rs);
     private final RowMapper<DocumentChunk> documentChunkRowMapper = (rs, rowNum) -> mapDocumentChunk(rs);
+    private final RowMapper<KnowledgeDomain> knowledgeDomainRowMapper = (rs, rowNum) -> mapKnowledgeDomain(rs);
+    private final RowMapper<ChunkingProfile> chunkingProfileRowMapper = (rs, rowNum) -> mapChunkingProfile(rs);
+    private final RowMapper<KnowledgeDocumentVersion> documentVersionRowMapper = (rs, rowNum) -> mapDocumentVersion(rs);
 
     public KnowledgeRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
@@ -71,6 +77,251 @@ public class KnowledgeRepository {
             return statement;
         }, keyHolder);
         return getKnowledgeBase(tenantId, keyHolder.getKey().longValue()).orElseThrow();
+    }
+
+    public KnowledgeDomain createKnowledgeDomain(long tenantId, String code, String name, String description, Map<String, Object> metadata) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            var statement = connection.prepareStatement("""
+                    INSERT INTO knowledge_domain (tenant_id, code, name, description, metadata)
+                    VALUES (?, ?, ?, ?, ?::jsonb)
+                    RETURNING id
+                    """, new String[]{"id"});
+            statement.setLong(1, tenantId);
+            statement.setString(2, code);
+            statement.setString(3, name);
+            statement.setString(4, description);
+            statement.setString(5, writeMetadata(metadata));
+            return statement;
+        }, keyHolder);
+        return getKnowledgeDomain(tenantId, keyHolder.getKey().longValue()).orElseThrow();
+    }
+
+    public List<KnowledgeDomain> listKnowledgeDomains(long tenantId) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, code, name, description, status, metadata, created_at, updated_at
+                        FROM knowledge_domain
+                        WHERE tenant_id = ?
+                          AND deleted_at IS NULL
+                        ORDER BY code ASC
+                        """,
+                knowledgeDomainRowMapper,
+                tenantId
+        );
+    }
+
+    public Optional<KnowledgeDomain> getKnowledgeDomain(long tenantId, long id) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, code, name, description, status, metadata, created_at, updated_at
+                        FROM knowledge_domain
+                        WHERE tenant_id = ?
+                          AND id = ?
+                          AND deleted_at IS NULL
+                        """,
+                knowledgeDomainRowMapper,
+                tenantId,
+                id
+        ).stream().findFirst();
+    }
+
+    public KnowledgeDomain updateKnowledgeDomain(long tenantId, long id, String name, String description, String status, Map<String, Object> metadata) {
+        jdbcTemplate.update("""
+                        UPDATE knowledge_domain
+                        SET name = ?, description = ?, status = ?, metadata = ?::jsonb, updated_at = NOW()
+                        WHERE tenant_id = ?
+                          AND id = ?
+                          AND deleted_at IS NULL
+                        """,
+                name, description, status, writeMetadata(metadata), tenantId, id
+        );
+        return getKnowledgeDomain(tenantId, id).orElseThrow();
+    }
+
+    public ChunkingProfile createChunkingProfile(long tenantId, String code, String name, String strategy, Map<String, Object> config, boolean isDefault) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            var statement = connection.prepareStatement("""
+                    INSERT INTO chunking_profile (tenant_id, code, name, strategy, config_json, is_default)
+                    VALUES (?, ?, ?, ?, ?::jsonb, ?)
+                    RETURNING id
+                    """, new String[]{"id"});
+            statement.setLong(1, tenantId);
+            statement.setString(2, code);
+            statement.setString(3, name);
+            statement.setString(4, strategy);
+            statement.setString(5, writeMetadata(config));
+            statement.setBoolean(6, isDefault);
+            return statement;
+        }, keyHolder);
+        return getChunkingProfile(tenantId, keyHolder.getKey().longValue()).orElseThrow();
+    }
+
+    public List<ChunkingProfile> listChunkingProfiles(long tenantId) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, code, name, strategy, config_json, is_default, status, created_at, updated_at
+                        FROM chunking_profile
+                        WHERE tenant_id = ?
+                          AND deleted_at IS NULL
+                        ORDER BY code ASC
+                        """,
+                chunkingProfileRowMapper,
+                tenantId
+        );
+    }
+
+    public Optional<ChunkingProfile> getChunkingProfile(long tenantId, long id) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, code, name, strategy, config_json, is_default, status, created_at, updated_at
+                        FROM chunking_profile
+                        WHERE tenant_id = ?
+                          AND id = ?
+                          AND deleted_at IS NULL
+                        """,
+                chunkingProfileRowMapper,
+                tenantId,
+                id
+        ).stream().findFirst();
+    }
+
+    public ChunkingProfile updateChunkingProfile(long tenantId, long id, String name, String strategy, Map<String, Object> config, boolean isDefault, String status) {
+        jdbcTemplate.update("""
+                        UPDATE chunking_profile
+                        SET name = ?, strategy = ?, config_json = ?::jsonb, is_default = ?, status = ?, updated_at = NOW()
+                        WHERE tenant_id = ?
+                          AND id = ?
+                          AND deleted_at IS NULL
+                        """,
+                name, strategy, writeMetadata(config), isDefault, status, tenantId, id
+        );
+        return getChunkingProfile(tenantId, id).orElseThrow();
+    }
+
+    public KnowledgeDocumentVersion createDocumentVersion(long tenantId, long documentId, int versionNo, Long chunkingProfileId, String status, Long createdBy) {
+        return createDocumentVersion(tenantId, documentId, versionNo, chunkingProfileId, status, createdBy, Map.of(), 0, "pending");
+    }
+
+    public KnowledgeDocumentVersion createDocumentVersion(
+            long tenantId,
+            long documentId,
+            int versionNo,
+            Long chunkingProfileId,
+            String status,
+            Long createdBy,
+            Map<String, Object> metadata,
+            int chunkCount,
+            String graphSyncStatus
+    ) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            var statement = connection.prepareStatement("""
+                    INSERT INTO knowledge_document_version (
+                        tenant_id,
+                        document_id,
+                        version_no,
+                        chunking_profile_id,
+                        status,
+                        chunk_count,
+                        graph_sync_status,
+                        metadata,
+                        created_by
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+                    RETURNING id
+                    """, new String[]{"id"});
+            statement.setLong(1, tenantId);
+            statement.setLong(2, documentId);
+            statement.setInt(3, versionNo);
+            if (chunkingProfileId == null) {
+                statement.setNull(4, Types.BIGINT);
+            } else {
+                statement.setLong(4, chunkingProfileId);
+            }
+            statement.setString(5, status);
+            statement.setInt(6, chunkCount);
+            statement.setString(7, graphSyncStatus);
+            statement.setString(8, writeMetadata(metadata == null ? Map.of() : metadata));
+            if (createdBy == null) {
+                statement.setNull(9, Types.BIGINT);
+            } else {
+                statement.setLong(9, createdBy);
+            }
+            return statement;
+        }, keyHolder);
+        return getDocumentVersion(tenantId, keyHolder.getKey().longValue()).orElseThrow();
+    }
+
+    public Optional<KnowledgeDocumentVersion> findLatestDocumentVersion(long tenantId, long documentId) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, document_id, version_no, chunking_profile_id, status, chunk_count, graph_sync_status,
+                               metadata, created_by, created_at, updated_at
+                        FROM knowledge_document_version
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                        ORDER BY version_no DESC, id DESC
+                        LIMIT 1
+                        """,
+                documentVersionRowMapper,
+                tenantId,
+                documentId
+        ).stream().findFirst();
+    }
+
+    public KnowledgeDocumentVersion updateDocumentVersion(
+            long tenantId,
+            long versionId,
+            String status,
+            Integer chunkCount,
+            String graphSyncStatus,
+            Map<String, Object> metadata
+    ) {
+        KnowledgeDocumentVersion existing = getDocumentVersion(tenantId, versionId).orElseThrow();
+        jdbcTemplate.update("""
+                        UPDATE knowledge_document_version
+                        SET status = ?,
+                            chunk_count = COALESCE(?, chunk_count),
+                            graph_sync_status = ?,
+                            metadata = ?::jsonb,
+                            updated_at = NOW()
+                        WHERE tenant_id = ?
+                          AND id = ?
+                        """,
+                status == null ? existing.status() : status,
+                chunkCount,
+                graphSyncStatus == null ? existing.graphSyncStatus() : graphSyncStatus,
+                writeMetadata(metadata == null ? existing.metadata() : metadata),
+                tenantId,
+                versionId
+        );
+        return getDocumentVersion(tenantId, versionId).orElseThrow();
+    }
+
+    public List<KnowledgeDocumentVersion> listDocumentVersions(long tenantId, long documentId) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, document_id, version_no, chunking_profile_id, status, chunk_count, graph_sync_status,
+                               metadata, created_by, created_at, updated_at
+                        FROM knowledge_document_version
+                        WHERE tenant_id = ?
+                          AND document_id = ?
+                        ORDER BY version_no DESC, id DESC
+                        """,
+                documentVersionRowMapper,
+                tenantId,
+                documentId
+        );
+    }
+
+    public Optional<KnowledgeDocumentVersion> getDocumentVersion(long tenantId, long id) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, document_id, version_no, chunking_profile_id, status, chunk_count, graph_sync_status,
+                               metadata, created_by, created_at, updated_at
+                        FROM knowledge_document_version
+                        WHERE tenant_id = ?
+                          AND id = ?
+                        """,
+                documentVersionRowMapper,
+                tenantId,
+                id
+        ).stream().findFirst();
     }
 
     public Optional<KnowledgeBase> getKnowledgeBase(long tenantId, long knowledgeBaseId) {
@@ -214,6 +465,8 @@ public class KnowledgeRepository {
     public KnowledgeDocument createKnowledgeDocument(
             long tenantId,
             long knowledgeBaseId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
             String title,
             String fileName,
             String fileType,
@@ -235,6 +488,8 @@ public class KnowledgeRepository {
                     INSERT INTO knowledge_document (
                         tenant_id,
                         knowledge_base_id,
+                        knowledge_domain_id,
+                        chunking_profile_id,
                         title,
                         file_name,
                         file_type,
@@ -245,20 +500,30 @@ public class KnowledgeRepository {
                         metadata,
                         created_by
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
                     RETURNING id
                     """, new String[]{"id"});
             statement.setLong(1, tenantId);
             statement.setLong(2, knowledgeBaseId);
-            statement.setString(3, title);
-            statement.setString(4, fileName);
-            statement.setString(5, fileType);
-            statement.setLong(6, fileSize);
-            statement.setString(7, objectKey);
-            statement.setString(8, contentHash);
-            statement.setString(9, status.name());
-            statement.setString(10, metadataJson);
-            statement.setLong(11, createdBy);
+            if (knowledgeDomainId == null) {
+                statement.setNull(3, Types.BIGINT);
+            } else {
+                statement.setLong(3, knowledgeDomainId);
+            }
+            if (chunkingProfileId == null) {
+                statement.setNull(4, Types.BIGINT);
+            } else {
+                statement.setLong(4, chunkingProfileId);
+            }
+            statement.setString(5, title);
+            statement.setString(6, fileName);
+            statement.setString(7, fileType);
+            statement.setLong(8, fileSize);
+            statement.setString(9, objectKey);
+            statement.setString(10, contentHash);
+            statement.setString(11, status.name());
+            statement.setString(12, metadataJson);
+            statement.setLong(13, createdBy);
             return statement;
         }, keyHolder);
         return getKnowledgeDocument(tenantId, keyHolder.getKey().longValue()).orElseThrow();
@@ -269,6 +534,11 @@ public class KnowledgeRepository {
                         SELECT id,
                                tenant_id,
                                knowledge_base_id,
+                               knowledge_domain_id,
+                               chunking_profile_id,
+                               graph_sync_status,
+                               graph_error_message,
+                               active_version_no,
                                title,
                                file_name,
                                file_type,
@@ -319,6 +589,11 @@ public class KnowledgeRepository {
                 SELECT id,
                        tenant_id,
                        knowledge_base_id,
+                       knowledge_domain_id,
+                       chunking_profile_id,
+                       graph_sync_status,
+                       graph_error_message,
+                       active_version_no,
                        title,
                        file_name,
                        file_type,
@@ -545,6 +820,20 @@ public class KnowledgeRepository {
             String errorMessage,
             String parsedText
     ) {
+        return updateDocumentStatus(tenantId, documentId, status, chunkCount, errorMessage, parsedText, null, null, null);
+    }
+
+    public KnowledgeDocument updateDocumentStatus(
+            long tenantId,
+            long documentId,
+            KnowledgeDocumentStatus status,
+            Integer chunkCount,
+            String errorMessage,
+            String parsedText,
+            Integer activeVersionNo,
+            String graphSyncStatus,
+            String graphErrorMessage
+    ) {
         KnowledgeDocument existing = getKnowledgeDocument(tenantId, documentId).orElseThrow();
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("category", existing.category() == null ? "" : existing.category());
@@ -560,6 +849,9 @@ public class KnowledgeRepository {
                     SET status = ?,
                         chunk_count = COALESCE(?, chunk_count),
                         error_message = ?,
+                        active_version_no = COALESCE(?, active_version_no),
+                        graph_sync_status = COALESCE(?, graph_sync_status),
+                        graph_error_message = ?,
                         metadata = ?::jsonb,
                         updated_at = NOW()
                     WHERE tenant_id = ?
@@ -573,9 +865,16 @@ public class KnowledgeRepository {
                 statement.setInt(2, chunkCount);
             }
             statement.setString(3, errorMessage);
-            statement.setString(4, writeMetadata(metadata));
-            statement.setLong(5, tenantId);
-            statement.setLong(6, documentId);
+            if (activeVersionNo == null) {
+                statement.setNull(4, Types.INTEGER);
+            } else {
+                statement.setInt(4, activeVersionNo);
+            }
+            statement.setString(5, graphSyncStatus);
+            statement.setString(6, graphErrorMessage);
+            statement.setString(7, writeMetadata(metadata));
+            statement.setLong(8, tenantId);
+            statement.setLong(9, documentId);
             return statement;
         });
         return getKnowledgeDocument(tenantId, documentId).orElseThrow();
@@ -936,12 +1235,46 @@ public class KnowledgeRepository {
         );
     }
 
+    private KnowledgeDomain mapKnowledgeDomain(ResultSet rs) throws SQLException {
+        return new KnowledgeDomain(
+                rs.getLong("id"),
+                rs.getLong("tenant_id"),
+                rs.getString("code"),
+                rs.getString("name"),
+                rs.getString("description"),
+                rs.getString("status"),
+                readMetadata(rs.getString("metadata")),
+                readOffsetDateTime(rs, "created_at"),
+                readOffsetDateTime(rs, "updated_at")
+        );
+    }
+
+    private ChunkingProfile mapChunkingProfile(ResultSet rs) throws SQLException {
+        return new ChunkingProfile(
+                rs.getLong("id"),
+                rs.getLong("tenant_id"),
+                rs.getString("code"),
+                rs.getString("name"),
+                rs.getString("strategy"),
+                readMetadata(rs.getString("config_json")),
+                rs.getBoolean("is_default"),
+                rs.getString("status"),
+                readOffsetDateTime(rs, "created_at"),
+                readOffsetDateTime(rs, "updated_at")
+        );
+    }
+
     private KnowledgeDocument mapKnowledgeDocument(ResultSet rs) throws SQLException {
         Map<String, Object> metadata = readMetadata(rs.getString("metadata"));
         return new KnowledgeDocument(
                 rs.getLong("id"),
                 rs.getLong("tenant_id"),
                 rs.getLong("knowledge_base_id"),
+                getNullableLong(rs, "knowledge_domain_id"),
+                getNullableLong(rs, "chunking_profile_id"),
+                rs.getString("graph_sync_status"),
+                rs.getString("graph_error_message"),
+                rs.getInt("active_version_no"),
                 rs.getString("title"),
                 rs.getString("file_name"),
                 rs.getString("file_type"),
@@ -955,6 +1288,23 @@ public class KnowledgeRepository {
                 metadata.get("category") instanceof String category && !category.isBlank() ? category : null,
                 metadata.get("tags") instanceof List<?> tags ? tags.stream().map(String::valueOf).toList() : List.of(),
                 rs.getLong("created_by"),
+                readOffsetDateTime(rs, "created_at"),
+                readOffsetDateTime(rs, "updated_at")
+        );
+    }
+
+    private KnowledgeDocumentVersion mapDocumentVersion(ResultSet rs) throws SQLException {
+        return new KnowledgeDocumentVersion(
+                rs.getLong("id"),
+                rs.getLong("tenant_id"),
+                rs.getLong("document_id"),
+                rs.getInt("version_no"),
+                getNullableLong(rs, "chunking_profile_id"),
+                rs.getString("status"),
+                rs.getInt("chunk_count"),
+                rs.getString("graph_sync_status"),
+                readMetadata(rs.getString("metadata")),
+                getNullableLong(rs, "created_by"),
                 readOffsetDateTime(rs, "created_at"),
                 readOffsetDateTime(rs, "updated_at")
         );
@@ -998,6 +1348,11 @@ public class KnowledgeRepository {
 
     private OffsetDateTime readOffsetDateTime(ResultSet rs, String column) throws SQLException {
         return rs.getObject(column, OffsetDateTime.class);
+    }
+
+    private Long getNullableLong(ResultSet rs, String column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
     }
 
     private String writeMetadata(Map<String, Object> metadata) {

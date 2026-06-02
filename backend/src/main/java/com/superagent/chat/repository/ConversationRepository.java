@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.superagent.chat.domain.ConversationExchange;
 import com.superagent.chat.domain.ConversationMessage;
+import com.superagent.chat.domain.ConversationMemorySummary;
 import com.superagent.chat.domain.ConversationReference;
 import com.superagent.chat.domain.ConversationSession;
 import com.superagent.chat.domain.ConversationStatus;
@@ -49,6 +50,17 @@ public class ConversationRepository {
             rs.getString("content"),
             rs.getString("status"),
             (Integer) rs.getObject("token_count"),
+            rs.getObject("created_at", OffsetDateTime.class),
+            rs.getObject("updated_at", OffsetDateTime.class)
+    );
+
+    private static final RowMapper<ConversationMemorySummary> MEMORY_SUMMARY_ROW_MAPPER = (rs, rowNum) -> new ConversationMemorySummary(
+            rs.getLong("id"),
+            rs.getLong("tenant_id"),
+            rs.getLong("session_id"),
+            rs.getString("summary_text"),
+            getNullableLong(rs, "covered_message_id"),
+            rs.getInt("version"),
             rs.getObject("created_at", OffsetDateTime.class),
             rs.getObject("updated_at", OffsetDateTime.class)
     );
@@ -248,6 +260,60 @@ public class ConversationRepository {
         );
     }
 
+    public List<ConversationMessage> findMessagesAfter(long sessionId, long tenantId, Long afterMessageId, int limit) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT id, tenant_id, session_id, role, content, status, token_count, created_at, updated_at
+                FROM conversation_message
+                WHERE session_id = :sessionId
+                  AND tenant_id = :tenantId
+                """);
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("sessionId", sessionId)
+                .addValue("tenantId", tenantId)
+                .addValue("limit", limit);
+        if (afterMessageId != null) {
+            sql.append(" AND id > :afterMessageId");
+            params.addValue("afterMessageId", afterMessageId);
+        }
+        sql.append(" ORDER BY created_at ASC, id ASC LIMIT :limit");
+        return jdbcTemplate.query(sql.toString(), params, MESSAGE_ROW_MAPPER);
+    }
+
+    public Optional<ConversationMemorySummary> findLatestMemorySummary(long tenantId, long sessionId) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, session_id, summary_text, covered_message_id, version, created_at, updated_at
+                        FROM conversation_memory_summary
+                        WHERE tenant_id = :tenantId
+                          AND session_id = :sessionId
+                        ORDER BY version DESC, id DESC
+                        LIMIT 1
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("sessionId", sessionId),
+                MEMORY_SUMMARY_ROW_MAPPER
+        ).stream().findFirst();
+    }
+
+    public ConversationMemorySummary createMemorySummary(long tenantId, long sessionId, String summaryText, Long coveredMessageId, int version) {
+        return jdbcTemplate.queryForObject("""
+                        INSERT INTO conversation_memory_summary (
+                            tenant_id, session_id, summary_text, covered_message_id, version
+                        ) VALUES (
+                            :tenantId, :sessionId, :summaryText, :coveredMessageId, :version
+                        )
+                        RETURNING id, tenant_id, session_id, summary_text, covered_message_id, version, created_at, updated_at
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("sessionId", sessionId)
+                        .addValue("summaryText", summaryText)
+                        .addValue("coveredMessageId", coveredMessageId)
+                        .addValue("version", version),
+                MEMORY_SUMMARY_ROW_MAPPER
+        );
+    }
+
     public ConversationMessage createMessage(long tenantId, long sessionId, MessageRole role, String content, String status, Integer tokenCount) {
         return jdbcTemplate.queryForObject("""
                         INSERT INTO conversation_message (
@@ -359,6 +425,39 @@ public class ConversationRepository {
                         .addValue("routeConfidence", routeConfidence),
                 EXCHANGE_ROW_MAPPER
         );
+    }
+
+    public Optional<ConversationExchange> findLatestExchangeBySessionId(long tenantId, long sessionId) {
+        return jdbcTemplate.query("""
+                        SELECT id, tenant_id, session_id, user_message_id, assistant_message_id, execution_mode,
+                               status, route_reason, route_confidence, started_at, finished_at, created_at, updated_at
+                        FROM conversation_exchange
+                        WHERE tenant_id = :tenantId
+                          AND session_id = :sessionId
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("sessionId", sessionId),
+                EXCHANGE_ROW_MAPPER
+        ).stream().findFirst();
+    }
+
+    public Optional<Long> findLatestAgentRunIdByExchangeId(long tenantId, long exchangeId) {
+        return jdbcTemplate.query("""
+                        SELECT id
+                        FROM agent_run
+                        WHERE tenant_id = :tenantId
+                          AND exchange_id = :exchangeId
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("exchangeId", exchangeId),
+                (rs, rowNum) -> rs.getLong("id")
+        ).stream().findFirst();
     }
 
     public void completeExchange(long exchangeId, long tenantId, Long assistantMessageId, String status) {

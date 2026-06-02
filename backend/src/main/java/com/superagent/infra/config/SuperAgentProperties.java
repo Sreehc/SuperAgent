@@ -41,6 +41,15 @@ public class SuperAgentProperties {
     @Valid
     private final Rag rag = new Rag();
 
+    @Valid
+    private final Agent agent = new Agent();
+
+    @Valid
+    private final Tools tools = new Tools();
+
+    @Valid
+    private final Graph graph = new Graph();
+
     public App getApp() {
         return app;
     }
@@ -75,6 +84,18 @@ public class SuperAgentProperties {
 
     public Rag getRag() {
         return rag;
+    }
+
+    public Agent getAgent() {
+        return agent;
+    }
+
+    public Tools getTools() {
+        return tools;
+    }
+
+    public Graph getGraph() {
+        return graph;
     }
 
     public static class App {
@@ -596,6 +617,202 @@ public class SuperAgentProperties {
 
         public void setMaxSubQuestions(int maxSubQuestions) {
             this.maxSubQuestions = maxSubQuestions;
+        }
+    }
+
+    public static class Agent {
+
+        @NotBlank
+        private String serviceBaseUrl = "http://localhost:18081";
+
+        @NotNull
+        private Boolean enabledDefault = false;
+
+        @Min(1)
+        private int maxModelSteps = 8;
+
+        @Min(1)
+        private int maxToolCalls = 10;
+
+        @NotNull
+        private Boolean checkpointEnabled = true;
+
+        @NotNull
+        private Boolean codeExecutionEnabled = false;
+
+        public String getServiceBaseUrl() {
+            return serviceBaseUrl;
+        }
+
+        public void setServiceBaseUrl(String serviceBaseUrl) {
+            this.serviceBaseUrl = serviceBaseUrl;
+        }
+
+        public Boolean getEnabledDefault() {
+            return enabledDefault;
+        }
+
+        public void setEnabledDefault(Boolean enabledDefault) {
+            this.enabledDefault = enabledDefault;
+        }
+
+        public int getMaxModelSteps() {
+            return maxModelSteps;
+        }
+
+        public void setMaxModelSteps(int maxModelSteps) {
+            this.maxModelSteps = maxModelSteps;
+        }
+
+        public int getMaxToolCalls() {
+            return maxToolCalls;
+        }
+
+        public void setMaxToolCalls(int maxToolCalls) {
+            this.maxToolCalls = maxToolCalls;
+        }
+
+        public Boolean getCheckpointEnabled() {
+            return checkpointEnabled;
+        }
+
+        public void setCheckpointEnabled(Boolean checkpointEnabled) {
+            this.checkpointEnabled = checkpointEnabled;
+        }
+
+        public Boolean getCodeExecutionEnabled() {
+            return codeExecutionEnabled;
+        }
+
+        public void setCodeExecutionEnabled(Boolean codeExecutionEnabled) {
+            this.codeExecutionEnabled = codeExecutionEnabled;
+        }
+    }
+
+    public static class Tools {
+
+        @NotNull
+        private Boolean webSearchEnabled = true;
+
+        @NotNull
+        private Boolean httpToolEnabled = false;
+
+        @NotNull
+        private Boolean graphToolEnabled = false;
+
+        @NotNull
+        private Boolean codeExecutionEnabled = false;
+
+        @Min(100)
+        private int toolTimeoutMs = 10000;
+
+        @NotBlank
+        private String searchProvider = "tavily";
+
+        @NotNull
+        private List<String> allowedHttpDomains = new ArrayList<>();
+
+        public Boolean getWebSearchEnabled() {
+            return webSearchEnabled;
+        }
+
+        public void setWebSearchEnabled(Boolean webSearchEnabled) {
+            this.webSearchEnabled = webSearchEnabled;
+        }
+
+        public Boolean getHttpToolEnabled() {
+            return httpToolEnabled;
+        }
+
+        public void setHttpToolEnabled(Boolean httpToolEnabled) {
+            this.httpToolEnabled = httpToolEnabled;
+        }
+
+        public Boolean getGraphToolEnabled() {
+            return graphToolEnabled;
+        }
+
+        public void setGraphToolEnabled(Boolean graphToolEnabled) {
+            this.graphToolEnabled = graphToolEnabled;
+        }
+
+        public Boolean getCodeExecutionEnabled() {
+            return codeExecutionEnabled;
+        }
+
+        public void setCodeExecutionEnabled(Boolean codeExecutionEnabled) {
+            this.codeExecutionEnabled = codeExecutionEnabled;
+        }
+
+        public int getToolTimeoutMs() {
+            return toolTimeoutMs;
+        }
+
+        public void setToolTimeoutMs(int toolTimeoutMs) {
+            this.toolTimeoutMs = toolTimeoutMs;
+        }
+
+        public String getSearchProvider() {
+            return searchProvider;
+        }
+
+        public void setSearchProvider(String searchProvider) {
+            this.searchProvider = searchProvider;
+        }
+
+        public List<String> getAllowedHttpDomains() {
+            return allowedHttpDomains;
+        }
+
+        public void setAllowedHttpDomains(List<String> allowedHttpDomains) {
+            this.allowedHttpDomains = allowedHttpDomains;
+        }
+    }
+
+    public static class Graph {
+
+        @NotBlank
+        private String neo4jUri = "bolt://localhost:7687";
+
+        @NotBlank
+        private String neo4jUsername = "neo4j";
+
+        @NotBlank
+        private String neo4jPassword = "password";
+
+        @NotNull
+        private Boolean enabled = false;
+
+        public String getNeo4jUri() {
+            return neo4jUri;
+        }
+
+        public void setNeo4jUri(String neo4jUri) {
+            this.neo4jUri = neo4jUri;
+        }
+
+        public String getNeo4jUsername() {
+            return neo4jUsername;
+        }
+
+        public void setNeo4jUsername(String neo4jUsername) {
+            this.neo4jUsername = neo4jUsername;
+        }
+
+        public String getNeo4jPassword() {
+            return neo4jPassword;
+        }
+
+        public void setNeo4jPassword(String neo4jPassword) {
+            this.neo4jPassword = neo4jPassword;
+        }
+
+        public Boolean getEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(Boolean enabled) {
+            this.enabled = enabled;
         }
     }
 }

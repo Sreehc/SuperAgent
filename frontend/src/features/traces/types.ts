@@ -93,6 +93,8 @@ export interface TraceDetail {
   executionMode: string
   status: string
   routeReason: string | null
+  agentRunId: number | null
+  agentRunStatus: string | null
   startedAt: string
   finishedAt: string | null
   durationMs: number

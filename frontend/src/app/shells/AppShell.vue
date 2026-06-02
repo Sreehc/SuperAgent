@@ -98,9 +98,11 @@ watch(
 const visibleMenuItems = computed(() => {
   const base: MenuItem[] = [
     { to: '/chat', label: '对话', caption: '登录后的默认工作台', roles: ['OWNER', 'ADMIN', 'MEMBER'] },
-    { to: '/knowledge', label: '知识库', caption: '成员可见，细节后续阶段实现', roles: ['OWNER', 'ADMIN', 'MEMBER'] },
-    { to: '/traces', label: 'Trace', caption: '仅管理员可见', roles: ['OWNER', 'ADMIN'] },
-    { to: '/settings', label: '设置', caption: '仅管理员可见', roles: ['OWNER', 'ADMIN'] },
+    { to: '/knowledge', label: '知识库', caption: '成员可见，支持版本和图谱查看', roles: ['OWNER', 'ADMIN', 'MEMBER'] },
+    { to: '/traces', label: 'Trace', caption: '问答 Trace 与 Agent Run 双视角', roles: ['OWNER', 'ADMIN'] },
+    { to: '/tools', label: 'Tools', caption: '插件、工具调用与风控入口', roles: ['OWNER', 'ADMIN'] },
+    { to: '/governance', label: '治理', caption: '知识域、切块策略与图谱文档', roles: ['OWNER', 'ADMIN'] },
+    { to: '/settings', label: '设置', caption: '模型、RAG、Agent 与 Tools', roles: ['OWNER', 'ADMIN'] },
   ]
 
   const role = authStore.currentRole

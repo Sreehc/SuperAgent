@@ -3,6 +3,7 @@ package com.superagent.knowledge.web;
 import com.superagent.common.api.ApiResponse;
 import com.superagent.knowledge.domain.DocumentChunk;
 import com.superagent.knowledge.domain.DocumentTask;
+import com.superagent.knowledge.service.DocumentGraphService;
 import com.superagent.knowledge.service.KnowledgeService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
@@ -36,9 +37,17 @@ public class DocumentController {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("category", document.category());
         metadata.put("tags", document.tags());
+        metadata.put("knowledgeDomainId", document.knowledgeDomainId());
+        metadata.put("chunkingProfileId", document.chunkingProfileId());
+        metadata.put("graphSyncStatus", document.graphSyncStatus());
+        metadata.put("graphErrorMessage", document.graphErrorMessage());
+        metadata.put("activeVersionNo", document.activeVersionNo());
         return ApiResponse.success(new DocumentDetailItem(
                 document.id(),
                 document.knowledgeBaseId(),
+                document.knowledgeDomainId(),
+                document.chunkingProfileId(),
+                document.activeVersionNo(),
                 document.title(),
                 document.fileName(),
                 document.fileType(),
@@ -58,7 +67,11 @@ public class DocumentController {
             @PathVariable long documentId,
             @Valid @RequestBody(required = false) ReprocessRequest request
     ) {
-        var result = knowledgeService.reprocessDocument(documentId, request == null ? null : request.reason());
+        var result = knowledgeService.reprocessDocument(
+                documentId,
+                request == null ? null : request.reason(),
+                request == null ? null : request.chunkingProfileId()
+        );
         return ApiResponse.success(new ReprocessResponse(result.documentId(), result.taskId(), result.status()));
     }
 
@@ -82,6 +95,16 @@ public class DocumentController {
         return ApiResponse.success(knowledgeService.listDocumentTasks(documentId).stream()
                 .map(this::toTaskItem)
                 .toList());
+    }
+
+    @GetMapping("/{documentId}/graph")
+    public ApiResponse<DocumentGraphItem> getGraph(@PathVariable long documentId) {
+        return ApiResponse.success(toGraphItem(knowledgeService.getDocumentGraph(documentId)));
+    }
+
+    @PostMapping("/{documentId}/graph/rebuild")
+    public ApiResponse<DocumentGraphItem> rebuildGraph(@PathVariable long documentId) {
+        return ApiResponse.success(toGraphItem(knowledgeService.rebuildDocumentGraph(documentId)));
     }
 
     private DocumentChunkItem toChunkItem(DocumentChunk chunk) {
@@ -112,15 +135,33 @@ public class DocumentController {
         );
     }
 
+    private DocumentGraphItem toGraphItem(DocumentGraphService.DocumentGraphSnapshot graph) {
+        return new DocumentGraphItem(
+                graph.documentId(),
+                graph.versionNo(),
+                graph.documentGraphSyncStatus(),
+                graph.versionGraphSyncStatus(),
+                graph.nodes().stream()
+                        .map(node -> new GraphNodeItem(node.id(), node.type(), node.label(), node.metadata()))
+                        .toList(),
+                graph.edges().stream()
+                        .map(edge -> new GraphEdgeItem(edge.sourceId(), edge.targetId(), edge.type(), edge.metadata()))
+                        .toList()
+        );
+    }
+
     public record ReprocessResponse(long documentId, long taskId, String status) {
     }
 
-    public record ReprocessRequest(@Size(max = 500) String reason) {
+    public record ReprocessRequest(@Size(max = 500) String reason, Long chunkingProfileId) {
     }
 
     public record DocumentDetailItem(
             long id,
             long knowledgeBaseId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            int activeVersionNo,
             String title,
             String fileName,
             String fileType,
@@ -158,6 +199,32 @@ public class DocumentController {
             OffsetDateTime startedAt,
             OffsetDateTime finishedAt,
             OffsetDateTime createdAt
+    ) {
+    }
+
+    public record DocumentGraphItem(
+            long documentId,
+            int versionNo,
+            String documentGraphSyncStatus,
+            String versionGraphSyncStatus,
+            List<GraphNodeItem> nodes,
+            List<GraphEdgeItem> edges
+    ) {
+    }
+
+    public record GraphNodeItem(
+            String id,
+            String type,
+            String label,
+            Map<String, Object> metadata
+    ) {
+    }
+
+    public record GraphEdgeItem(
+            String sourceId,
+            String targetId,
+            String type,
+            Map<String, Object> metadata
     ) {
     }
 }

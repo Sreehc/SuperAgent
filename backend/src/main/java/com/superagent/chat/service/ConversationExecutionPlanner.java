@@ -35,11 +35,11 @@ public class ConversationExecutionPlanner {
 
         if (looksLikeOpenEndedOrRealtime(lower)) {
             return new ExecutionPlan(
-                    ExecutionMode.REACT_AGENT_RESERVED,
-                    "open_ended_or_realtime_request_reserved_for_agent",
-                    BigDecimal.valueOf(0.72d),
-                    "fallback_to_non_agent_response",
-                    List.of("record_reserved_agent_route", "respond_without_tool_execution")
+                    ExecutionMode.REACT_AGENT,
+                    "open_ended_or_realtime_request_routed_to_agent",
+                    BigDecimal.valueOf(0.86d),
+                    "run_react_agent_pipeline",
+                    List.of("assemble_agent_memory", "select_tools", "execute_tools", "answer_with_agent_trace")
             );
         }
 

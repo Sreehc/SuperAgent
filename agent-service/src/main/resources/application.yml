@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: superagent-agent-service
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/superagent}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:postgres}
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${AGENT_SERVICE_PORT:18081}
+
+agent:
+  plugin-manifest-root: ${PLUGIN_MANIFEST_ROOT:../plugins}
+  sandbox-runner-base-url: ${SANDBOX_RUNNER_BASE_URL:http://localhost:18082}
+  backend-base-url: ${BACKEND_BASE_URL:http://localhost:8080}
+  graph:
+    enabled: ${GRAPH_ENABLED:false}
+    neo4j-uri: ${NEO4J_URI:bolt://localhost:7687}
+    neo4j-username: ${NEO4J_USERNAME:neo4j}
+    neo4j-password: ${NEO4J_PASSWORD:password}

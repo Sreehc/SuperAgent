@@ -59,6 +59,14 @@
         <div class="timeline-header__meta">
           <span>记忆：{{ chatStore.memoryStrategy }}</span>
           <span v-if="chatStore.streamState.stage">阶段：{{ chatStore.streamState.stage }}</span>
+          <button
+            v-if="chatStore.selectedSessionId && chatStore.streamState.runId && !chatStore.streaming"
+            class="ghost-button"
+            type="button"
+            @click="chatStore.resumeConversationRun"
+          >
+            恢复 Agent
+          </button>
         </div>
       </header>
 
@@ -102,6 +110,21 @@
         </article>
       </div>
 
+      <section v-if="chatStore.streamState.timeline.length" class="agent-timeline">
+        <div class="agent-timeline__header">
+          <p class="eyebrow">Agent Timeline</p>
+          <small>run #{{ chatStore.streamState.runId }}</small>
+        </div>
+        <article
+          v-for="(item, index) in chatStore.streamState.timeline"
+          :key="`${item.type}-${index}`"
+          class="agent-timeline__item"
+        >
+          <strong>{{ item.title }}</strong>
+          <p>{{ item.summary }}</p>
+        </article>
+      </section>
+
       <footer class="composer-card">
         <div class="composer-card__controls">
           <label>
@@ -109,6 +132,8 @@
             <select v-model="chatStore.memoryStrategy">
               <option value="NONE">NONE</option>
               <option value="SLIDING_WINDOW">SLIDING_WINDOW</option>
+              <option value="SUMMARY_WINDOW">SUMMARY_WINDOW</option>
+              <option value="SUMMARY_PLUS_WINDOW">SUMMARY_PLUS_WINDOW</option>
             </select>
           </label>
           <label>
@@ -361,6 +386,31 @@ async function openTrace(exchangeId: number) {
   grid-template-columns: 280px minmax(0, 1fr) 300px;
   gap: 1rem;
   min-height: calc(100vh - 160px);
+}
+
+.agent-timeline {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 1rem;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.agent-timeline__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.agent-timeline__item {
+  padding: 0.75rem 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.agent-timeline__item:first-of-type {
+  border-top: none;
+  padding-top: 0;
 }
 
 .chat-workspace__sidebar,

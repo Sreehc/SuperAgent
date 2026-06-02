@@ -97,15 +97,28 @@ public class KnowledgeController {
             @RequestPart("file") MultipartFile file,
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "category", required = false) String category,
-            @RequestParam(value = "tags", required = false) String tags
+            @RequestParam(value = "tags", required = false) String tags,
+            @RequestParam(value = "knowledgeDomainId", required = false) Long knowledgeDomainId,
+            @RequestParam(value = "chunkingProfileId", required = false) Long chunkingProfileId
     ) {
-        var result = knowledgeService.uploadDocument(knowledgeBaseId, file, title, category, tags);
+        var result = knowledgeService.uploadDocument(
+                knowledgeBaseId,
+                file,
+                title,
+                category,
+                tags,
+                knowledgeDomainId,
+                chunkingProfileId
+        );
         return ApiResponse.success(new UploadDocumentResponse(
                 result.document().id(),
                 result.document().knowledgeBaseId(),
                 result.document().title(),
                 result.document().status().name(),
-                result.task().id()
+                result.task().id(),
+                result.document().knowledgeDomainId(),
+                result.document().chunkingProfileId(),
+                result.document().activeVersionNo()
         ));
     }
 
@@ -214,7 +227,10 @@ public class KnowledgeController {
             long knowledgeBaseId,
             String title,
             String status,
-            long taskId
+            long taskId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            int activeVersionNo
     ) {
     }
 
