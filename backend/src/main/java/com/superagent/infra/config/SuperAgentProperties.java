@@ -521,6 +521,12 @@ public class SuperAgentProperties {
         @NotNull
         private Boolean subQuestionEnabled = true;
 
+        @NotNull
+        private Boolean versionConsistencyEnabled = true;
+
+        @NotNull
+        private Boolean neighborExpansionEnabled = true;
+
         @Min(1)
         private int vectorTopK = 20;
 
@@ -528,7 +534,16 @@ public class SuperAgentProperties {
         private int keywordTopK = 20;
 
         @Min(1)
+        private int candidateTopK = 24;
+
+        @Min(1)
         private int rrfK = 60;
+
+        @Min(0)
+        private int neighborWindow = 1;
+
+        @Min(1)
+        private int maxChunksPerDocument = 3;
 
         @Min(1)
         private int evidenceLimit = 8;
@@ -577,6 +592,22 @@ public class SuperAgentProperties {
             this.subQuestionEnabled = subQuestionEnabled;
         }
 
+        public Boolean getVersionConsistencyEnabled() {
+            return versionConsistencyEnabled;
+        }
+
+        public void setVersionConsistencyEnabled(Boolean versionConsistencyEnabled) {
+            this.versionConsistencyEnabled = versionConsistencyEnabled;
+        }
+
+        public Boolean getNeighborExpansionEnabled() {
+            return neighborExpansionEnabled;
+        }
+
+        public void setNeighborExpansionEnabled(Boolean neighborExpansionEnabled) {
+            this.neighborExpansionEnabled = neighborExpansionEnabled;
+        }
+
         public int getVectorTopK() {
             return vectorTopK;
         }
@@ -593,12 +624,36 @@ public class SuperAgentProperties {
             this.keywordTopK = keywordTopK;
         }
 
+        public int getCandidateTopK() {
+            return candidateTopK;
+        }
+
+        public void setCandidateTopK(int candidateTopK) {
+            this.candidateTopK = candidateTopK;
+        }
+
         public int getRrfK() {
             return rrfK;
         }
 
         public void setRrfK(int rrfK) {
             this.rrfK = rrfK;
+        }
+
+        public int getNeighborWindow() {
+            return neighborWindow;
+        }
+
+        public void setNeighborWindow(int neighborWindow) {
+            this.neighborWindow = neighborWindow;
+        }
+
+        public int getMaxChunksPerDocument() {
+            return maxChunksPerDocument;
+        }
+
+        public void setMaxChunksPerDocument(int maxChunksPerDocument) {
+            this.maxChunksPerDocument = maxChunksPerDocument;
         }
 
         public int getEvidenceLimit() {

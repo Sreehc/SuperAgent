@@ -101,6 +101,8 @@ class RetrievalIntegrationTest {
         assertThat(firstItem.path("documentId").asLong()).isEqualTo(documentId);
         assertThat(firstItem.path("knowledgeBaseId").asLong()).isEqualTo(publishedKnowledgeBaseId);
         assertThat(firstItem.path("score").asDouble()).isGreaterThan(0.0d);
+        assertThat(firstItem.path("metadata").path("activeVersionNo").asInt()).isEqualTo(1);
+        assertThat(firstItem.path("metadata").path("chunkVersionNo").asInt()).isEqualTo(1);
 
         mockMvc.perform(get("/api/v1/retrievals")
                         .param("query", "内部草稿")
@@ -108,6 +110,35 @@ class RetrievalIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + member.accessToken())
                         .header("X-Tenant-Id", member.tenantId()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldExcludeChunksWhenChunkVersionDoesNotMatchActiveVersion() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        LoginSession member = login("member", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "版本过滤知识库", "published");
+        long documentId = uploadAndProcessDocument(owner, knowledgeBaseId, "versioned-guide.txt", "版本说明", "退款规则需要订单截图和七日内申请");
+
+        jdbcTemplate.update("""
+                        UPDATE document_chunk
+                        SET metadata = jsonb_set(metadata, '{versionNo}', '0'::jsonb, true)
+                        WHERE document_id = ?
+                        """,
+                documentId
+        );
+
+        JsonNode retrievalResponse = objectMapper.readTree(mockMvc.perform(get("/api/v1/retrievals")
+                        .param("query", "退款规则")
+                        .param("knowledgeBaseId", String.valueOf(knowledgeBaseId))
+                        .param("topK", "5")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + member.accessToken())
+                        .header("X-Tenant-Id", member.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+
+        assertThat(retrievalResponse.path("data").path("items")).isEmpty();
     }
 
     private long uploadAndProcessDocument(

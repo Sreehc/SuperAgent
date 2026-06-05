@@ -710,9 +710,14 @@ public class ConversationService {
         filters.put("answerMode", query.answerMode());
         filters.put("queryUnderstandingSource", query.queryUnderstandingSource());
         filters.put("queryUnderstandingConfidence", query.queryUnderstandingConfidence());
+        filters.put("versionConsistencyEnabled", query.versionConsistencyEnabled());
+        filters.put("neighborExpansionEnabled", query.neighborExpansionEnabled());
         filters.put("vectorTopK", query.vectorTopK());
         filters.put("keywordTopK", query.keywordTopK());
+        filters.put("candidateTopK", query.candidateTopK());
         filters.put("rrfK", query.rrfK());
+        filters.put("neighborWindow", query.neighborWindow());
+        filters.put("maxChunksPerDocument", query.maxChunksPerDocument());
         filters.put("evidenceLimit", query.evidenceLimit());
         filters.put("minRelevanceScore", query.minRelevanceScore());
         filters.put("rerankEnabled", query.rerankEnabled());
@@ -723,6 +728,9 @@ public class ConversationService {
             filters.put("keywordResultCount", step.keywordResults().size());
             filters.put("fusedResultCount", step.fusedResults().size());
             filters.put("selectedResultCount", step.selectedResults().size());
+            filters.put("neighborExpanded", step.fusedResults().stream()
+                    .anyMatch(item -> Boolean.TRUE.equals(item.metadata().get("neighborExpanded"))));
+            filters.put("finalTopK", step.selectedResults().size());
         }
         return filters;
     }

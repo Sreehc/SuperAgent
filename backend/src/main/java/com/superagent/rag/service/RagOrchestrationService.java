@@ -80,25 +80,28 @@ public class RagOrchestrationService {
             List<RetrievalResult> vectorResults = retrievalService.searchVector(query);
             List<RetrievalResult> keywordResults = retrievalService.searchKeyword(query);
             List<RagEvidence> fused = ragSupportService.fuseWithRrf(vectorResults, keywordResults, query.rrfK());
+            List<RagEvidence> expanded = retrievalService.expandNeighbors(query, deduplicateByChunk(fused));
             List<RagEvidence> selected = ragSupportService.applyThresholdAndBudget(
                     query.subQuestion(),
-                    deduplicateByChunk(fused),
+                    expanded,
                     query.minRelevanceScore(),
-                    perQuestionBudget
+                    perQuestionBudget,
+                    query.maxChunksPerDocument()
             );
             fusedEvidences.addAll(selected);
             retrievalSteps.add(new RagResponseDiagnostics.RetrievalStep(
                     query,
                     vectorResults,
                     keywordResults,
-                    fused,
+                    expanded,
                     selected
             ));
         }
 
         List<RagEvidence> filtered = ragSupportService.applyTotalBudget(
                 deduplicateByChunk(fusedEvidences),
-                rootQuery.evidenceLimit()
+                rootQuery.evidenceLimit(),
+                rootQuery.maxChunksPerDocument()
         );
 
         List<RagEvidence> reranked = filtered;

@@ -1033,13 +1033,20 @@ public class KnowledgeRepository {
         );
     }
 
-    public List<RetrievalResult> findTopKByVector(long tenantId, Long knowledgeBaseId, List<Double> vector, int topK) {
+    public List<RetrievalResult> findTopKByVector(
+            long tenantId,
+            Long knowledgeBaseId,
+            List<Double> vector,
+            int topK,
+            boolean versionConsistencyEnabled
+    ) {
         StringBuilder sql = new StringBuilder("""
                 SELECT
                     kd.knowledge_base_id,
                     kd.id AS document_id,
                     dc.id AS chunk_id,
                     kd.title AS document_title,
+                    kd.active_version_no,
                     dc.chunk_no,
                     dc.content,
                     dc.section_title,
@@ -1067,6 +1074,11 @@ public class KnowledgeRepository {
             sql.append(" AND kd.knowledge_base_id = ?");
             args.add(knowledgeBaseId);
         }
+        if (versionConsistencyEnabled) {
+            sql.append("""
+                     AND COALESCE(NULLIF(dc.metadata ->> 'versionNo', '')::int, kd.active_version_no) = kd.active_version_no
+                    """);
+        }
         sql.append(" ORDER BY de.embedding <=> ?::vector ASC LIMIT ?");
         args.add(vectorLiteral);
         args.add(topK);
@@ -1080,19 +1092,26 @@ public class KnowledgeRepository {
                         rs.getString("content"),
                         rs.getString("section_title"),
                         rs.getDouble("score"),
-                        readMetadata(rs.getString("metadata"))
+                        enrichRetrievalMetadata(readMetadata(rs.getString("metadata")), rs.getInt("active_version_no"))
                 ),
                 args.toArray()
         );
     }
 
-    public List<RetrievalResult> findTopKByKeyword(long tenantId, Long knowledgeBaseId, String query, int topK) {
+    public List<RetrievalResult> findTopKByKeyword(
+            long tenantId,
+            Long knowledgeBaseId,
+            String query,
+            int topK,
+            boolean versionConsistencyEnabled
+    ) {
         StringBuilder sql = new StringBuilder("""
                 SELECT
                     kd.knowledge_base_id,
                     kd.id AS document_id,
                     dc.id AS chunk_id,
                     kd.title AS document_title,
+                    kd.active_version_no,
                     dc.chunk_no,
                     dc.content,
                     dc.section_title,
@@ -1118,6 +1137,11 @@ public class KnowledgeRepository {
             sql.append(" AND kd.knowledge_base_id = ?");
             args.add(knowledgeBaseId);
         }
+        if (versionConsistencyEnabled) {
+            sql.append("""
+                     AND COALESCE(NULLIF(dc.metadata ->> 'versionNo', '')::int, kd.active_version_no) = kd.active_version_no
+                    """);
+        }
         sql.append(" ORDER BY score DESC, dc.chunk_no ASC LIMIT ?");
         args.add(topK);
         return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new RetrievalResult(
@@ -1130,13 +1154,19 @@ public class KnowledgeRepository {
                         rs.getString("content"),
                         rs.getString("section_title"),
                         rs.getDouble("score"),
-                        readMetadata(rs.getString("metadata"))
+                        enrichRetrievalMetadata(readMetadata(rs.getString("metadata")), rs.getInt("active_version_no"))
                 ),
                 args.toArray()
         );
     }
 
-    public List<RetrievalResult> findTopKByKeywordFallback(long tenantId, Long knowledgeBaseId, List<String> terms, int topK) {
+    public List<RetrievalResult> findTopKByKeywordFallback(
+            long tenantId,
+            Long knowledgeBaseId,
+            List<String> terms,
+            int topK,
+            boolean versionConsistencyEnabled
+    ) {
         if (terms == null || terms.isEmpty()) {
             return List.of();
         }
@@ -1146,6 +1176,7 @@ public class KnowledgeRepository {
                     kd.id AS document_id,
                     dc.id AS chunk_id,
                     kd.title AS document_title,
+                    kd.active_version_no,
                     dc.chunk_no,
                     dc.content,
                     dc.section_title,
@@ -1187,6 +1218,11 @@ public class KnowledgeRepository {
             sql.append(" AND kd.knowledge_base_id = ?");
             args.add(knowledgeBaseId);
         }
+        if (versionConsistencyEnabled) {
+            sql.append("""
+                     AND COALESCE(NULLIF(dc.metadata ->> 'versionNo', '')::int, kd.active_version_no) = kd.active_version_no
+                    """);
+        }
         sql.append(" ORDER BY score DESC, dc.chunk_no ASC LIMIT ?");
         args.add(topK);
         return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new RetrievalResult(
@@ -1199,10 +1235,72 @@ public class KnowledgeRepository {
                         rs.getString("content"),
                         rs.getString("section_title"),
                         rs.getDouble("score"),
-                        readMetadata(rs.getString("metadata"))
+                        enrichRetrievalMetadata(readMetadata(rs.getString("metadata")), rs.getInt("active_version_no"))
                 ),
                 args.toArray()
         );
+    }
+
+    public List<RetrievalResult> findNeighborChunks(
+            long tenantId,
+            long documentId,
+            List<Integer> anchorChunkNos,
+            int neighborWindow,
+            boolean versionConsistencyEnabled
+    ) {
+        if (anchorChunkNos == null || anchorChunkNos.isEmpty() || neighborWindow <= 0) {
+            return List.of();
+        }
+        int minChunkNo = anchorChunkNos.stream().mapToInt(Integer::intValue).min().orElse(1) - neighborWindow;
+        int maxChunkNo = anchorChunkNos.stream().mapToInt(Integer::intValue).max().orElse(1) + neighborWindow;
+        List<RetrievalResult> candidates = jdbcTemplate.query("""
+                        SELECT
+                            kd.knowledge_base_id,
+                            kd.id AS document_id,
+                            dc.id AS chunk_id,
+                            kd.title AS document_title,
+                            kd.active_version_no,
+                            dc.chunk_no,
+                            dc.content,
+                            dc.section_title,
+                            dc.metadata,
+                            0.0::double precision AS score
+                        FROM document_chunk dc
+                        JOIN knowledge_document kd ON kd.id = dc.document_id
+                        JOIN knowledge_base kb ON kb.id = kd.knowledge_base_id
+                        WHERE dc.tenant_id = ?
+                          AND kd.tenant_id = ?
+                          AND dc.document_id = ?
+                          AND kd.status = 'ready'
+                          AND kd.deleted_at IS NULL
+                          AND kb.deleted_at IS NULL
+                          AND kb.status = 'published'
+                          AND dc.chunk_no BETWEEN ? AND ?
+                        ORDER BY dc.chunk_no ASC
+                        """,
+                (rs, rowNum) -> new RetrievalResult(
+                        "neighbor",
+                        rs.getLong("knowledge_base_id"),
+                        rs.getLong("document_id"),
+                        rs.getLong("chunk_id"),
+                        rs.getString("document_title"),
+                        rs.getInt("chunk_no"),
+                        rs.getString("content"),
+                        rs.getString("section_title"),
+                        rs.getDouble("score"),
+                        enrichRetrievalMetadata(readMetadata(rs.getString("metadata")), rs.getInt("active_version_no"))
+                ),
+                tenantId,
+                tenantId,
+                documentId,
+                Math.max(1, minChunkNo),
+                maxChunkNo
+        );
+        return candidates.stream()
+                .filter(result -> anchorChunkNos.stream().anyMatch(anchor -> Math.abs(anchor - result.chunkNo()) <= neighborWindow))
+                .filter(result -> !anchorChunkNos.contains(result.chunkNo()))
+                .filter(result -> !versionConsistencyEnabled || resolveChunkVersionNo(result.metadata(), resolveActiveVersionNo(result.metadata())) == resolveActiveVersionNo(result.metadata()))
+                .toList();
     }
 
     public record ChunkInsert(
@@ -1344,6 +1442,29 @@ public class KnowledgeRepository {
                 readOffsetDateTime(rs, "created_at"),
                 readOffsetDateTime(rs, "updated_at")
         );
+    }
+
+    private Map<String, Object> enrichRetrievalMetadata(Map<String, Object> metadata, int activeVersionNo) {
+        Map<String, Object> enriched = new LinkedHashMap<>(metadata == null ? Map.of() : metadata);
+        enriched.put("activeVersionNo", activeVersionNo);
+        enriched.putIfAbsent("chunkVersionNo", resolveChunkVersionNo(enriched, activeVersionNo));
+        return enriched;
+    }
+
+    private int resolveActiveVersionNo(Map<String, Object> metadata) {
+        Object value = metadata == null ? null : metadata.get("activeVersionNo");
+        return value instanceof Number number ? number.intValue() : Integer.parseInt(String.valueOf(value));
+    }
+
+    private int resolveChunkVersionNo(Map<String, Object> metadata, int fallbackVersionNo) {
+        if (metadata == null) {
+            return fallbackVersionNo;
+        }
+        Object versionNo = metadata.get("versionNo");
+        if (versionNo == null) {
+            return fallbackVersionNo;
+        }
+        return versionNo instanceof Number number ? number.intValue() : Integer.parseInt(String.valueOf(versionNo));
     }
 
     private OffsetDateTime readOffsetDateTime(ResultSet rs, String column) throws SQLException {

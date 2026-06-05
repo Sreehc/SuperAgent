@@ -100,11 +100,16 @@ public class RuntimeSettingsService {
                 patch.decompositionEnabled() == null ? existing.decompositionEnabled() : patch.decompositionEnabled(),
                 patch.rewriteEnabled() == null ? existing.rewriteEnabled() : patch.rewriteEnabled(),
                 patch.subQuestionEnabled() == null ? existing.subQuestionEnabled() : patch.subQuestionEnabled(),
+                patch.versionConsistencyEnabled() == null ? existing.versionConsistencyEnabled() : patch.versionConsistencyEnabled(),
+                patch.neighborExpansionEnabled() == null ? existing.neighborExpansionEnabled() : patch.neighborExpansionEnabled(),
                 patch.maxSubQuestions() == null ? existing.maxSubQuestions() : patch.maxSubQuestions(),
                 patch.vectorTopK() == null ? existing.vectorTopK() : patch.vectorTopK(),
                 patch.keywordTopK() == null ? existing.keywordTopK() : patch.keywordTopK(),
+                patch.candidateTopK() == null ? existing.candidateTopK() : patch.candidateTopK(),
                 patch.rrfK() == null ? existing.rrfK() : patch.rrfK(),
                 patch.rerankEnabled() == null ? existing.rerankEnabled() : patch.rerankEnabled(),
+                patch.neighborWindow() == null ? existing.neighborWindow() : patch.neighborWindow(),
+                patch.maxChunksPerDocument() == null ? existing.maxChunksPerDocument() : patch.maxChunksPerDocument(),
                 patch.evidenceLimit() == null ? existing.evidenceLimit() : patch.evidenceLimit(),
                 patch.perQuestionEvidenceCharLimit() == null ? existing.perQuestionEvidenceCharLimit() : patch.perQuestionEvidenceCharLimit(),
                 patch.totalEvidenceCharLimit() == null ? existing.totalEvidenceCharLimit() : patch.totalEvidenceCharLimit(),
@@ -117,11 +122,16 @@ public class RuntimeSettingsService {
         ragDetail.put("decompositionEnabled", merged.decompositionEnabled());
         ragDetail.put("rewriteEnabled", merged.rewriteEnabled());
         ragDetail.put("subQuestionEnabled", merged.subQuestionEnabled());
+        ragDetail.put("versionConsistencyEnabled", merged.versionConsistencyEnabled());
+        ragDetail.put("neighborExpansionEnabled", merged.neighborExpansionEnabled());
         ragDetail.put("maxSubQuestions", merged.maxSubQuestions());
         ragDetail.put("vectorTopK", merged.vectorTopK());
         ragDetail.put("keywordTopK", merged.keywordTopK());
+        ragDetail.put("candidateTopK", merged.candidateTopK());
         ragDetail.put("rrfK", merged.rrfK());
         ragDetail.put("rerankEnabled", merged.rerankEnabled());
+        ragDetail.put("neighborWindow", merged.neighborWindow());
+        ragDetail.put("maxChunksPerDocument", merged.maxChunksPerDocument());
         ragDetail.put("evidenceLimit", merged.evidenceLimit());
         ragDetail.put("perQuestionEvidenceCharLimit", merged.perQuestionEvidenceCharLimit());
         ragDetail.put("totalEvidenceCharLimit", merged.totalEvidenceCharLimit());
@@ -265,11 +275,16 @@ public class RuntimeSettingsService {
                 getBoolean(overrides, "decompositionEnabled", properties.getRag().getDecompositionEnabled()),
                 getBoolean(overrides, "rewriteEnabled", properties.getRag().getRewriteEnabled()),
                 getBoolean(overrides, "subQuestionEnabled", properties.getRag().getSubQuestionEnabled()),
+                getBoolean(overrides, "versionConsistencyEnabled", properties.getRag().getVersionConsistencyEnabled()),
+                getBoolean(overrides, "neighborExpansionEnabled", properties.getRag().getNeighborExpansionEnabled()),
                 getInt(overrides, "maxSubQuestions", properties.getRag().getMaxSubQuestions()),
                 getInt(overrides, "vectorTopK", properties.getRag().getVectorTopK()),
                 getInt(overrides, "keywordTopK", properties.getRag().getKeywordTopK()),
+                getInt(overrides, "candidateTopK", properties.getRag().getCandidateTopK()),
                 getInt(overrides, "rrfK", properties.getRag().getRrfK()),
                 getBoolean(overrides, "rerankEnabled", properties.getAi().getRerankEnabled()),
+                getInt(overrides, "neighborWindow", properties.getRag().getNeighborWindow()),
+                getInt(overrides, "maxChunksPerDocument", properties.getRag().getMaxChunksPerDocument()),
                 getInt(overrides, "evidenceLimit", properties.getRag().getEvidenceLimit()),
                 getInt(overrides, "perQuestionEvidenceCharLimit", properties.getRag().getPerQuestionEvidenceCharLimit()),
                 getInt(overrides, "totalEvidenceCharLimit", properties.getRag().getTotalEvidenceCharLimit()),
@@ -324,11 +339,16 @@ public class RuntimeSettingsService {
                 properties.getRag().getDecompositionEnabled(),
                 properties.getRag().getRewriteEnabled(),
                 properties.getRag().getSubQuestionEnabled(),
+                properties.getRag().getVersionConsistencyEnabled(),
+                properties.getRag().getNeighborExpansionEnabled(),
                 properties.getRag().getMaxSubQuestions(),
                 properties.getRag().getVectorTopK(),
                 properties.getRag().getKeywordTopK(),
+                properties.getRag().getCandidateTopK(),
                 properties.getRag().getRrfK(),
                 properties.getAi().getRerankEnabled(),
+                properties.getRag().getNeighborWindow(),
+                properties.getRag().getMaxChunksPerDocument(),
                 properties.getRag().getEvidenceLimit(),
                 properties.getRag().getPerQuestionEvidenceCharLimit(),
                 properties.getRag().getTotalEvidenceCharLimit(),
@@ -352,11 +372,16 @@ public class RuntimeSettingsService {
         map.put("decompositionEnabled", settings.decompositionEnabled());
         map.put("rewriteEnabled", settings.rewriteEnabled());
         map.put("subQuestionEnabled", settings.subQuestionEnabled());
+        map.put("versionConsistencyEnabled", settings.versionConsistencyEnabled());
+        map.put("neighborExpansionEnabled", settings.neighborExpansionEnabled());
         map.put("maxSubQuestions", settings.maxSubQuestions());
         map.put("vectorTopK", settings.vectorTopK());
         map.put("keywordTopK", settings.keywordTopK());
+        map.put("candidateTopK", settings.candidateTopK());
         map.put("rrfK", settings.rrfK());
         map.put("rerankEnabled", settings.rerankEnabled());
+        map.put("neighborWindow", settings.neighborWindow());
+        map.put("maxChunksPerDocument", settings.maxChunksPerDocument());
         map.put("evidenceLimit", settings.evidenceLimit());
         map.put("perQuestionEvidenceCharLimit", settings.perQuestionEvidenceCharLimit());
         map.put("totalEvidenceCharLimit", settings.totalEvidenceCharLimit());
@@ -504,11 +529,16 @@ public class RuntimeSettingsService {
             Boolean decompositionEnabled,
             Boolean rewriteEnabled,
             Boolean subQuestionEnabled,
+            Boolean versionConsistencyEnabled,
+            Boolean neighborExpansionEnabled,
             Integer maxSubQuestions,
             Integer vectorTopK,
             Integer keywordTopK,
+            Integer candidateTopK,
             Integer rrfK,
             Boolean rerankEnabled,
+            Integer neighborWindow,
+            Integer maxChunksPerDocument,
             Integer evidenceLimit,
             Integer perQuestionEvidenceCharLimit,
             Integer totalEvidenceCharLimit,

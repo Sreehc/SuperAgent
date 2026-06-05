@@ -108,7 +108,12 @@ class SettingsIntegrationTest {
         assertThat(ragJson.path("data").path("queryUnderstandingEnabled").asBoolean()).isTrue();
         assertThat(ragJson.path("data").path("decompositionEnabled").asBoolean()).isTrue();
         assertThat(ragJson.path("data").path("rewriteEnabled").asBoolean()).isFalse();
+        assertThat(ragJson.path("data").path("versionConsistencyEnabled").asBoolean()).isTrue();
+        assertThat(ragJson.path("data").path("neighborExpansionEnabled").asBoolean()).isTrue();
+        assertThat(ragJson.path("data").path("candidateTopK").asInt()).isEqualTo(10);
         assertThat(ragJson.path("data").path("rerankEnabled").asBoolean()).isTrue();
+        assertThat(ragJson.path("data").path("neighborWindow").asInt()).isEqualTo(1);
+        assertThat(ragJson.path("data").path("maxChunksPerDocument").asInt()).isEqualTo(2);
         assertThat(ragJson.path("data").path("perQuestionEvidenceCharLimit").asInt()).isEqualTo(2800);
 
         MvcResult rerankResponse = mockMvc.perform(get("/api/v1/admin/settings/rerank")
@@ -165,11 +170,16 @@ class SettingsIntegrationTest {
         payload.put("decompositionEnabled", true);
         payload.put("rewriteEnabled", false);
         payload.put("subQuestionEnabled", false);
+        payload.put("versionConsistencyEnabled", true);
+        payload.put("neighborExpansionEnabled", true);
         payload.put("maxSubQuestions", 2);
         payload.put("vectorTopK", 12);
         payload.put("keywordTopK", 6);
+        payload.put("candidateTopK", 10);
         payload.put("rrfK", 40);
         payload.put("rerankEnabled", true);
+        payload.put("neighborWindow", 1);
+        payload.put("maxChunksPerDocument", 2);
         payload.put("evidenceLimit", 5);
         payload.put("perQuestionEvidenceCharLimit", 2800);
         payload.put("totalEvidenceCharLimit", 8400);

@@ -50,10 +50,15 @@ public class RagSupportService {
                 base.decompositionEnabled(),
                 ragOptions == null || ragOptions.rewriteEnabled() == null ? base.rewriteEnabled() : ragOptions.rewriteEnabled(),
                 ragOptions == null || ragOptions.subQuestionEnabled() == null ? base.subQuestionEnabled() : ragOptions.subQuestionEnabled(),
+                base.versionConsistencyEnabled(),
+                base.neighborExpansionEnabled(),
                 ragOptions == null || ragOptions.vectorTopK() == null ? base.vectorTopK() : ragOptions.vectorTopK(),
                 ragOptions == null || ragOptions.keywordTopK() == null ? base.keywordTopK() : ragOptions.keywordTopK(),
+                base.candidateTopK(),
                 ragOptions == null || ragOptions.rrfK() == null ? base.rrfK() : ragOptions.rrfK(),
                 ragOptions == null || ragOptions.rerankEnabled() == null ? base.rerankEnabled() : ragOptions.rerankEnabled(),
+                base.neighborWindow(),
+                base.maxChunksPerDocument(),
                 ragOptions == null || ragOptions.evidenceLimit() == null ? base.evidenceLimit() : ragOptions.evidenceLimit(),
                 ragOptions == null || ragOptions.minRelevanceScore() == null ? base.minRelevanceScore() : ragOptions.minRelevanceScore(),
                 base.maxSubQuestions()
@@ -117,9 +122,14 @@ public class RagSupportService {
                 answerMode,
                 queryUnderstandingSource,
                 queryUnderstandingConfidence,
+                settings.versionConsistencyEnabled(),
+                settings.neighborExpansionEnabled(),
                 settings.vectorTopK(),
                 settings.keywordTopK(),
+                settings.candidateTopK(),
                 settings.rrfK(),
+                settings.neighborWindow(),
+                settings.maxChunksPerDocument(),
                 settings.evidenceLimit(),
                 settings.minRelevanceScore(),
                 settings.rerankEnabled()
@@ -137,18 +147,32 @@ public class RagSupportService {
                 .toList();
     }
 
-    public List<RagEvidence> applyThresholdAndBudget(String query, List<RagEvidence> evidences, double minScore, int evidenceLimit) {
-        return evidences.stream()
+    public List<RagEvidence> applyThresholdAndBudget(
+            String query,
+            List<RagEvidence> evidences,
+            double minScore,
+            int evidenceLimit,
+            int maxChunksPerDocument
+    ) {
+        return limitPerDocument(
+                evidences.stream()
                 .map(evidence -> adjustRelevance(query, evidence))
                 .filter(evidence -> evidence.score() >= minScore)
                 .sorted((left, right) -> Double.compare(right.score(), left.score()))
+                .toList(),
+                maxChunksPerDocument
+        ).stream()
                 .limit(evidenceLimit)
                 .toList();
     }
 
-    public List<RagEvidence> applyTotalBudget(List<RagEvidence> evidences, int evidenceLimit) {
-        return evidences.stream()
+    public List<RagEvidence> applyTotalBudget(List<RagEvidence> evidences, int evidenceLimit, int maxChunksPerDocument) {
+        return limitPerDocument(
+                evidences.stream()
                 .sorted((left, right) -> Double.compare(right.score(), left.score()))
+                .toList(),
+                maxChunksPerDocument
+        ).stream()
                 .limit(evidenceLimit)
                 .toList();
     }
@@ -173,11 +197,16 @@ public class RagSupportService {
                 properties.getRag().getDecompositionEnabled(),
                 properties.getRag().getRewriteEnabled(),
                 properties.getRag().getSubQuestionEnabled(),
+                properties.getRag().getVersionConsistencyEnabled(),
+                properties.getRag().getNeighborExpansionEnabled(),
                 properties.getRag().getMaxSubQuestions(),
                 properties.getRag().getVectorTopK(),
                 properties.getRag().getKeywordTopK(),
+                properties.getRag().getCandidateTopK(),
                 properties.getRag().getRrfK(),
                 properties.getAi().getRerankEnabled(),
+                properties.getRag().getNeighborWindow(),
+                properties.getRag().getMaxChunksPerDocument(),
                 properties.getRag().getEvidenceLimit(),
                 properties.getRag().getPerQuestionEvidenceCharLimit(),
                 properties.getRag().getTotalEvidenceCharLimit(),
@@ -185,11 +214,29 @@ public class RagSupportService {
         );
     }
 
+    private List<RagEvidence> limitPerDocument(List<RagEvidence> evidences, int maxChunksPerDocument) {
+        if (maxChunksPerDocument <= 0) {
+            return evidences;
+        }
+        Map<Long, Integer> counts = new LinkedHashMap<>();
+        List<RagEvidence> limited = new ArrayList<>();
+        for (RagEvidence evidence : evidences) {
+            int currentCount = counts.getOrDefault(evidence.documentId(), 0);
+            if (currentCount >= maxChunksPerDocument) {
+                continue;
+            }
+            counts.put(evidence.documentId(), currentCount + 1);
+            limited.add(evidence);
+        }
+        return limited;
+    }
+
     private RagEvidence adjustRelevance(String query, RagEvidence evidence) {
         boolean lexicalMatched = hasMeaningfulLexicalMatch(query, evidence.content());
         @SuppressWarnings("unchecked")
         List<String> channels = (List<String>) evidence.metadata().getOrDefault("channels", List.of());
         boolean keywordMatched = channels.stream().anyMatch("keyword"::equalsIgnoreCase);
+        boolean neighborExpanded = Boolean.TRUE.equals(evidence.metadata().get("neighborExpanded"));
         double adjustedScore = evidence.score() * 0.2d;
         if (lexicalMatched) {
             adjustedScore += 0.45d;
@@ -197,9 +244,13 @@ public class RagSupportService {
         if (keywordMatched) {
             adjustedScore += 0.25d;
         }
+        if (neighborExpanded) {
+            adjustedScore += 0.28d;
+        }
         adjustedScore = Math.min(1.0d, adjustedScore);
         Map<String, Object> metadata = new LinkedHashMap<>(evidence.metadata());
         metadata.put("lexicalMatched", lexicalMatched);
+        metadata.put("neighborExpanded", neighborExpanded);
         metadata.put("adjustedScore", adjustedScore);
         return new RagEvidence(
                 evidence.channel(),
@@ -323,10 +374,15 @@ public class RagSupportService {
             boolean decompositionEnabled,
             boolean rewriteEnabled,
             boolean subQuestionEnabled,
+            boolean versionConsistencyEnabled,
+            boolean neighborExpansionEnabled,
             int vectorTopK,
             int keywordTopK,
+            int candidateTopK,
             int rrfK,
             boolean rerankEnabled,
+            int neighborWindow,
+            int maxChunksPerDocument,
             int evidenceLimit,
             double minRelevanceScore,
             int maxSubQuestions

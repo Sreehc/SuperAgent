@@ -156,8 +156,13 @@ class TraceQueryRepositoryTest {
                 .containsEntry("rewrittenQuestion", "退款规则是什么？")
                 .containsEntry("answerMode", "single_question")
                 .containsEntry("queryUnderstandingSource", "provider_unavailable")
+                .containsEntry("versionConsistencyEnabled", true)
+                .containsEntry("neighborExpansionEnabled", true)
+                .containsEntry("neighborWindow", 1)
                 .containsEntry("hybridRetrievalEnabled", true);
         assertThat(retrievals.getFirst().items().getFirst().metadata())
-                .containsEntry("documentTitle", "trace-guide.txt");
+                .containsEntry("documentTitle", "trace-guide.txt")
+                .containsEntry("activeVersionNo", 1)
+                .containsEntry("chunkVersionNo", 1);
     }
 }

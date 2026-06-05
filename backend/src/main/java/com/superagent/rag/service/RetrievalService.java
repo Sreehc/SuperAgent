@@ -9,9 +9,13 @@ import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.knowledge.domain.KnowledgeBaseStatus;
 import com.superagent.knowledge.repository.KnowledgeRepository;
+import com.superagent.rag.domain.RagEvidence;
 import com.superagent.rag.domain.RagSearchQuery;
 import com.superagent.rag.domain.RetrievalResult;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -51,11 +55,13 @@ public class RetrievalService {
 
         EmbeddingClient.EmbeddingResult embedding = embeddingClient.embed(List.of(query.trim()));
         int resolvedTopK = topK == null || topK < 1 ? 5 : Math.min(topK, 20);
+        RagSupportService.EffectiveRagSettings settings = ragSupportService.resolveEffectiveSettings(null);
         return knowledgeRepository.findTopKByVector(
                 tenantContext.tenantId(),
                 knowledgeBaseId,
                 embedding.vectors().getFirst(),
-                resolvedTopK
+                resolvedTopK,
+                settings.versionConsistencyEnabled()
         );
     }
 
@@ -66,7 +72,8 @@ public class RetrievalService {
                 tenantContext.tenantId(),
                 query.knowledgeBaseId(),
                 embedding.vectors().getFirst(),
-                query.vectorTopK()
+                Math.max(query.vectorTopK(), query.candidateTopK()),
+                query.versionConsistencyEnabled()
         );
     }
 
@@ -76,7 +83,8 @@ public class RetrievalService {
                 tenantContext.tenantId(),
                 query.knowledgeBaseId(),
                 query.subQuestion(),
-                query.keywordTopK()
+                Math.max(query.keywordTopK(), query.candidateTopK()),
+                query.versionConsistencyEnabled()
         );
         if (!results.isEmpty()) {
             return results;
@@ -85,8 +93,102 @@ public class RetrievalService {
                 tenantContext.tenantId(),
                 query.knowledgeBaseId(),
                 ragSupportService.extractKeywordTerms(query.subQuestion()),
-                query.keywordTopK()
+                Math.max(query.keywordTopK(), query.candidateTopK()),
+                query.versionConsistencyEnabled()
         );
+    }
+
+    public List<RagEvidence> expandNeighbors(RagSearchQuery query, List<RagEvidence> evidences) {
+        if (!query.neighborExpansionEnabled() || query.neighborWindow() <= 0 || evidences.isEmpty()) {
+            return markBaseEvidence(evidences);
+        }
+        TenantContext tenantContext = requireTenantContext();
+        List<RagEvidence> ranked = evidences.stream()
+                .sorted((left, right) -> Double.compare(right.score(), left.score()))
+                .limit(Math.max(1, query.candidateTopK()))
+                .toList();
+        Map<Long, List<RagEvidence>> byDocument = new LinkedHashMap<>();
+        for (RagEvidence evidence : ranked) {
+            byDocument.computeIfAbsent(evidence.documentId(), ignored -> new ArrayList<>()).add(evidence);
+        }
+
+        LinkedHashMap<Long, RagEvidence> merged = new LinkedHashMap<>();
+        for (RagEvidence evidence : evidences) {
+            merged.put(evidence.chunkId(), withNeighborFlags(evidence, false, null, 0));
+        }
+        for (Map.Entry<Long, List<RagEvidence>> entry : byDocument.entrySet()) {
+            List<Integer> anchorChunkNos = entry.getValue().stream().map(RagEvidence::chunkNo).distinct().toList();
+            List<RetrievalResult> neighbors = knowledgeRepository.findNeighborChunks(
+                    tenantContext.tenantId(),
+                    entry.getKey(),
+                    anchorChunkNos,
+                    query.neighborWindow(),
+                    query.versionConsistencyEnabled()
+            );
+            for (RetrievalResult neighbor : neighbors) {
+                if (merged.containsKey(neighbor.chunkId())) {
+                    continue;
+                }
+                RagEvidence anchor = nearestAnchor(entry.getValue(), neighbor.chunkNo());
+                int distance = Math.abs(anchor.chunkNo() - neighbor.chunkNo());
+                double score = Math.max(0.05d, anchor.score() * Math.max(0.65d, 0.95d - (distance * 0.08d)));
+                Map<String, Object> metadata = new LinkedHashMap<>(neighbor.metadata());
+                metadata.put("neighborExpanded", true);
+                metadata.put("neighborAnchorChunkNo", anchor.chunkNo());
+                metadata.put("neighborDistance", distance);
+                metadata.put("neighborSourceChannel", anchor.channel());
+                merged.put(neighbor.chunkId(), new RagEvidence(
+                        "neighbor",
+                        neighbor.knowledgeBaseId(),
+                        neighbor.documentId(),
+                        neighbor.chunkId(),
+                        neighbor.documentTitle(),
+                        neighbor.chunkNo(),
+                        neighbor.content(),
+                        neighbor.sectionTitle(),
+                        score,
+                        metadata
+                ));
+            }
+        }
+        return merged.values().stream()
+                .sorted((left, right) -> Double.compare(right.score(), left.score()))
+                .toList();
+    }
+
+    private List<RagEvidence> markBaseEvidence(List<RagEvidence> evidences) {
+        return evidences.stream()
+                .map(evidence -> withNeighborFlags(evidence, false, null, 0))
+                .toList();
+    }
+
+    private RagEvidence withNeighborFlags(RagEvidence evidence, boolean neighborExpanded, Integer anchorChunkNo, int distance) {
+        Map<String, Object> metadata = new LinkedHashMap<>(evidence.metadata());
+        metadata.putIfAbsent("neighborExpanded", neighborExpanded);
+        if (anchorChunkNo != null) {
+            metadata.put("neighborAnchorChunkNo", anchorChunkNo);
+        }
+        if (distance > 0) {
+            metadata.put("neighborDistance", distance);
+        }
+        return new RagEvidence(
+                evidence.channel(),
+                evidence.knowledgeBaseId(),
+                evidence.documentId(),
+                evidence.chunkId(),
+                evidence.documentTitle(),
+                evidence.chunkNo(),
+                evidence.content(),
+                evidence.sectionTitle(),
+                evidence.score(),
+                metadata
+        );
+    }
+
+    private RagEvidence nearestAnchor(List<RagEvidence> anchors, int chunkNo) {
+        return anchors.stream()
+                .min((left, right) -> Integer.compare(Math.abs(left.chunkNo() - chunkNo), Math.abs(right.chunkNo() - chunkNo)))
+                .orElseGet(anchors::getFirst);
     }
 
     private TenantContext requireTenantContext() {
