@@ -86,7 +86,13 @@ class TraceAdminIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .header("X-Tenant-Id", tenantId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("rerankEnabled", true))))
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "rerankEnabled", true,
+                                "perQuestionEvidenceCharLimit", 2800,
+                                "totalEvidenceCharLimit", 8400,
+                                "noEvidenceMinResults", 1,
+                                "forceCitationEnabled", true
+                        ))))
                 .andExpect(status().isOk());
         long knowledgeBaseId = createKnowledgeBase(token, tenantId, "Trace 知识库");
         uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "trace-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
@@ -125,6 +131,10 @@ class TraceAdminIntegrationTest {
         assertThat(detailJson.path("data").path("retrievals").isArray()).isTrue();
         assertThat(detailJson.path("data").path("modelCalls").get(0).path("provider").asText()).isEqualTo("test-provider");
         assertThat(detailJson.path("data").path("reranks").get(0).path("provider").asText()).isEqualTo("test-rerank-provider");
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("perQuestionEvidenceCharLimit").asInt()).isEqualTo(2800);
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("totalEvidenceCharLimit").asInt()).isEqualTo(8400);
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("noEvidenceMinResults").asInt()).isEqualTo(1);
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("forceCitationEnabled").asBoolean()).isTrue();
         assertThat(detailJson.toString()).doesNotContain("sk-");
         assertThat(detailJson.toString()).doesNotContain("rk-");
         assertThat(detailJson.toString()).doesNotContain("Authorization");
@@ -150,6 +160,51 @@ class TraceAdminIntegrationTest {
                 .getContentAsString(StandardCharsets.UTF_8));
         assertThat(rerankList.path("data").path("items").isArray()).isTrue();
         assertThat(rerankList.path("data").path("items").get(0).path("provider").asText()).isEqualTo("test-rerank-provider");
+    }
+
+    @Test
+    void shouldExposeFallbackReasonWhenTraceFallsBackToNoEvidence() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "rerankEnabled", true,
+                                "noEvidenceMinResults", 2,
+                                "forceCitationEnabled", true
+                        ))))
+                .andExpect(status().isOk());
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "Fallback Trace 知识库");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "trace-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
+        long sessionId = createConversation(token, tenantId, "Fallback Trace 对话", knowledgeBaseId);
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "退款规则是什么？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        int exchangeIdStart = body.indexOf("\"exchangeId\":") + 13;
+        long exchangeId = Long.parseLong(body.substring(exchangeIdStart, body.indexOf(",", exchangeIdStart)).trim());
+
+        JsonNode detailJson = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/traces/{exchangeId}", exchangeId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+
+        assertThat(detailJson.path("data").path("modelCalls").get(0).path("provider").asText()).isEqualTo("system");
+        assertThat(detailJson.path("data").path("reranks").get(0).path("metadata").path("fallbackReason").asText())
+                .isEqualTo("insufficient_evidence_results");
     }
 
     @Test

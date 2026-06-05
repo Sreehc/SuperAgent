@@ -24,11 +24,25 @@
       "tags": ["critical-e2e", "grounding"]
     },
     {
+      "caseKey": "rag-citation-enforcement",
+      "description": "Grounded answer path should enforce citations when the model omits them.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=RagChatComposerTest#shouldAppendCitationWhenForceCitationEnabledAndModelOmitsIt test",
+      "tags": ["grounding"]
+    },
+    {
       "caseKey": "rag-no-evidence-refusal",
       "description": "No-evidence path should refuse unsupported answers cleanly.",
       "cwd": "backend",
       "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldReturnNoEvidenceResponseWhenKnowledgeBaseHasNoRelevantEvidence test",
       "tags": ["critical-e2e", "no-evidence"]
+    },
+    {
+      "caseKey": "rag-evidence-threshold-fallback",
+      "description": "When evidence count stays below threshold, the answer path should degrade to no-evidence fallback.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldFallbackWhenEvidenceCountIsBelowConfiguredThreshold test",
+      "tags": ["critical-e2e", "no-evidence", "grounding"]
     },
     {
       "caseKey": "rag-trace-fields",

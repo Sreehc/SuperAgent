@@ -87,7 +87,13 @@ class TraceQueryRepositoryTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .header("X-Tenant-Id", tenantId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("rerankEnabled", true))))
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "rerankEnabled", true,
+                                "perQuestionEvidenceCharLimit", 2800,
+                                "totalEvidenceCharLimit", 8400,
+                                "noEvidenceMinResults", 2,
+                                "forceCitationEnabled", false
+                        ))))
                 .andReturn();
 
         long knowledgeBaseId = objectMapper.readTree(mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/knowledge-bases")
@@ -159,6 +165,10 @@ class TraceQueryRepositoryTest {
                 .containsEntry("versionConsistencyEnabled", true)
                 .containsEntry("neighborExpansionEnabled", true)
                 .containsEntry("neighborWindow", 1)
+                .containsEntry("perQuestionEvidenceCharLimit", 2800)
+                .containsEntry("totalEvidenceCharLimit", 8400)
+                .containsEntry("noEvidenceMinResults", 2)
+                .containsEntry("forceCitationEnabled", false)
                 .containsEntry("hybridRetrievalEnabled", true);
         assertThat(retrievals.getFirst().items().getFirst().metadata())
                 .containsEntry("documentTitle", "trace-guide.txt")
