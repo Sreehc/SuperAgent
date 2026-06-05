@@ -115,6 +115,7 @@ public class RagSupportService {
             String subQuestion,
             int subQuestionNo,
             Long knowledgeBaseId,
+            ConversationService.RagOptions ragOptions,
             String answerMode,
             String queryUnderstandingSource,
             double queryUnderstandingConfidence,
@@ -126,6 +127,10 @@ public class RagSupportService {
                 subQuestion,
                 subQuestionNo,
                 knowledgeBaseId,
+                ragOptions == null ? null : ragOptions.knowledgeDomainId(),
+                ragOptions == null ? null : ragOptions.chunkingProfileId(),
+                normalizeNullable(ragOptions == null ? null : ragOptions.category()),
+                normalizeTags(ragOptions == null ? null : ragOptions.tags()),
                 answerMode,
                 queryUnderstandingSource,
                 queryUnderstandingConfidence,
@@ -231,6 +236,26 @@ public class RagSupportService {
                 .limit(3)
                 .average()
                 .orElse(0.0d);
+    }
+
+    private String normalizeNullable(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String tag : tags) {
+            if (tag != null && !tag.isBlank()) {
+                normalized.add(tag.trim());
+            }
+        }
+        return List.copyOf(normalized);
     }
 
     private void mergeRanked(Map<Long, RagEvidenceAccumulator> accumulator, List<RetrievalResult> results, int rrfK) {

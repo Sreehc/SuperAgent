@@ -102,6 +102,10 @@ class RetrievalServiceTest {
                 "退款规则是什么？",
                 1,
                 1L,
+                null,
+                null,
+                null,
+                List.of(),
                 "single_question",
                 "provider_unavailable",
                 0.5d,
@@ -174,6 +178,10 @@ class RetrievalServiceTest {
                 "退款多久到账？",
                 1,
                 1L,
+                null,
+                null,
+                null,
+                List.of(),
                 "single_question",
                 "provider_unavailable",
                 0.5d,
@@ -210,7 +218,17 @@ class RetrievalServiceTest {
                         Map.of("activeVersionNo", 2, "chunkVersionNo", 2)
                 )
         );
-        when(knowledgeRepository.findTopKByKeyword(10001L, 1L, "退款多久到账？", 5, true)).thenReturn(repositoryResults);
+        when(knowledgeRepository.findTopKByKeyword(
+                10001L,
+                1L,
+                null,
+                null,
+                null,
+                List.of(),
+                "退款多久到账？",
+                5,
+                true
+        )).thenReturn(repositoryResults);
 
         List<RetrievalResult> first = retrievalService.searchKeyword(query);
         List<RetrievalResult> second = retrievalService.searchKeyword(query);
@@ -220,6 +238,16 @@ class RetrievalServiceTest {
         assertThat(second).hasSize(1);
         assertThat(second.getFirst().metadata()).containsEntry("queryCacheHit", true);
         assertThat(second.getFirst().metadata()).containsEntry("queryCacheChannel", "keyword");
-        verify(knowledgeRepository, times(1)).findTopKByKeyword(10001L, 1L, "退款多久到账？", 5, true);
+        verify(knowledgeRepository, times(1)).findTopKByKeyword(
+                10001L,
+                1L,
+                null,
+                null,
+                null,
+                List.of(),
+                "退款多久到账？",
+                5,
+                true
+        );
     }
 }

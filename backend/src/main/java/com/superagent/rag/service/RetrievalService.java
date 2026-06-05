@@ -43,6 +43,18 @@ public class RetrievalService {
     }
 
     public List<RetrievalResult> search(String query, Long knowledgeBaseId, Integer topK) {
+        return search(query, knowledgeBaseId, null, null, null, List.of(), topK);
+    }
+
+    public List<RetrievalResult> search(
+            String query,
+            Long knowledgeBaseId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            List<String> tags,
+            Integer topK
+    ) {
         if (query == null || query.isBlank()) {
             throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.UNPROCESSABLE_ENTITY, "Query is required");
         }
@@ -62,6 +74,10 @@ public class RetrievalService {
         return knowledgeRepository.findTopKByVector(
                 tenantContext.tenantId(),
                 knowledgeBaseId,
+                knowledgeDomainId,
+                chunkingProfileId,
+                normalizeNullable(category),
+                normalizeTags(tags),
                 embedding.vectors().getFirst(),
                 resolvedTopK,
                 settings.versionConsistencyEnabled()
@@ -75,6 +91,10 @@ public class RetrievalService {
                 "vector",
                 tenantContext.tenantId(),
                 query.knowledgeBaseId(),
+                query.knowledgeDomainId(),
+                query.chunkingProfileId(),
+                query.category(),
+                query.tags(),
                 query.subQuestion(),
                 resolvedTopK,
                 query.versionConsistencyEnabled(),
@@ -85,6 +105,10 @@ public class RetrievalService {
                     return knowledgeRepository.findTopKByVector(
                             tenantContext.tenantId(),
                             query.knowledgeBaseId(),
+                            query.knowledgeDomainId(),
+                            query.chunkingProfileId(),
+                            query.category(),
+                            query.tags(),
                             embedding.vectors().getFirst(),
                             resolvedTopK,
                             query.versionConsistencyEnabled()
@@ -100,6 +124,10 @@ public class RetrievalService {
                 "keyword",
                 tenantContext.tenantId(),
                 query.knowledgeBaseId(),
+                query.knowledgeDomainId(),
+                query.chunkingProfileId(),
+                query.category(),
+                query.tags(),
                 query.subQuestion(),
                 resolvedTopK,
                 query.versionConsistencyEnabled(),
@@ -109,6 +137,10 @@ public class RetrievalService {
                     List<RetrievalResult> results = knowledgeRepository.findTopKByKeyword(
                             tenantContext.tenantId(),
                             query.knowledgeBaseId(),
+                            query.knowledgeDomainId(),
+                            query.chunkingProfileId(),
+                            query.category(),
+                            query.tags(),
                             query.subQuestion(),
                             resolvedTopK,
                             query.versionConsistencyEnabled()
@@ -119,6 +151,10 @@ public class RetrievalService {
                     return knowledgeRepository.findTopKByKeywordFallback(
                             tenantContext.tenantId(),
                             query.knowledgeBaseId(),
+                            query.knowledgeDomainId(),
+                            query.chunkingProfileId(),
+                            query.category(),
+                            query.tags(),
                             ragSupportService.extractKeywordTerms(query.subQuestion()),
                             resolvedTopK,
                             query.versionConsistencyEnabled()
@@ -230,5 +266,25 @@ public class RetrievalService {
 
     private boolean isAdmin(AuthenticatedUserPrincipal principal) {
         return principal.currentRole() == TenantRole.OWNER || principal.currentRole() == TenantRole.ADMIN;
+    }
+
+    private String normalizeNullable(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return List.of();
+        }
+        java.util.LinkedHashSet<String> normalized = new java.util.LinkedHashSet<>();
+        for (String tag : tags) {
+            if (tag != null && !tag.isBlank()) {
+                normalized.add(tag.trim());
+            }
+        }
+        return List.copyOf(normalized);
     }
 }

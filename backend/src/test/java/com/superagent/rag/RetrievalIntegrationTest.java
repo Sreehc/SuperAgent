@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.service.DocumentProcessingService;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -141,6 +142,63 @@ class RetrievalIntegrationTest {
         assertThat(retrievalResponse.path("data").path("items")).isEmpty();
     }
 
+    @Test
+    void shouldFilterRetrievalsByDocumentMetadata() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        LoginSession member = login("member", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "元数据过滤知识库", "published");
+        long domainA = createKnowledgeDomain(owner, "after_sale", "售后域");
+        long domainB = createKnowledgeDomain(owner, "logistics", "物流域");
+        long profileA = createChunkingProfile(owner, "md-heading", "Markdown Heading", "markdown_heading", false);
+        long profileB = createChunkingProfile(owner, "slide-section", "Slide Section", "slide_section", false);
+
+        uploadAndProcessDocument(
+                owner,
+                knowledgeBaseId,
+                "refund-guide.txt",
+                "退款规则",
+                "退款规则需要订单截图和七日内申请",
+                "售后",
+                List.of("refund", "priority"),
+                domainA,
+                profileA
+        );
+        uploadAndProcessDocument(
+                owner,
+                knowledgeBaseId,
+                "shipping-guide.txt",
+                "配送规则",
+                "配送规则说明与物流时效",
+                "物流",
+                List.of("shipping"),
+                domainB,
+                profileB
+        );
+
+        JsonNode retrievalResponse = objectMapper.readTree(mockMvc.perform(get("/api/v1/retrievals")
+                        .param("query", "规则")
+                        .param("knowledgeBaseId", String.valueOf(knowledgeBaseId))
+                        .param("knowledgeDomainId", String.valueOf(domainA))
+                        .param("chunkingProfileId", String.valueOf(profileA))
+                        .param("category", "售后")
+                        .param("tags", "refund")
+                        .param("topK", "5")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + member.accessToken())
+                        .header("X-Tenant-Id", member.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+
+        assertThat(retrievalResponse.path("data").path("items")).hasSize(1);
+        JsonNode firstItem = retrievalResponse.path("data").path("items").get(0);
+        assertThat(firstItem.path("documentTitle").asText()).isEqualTo("退款规则");
+        assertThat(firstItem.path("metadata").path("knowledgeDomainId").asLong()).isEqualTo(domainA);
+        assertThat(firstItem.path("metadata").path("chunkingProfileId").asLong()).isEqualTo(profileA);
+        assertThat(firstItem.path("metadata").path("category").asText()).isEqualTo("售后");
+        assertThat(firstItem.path("metadata").path("tags").toString()).contains("refund");
+    }
+
     private long uploadAndProcessDocument(
             LoginSession owner,
             long knowledgeBaseId,
@@ -148,17 +206,44 @@ class RetrievalIntegrationTest {
             String title,
             String content
     ) throws Exception {
+        return uploadAndProcessDocument(owner, knowledgeBaseId, fileName, title, content, null, List.of(), null, null);
+    }
+
+    private long uploadAndProcessDocument(
+            LoginSession owner,
+            long knowledgeBaseId,
+            String fileName,
+            String title,
+            String content,
+            String category,
+            List<String> tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId
+    ) throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 fileName,
                 "text/plain",
                 content.getBytes(StandardCharsets.UTF_8)
         );
-        MvcResult uploadResponse = mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
-                        .file(file)
-                        .param("title", title)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
-                        .header("X-Tenant-Id", owner.tenantId()))
+        var request = multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                .file(file)
+                .param("title", title)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                .header("X-Tenant-Id", owner.tenantId());
+        if (category != null) {
+            request.param("category", category);
+        }
+        if (tags != null && !tags.isEmpty()) {
+            request.param("tags", String.join(",", tags));
+        }
+        if (knowledgeDomainId != null) {
+            request.param("knowledgeDomainId", String.valueOf(knowledgeDomainId));
+        }
+        if (chunkingProfileId != null) {
+            request.param("chunkingProfileId", String.valueOf(chunkingProfileId));
+        }
+        MvcResult uploadResponse = mockMvc.perform(request)
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode uploaded = objectMapper.readTree(uploadResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
@@ -190,6 +275,40 @@ class RetrievalIntegrationTest {
                         .content(objectMapper.writeValueAsString(Map.of("status", status))))
                 .andExpect(status().isOk());
         return knowledgeBaseId;
+    }
+
+    private long createKnowledgeDomain(LoginSession owner, String code, String name) throws Exception {
+        MvcResult response = mockMvc.perform(post("/api/v1/admin/knowledge-domains")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "code", code,
+                                "name", name,
+                                "description", name + "描述"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(response.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("id").asLong();
+    }
+
+    private long createChunkingProfile(LoginSession owner, String code, String name, String strategy, boolean isDefault) throws Exception {
+        MvcResult response = mockMvc.perform(post("/api/v1/admin/chunking-profiles")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "code", code,
+                                "name", name,
+                                "strategy", strategy,
+                                "isDefault", isDefault,
+                                "config", Map.of()
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(response.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("id").asLong();
     }
 
     private LoginSession login(String username, String password) throws Exception {

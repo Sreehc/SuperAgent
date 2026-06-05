@@ -25,6 +25,7 @@ import com.superagent.knowledge.service.DocumentProcessingService;
 import com.superagent.rag.TestEmbeddingClientConfiguration;
 import com.superagent.rag.TestRerankClientConfiguration;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.BeforeEach;
@@ -451,6 +452,76 @@ class ConversationIntegrationTest {
         assertThat(body).doesNotContain("event:reference");
     }
 
+    @Test
+    void shouldApplyMetadataFiltersToRagConversationFlow() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "过滤问答知识库", "published");
+        long afterSaleDomainId = createKnowledgeDomain(token, tenantId, "after_sale", "售后域");
+        long logisticsDomainId = createKnowledgeDomain(token, tenantId, "logistics", "物流域");
+        long markdownProfileId = createChunkingProfile(token, tenantId, "md-heading", "Markdown Heading", "markdown_heading", false);
+        long slideProfileId = createChunkingProfile(token, tenantId, "slide-section", "Slide Section", "slide_section", false);
+
+        uploadAndProcessKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                "refund-guide.txt",
+                "退款需在7日内提交申请，并提供订单截图。",
+                "售后",
+                List.of("refund", "priority"),
+                afterSaleDomainId,
+                markdownProfileId
+        );
+        uploadAndProcessKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                "shipping-guide.txt",
+                "配送时效为48小时内出库，支持物流催办。",
+                "物流",
+                List.of("shipping"),
+                logisticsDomainId,
+                slideProfileId
+        );
+        long sessionId = createConversation(token, tenantId, "过滤问答测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "message", "退款规则是什么？",
+                                "knowledgeBaseId", knowledgeBaseId,
+                                "ragOptions", Map.of(
+                                        "knowledgeDomainId", afterSaleDomainId,
+                                        "chunkingProfileId", markdownProfileId,
+                                        "category", "售后",
+                                        "tags", List.of("refund")
+                                )
+                        ))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("退款需在7日内提交申请");
+        assertThat(body).doesNotContain("配送时效为48小时内出库");
+        assertThat(body).contains("event:reference");
+
+        Long referencedDocumentId = jdbcTemplate.queryForObject(
+                "SELECT document_id FROM conversation_reference ORDER BY id DESC LIMIT 1",
+                Long.class
+        );
+        assertThat(referencedDocumentId).isNotNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT title FROM knowledge_document WHERE id = ?",
+                String.class,
+                referencedDocumentId
+        )).isEqualTo("refund-guide.txt");
+    }
+
     private JsonNode login(String username, String password) throws Exception {
         MvcResult response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -514,17 +585,44 @@ class ConversationIntegrationTest {
             String fileName,
             String content
     ) throws Exception {
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, fileName, content, null, List.of(), null, null);
+    }
+
+    private void uploadAndProcessKnowledgeDocument(
+            String token,
+            long tenantId,
+            long knowledgeBaseId,
+            String fileName,
+            String content,
+            String category,
+            List<String> tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId
+    ) throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 fileName,
                 "text/plain",
                 content.getBytes(StandardCharsets.UTF_8)
         );
-        MvcResult uploadResponse = mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
-                        .file(file)
-                        .param("title", fileName)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .header("X-Tenant-Id", tenantId))
+        var request = multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                .file(file)
+                .param("title", fileName)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .header("X-Tenant-Id", tenantId);
+        if (category != null) {
+            request.param("category", category);
+        }
+        if (tags != null && !tags.isEmpty()) {
+            request.param("tags", String.join(",", tags));
+        }
+        if (knowledgeDomainId != null) {
+            request.param("knowledgeDomainId", String.valueOf(knowledgeDomainId));
+        }
+        if (chunkingProfileId != null) {
+            request.param("chunkingProfileId", String.valueOf(chunkingProfileId));
+        }
+        MvcResult uploadResponse = mockMvc.perform(request)
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode uploaded = objectMapper.readTree(uploadResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
@@ -534,6 +632,40 @@ class ConversationIntegrationTest {
                 uploaded.path("data").path("taskId").asLong(),
                 "test"
         ));
+    }
+
+    private long createKnowledgeDomain(String token, long tenantId, String code, String name) throws Exception {
+        MvcResult response = mockMvc.perform(post("/api/v1/admin/knowledge-domains")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "code", code,
+                                "name", name,
+                                "description", name + "描述"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(response.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("id").asLong();
+    }
+
+    private long createChunkingProfile(String token, long tenantId, String code, String name, String strategy, boolean isDefault) throws Exception {
+        MvcResult response = mockMvc.perform(post("/api/v1/admin/chunking-profiles")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "code", code,
+                                "name", name,
+                                "strategy", strategy,
+                                "isDefault", isDefault,
+                                "config", Map.of()
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(response.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("id").asLong();
     }
 
     private String awaitStreamBody(MvcResult result, String marker) throws Exception {

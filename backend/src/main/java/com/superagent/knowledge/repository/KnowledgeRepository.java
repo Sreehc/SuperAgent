@@ -1036,6 +1036,10 @@ public class KnowledgeRepository {
     public List<RetrievalResult> findTopKByVector(
             long tenantId,
             Long knowledgeBaseId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            List<String> tags,
             List<Double> vector,
             int topK,
             boolean versionConsistencyEnabled
@@ -1047,6 +1051,9 @@ public class KnowledgeRepository {
                     dc.id AS chunk_id,
                     kd.title AS document_title,
                     kd.active_version_no,
+                    kd.knowledge_domain_id,
+                    kd.chunking_profile_id,
+                    kd.metadata AS document_metadata,
                     dc.chunk_no,
                     dc.content,
                     dc.section_title,
@@ -1074,6 +1081,7 @@ public class KnowledgeRepository {
             sql.append(" AND kd.knowledge_base_id = ?");
             args.add(knowledgeBaseId);
         }
+        appendRetrievalDocumentFilters(sql, args, knowledgeDomainId, chunkingProfileId, category, tags);
         if (versionConsistencyEnabled) {
             sql.append("""
                      AND COALESCE(NULLIF(dc.metadata ->> 'versionNo', '')::int, kd.active_version_no) = kd.active_version_no
@@ -1092,7 +1100,13 @@ public class KnowledgeRepository {
                         rs.getString("content"),
                         rs.getString("section_title"),
                         rs.getDouble("score"),
-                        enrichRetrievalMetadata(readMetadata(rs.getString("metadata")), rs.getInt("active_version_no"))
+                        enrichRetrievalMetadata(
+                                readMetadata(rs.getString("metadata")),
+                                rs.getInt("active_version_no"),
+                                getNullableLong(rs, "knowledge_domain_id"),
+                                getNullableLong(rs, "chunking_profile_id"),
+                                readMetadata(rs.getString("document_metadata"))
+                        )
                 ),
                 args.toArray()
         );
@@ -1101,6 +1115,10 @@ public class KnowledgeRepository {
     public List<RetrievalResult> findTopKByKeyword(
             long tenantId,
             Long knowledgeBaseId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            List<String> tags,
             String query,
             int topK,
             boolean versionConsistencyEnabled
@@ -1112,6 +1130,9 @@ public class KnowledgeRepository {
                     dc.id AS chunk_id,
                     kd.title AS document_title,
                     kd.active_version_no,
+                    kd.knowledge_domain_id,
+                    kd.chunking_profile_id,
+                    kd.metadata AS document_metadata,
                     dc.chunk_no,
                     dc.content,
                     dc.section_title,
@@ -1137,6 +1158,7 @@ public class KnowledgeRepository {
             sql.append(" AND kd.knowledge_base_id = ?");
             args.add(knowledgeBaseId);
         }
+        appendRetrievalDocumentFilters(sql, args, knowledgeDomainId, chunkingProfileId, category, tags);
         if (versionConsistencyEnabled) {
             sql.append("""
                      AND COALESCE(NULLIF(dc.metadata ->> 'versionNo', '')::int, kd.active_version_no) = kd.active_version_no
@@ -1154,7 +1176,13 @@ public class KnowledgeRepository {
                         rs.getString("content"),
                         rs.getString("section_title"),
                         rs.getDouble("score"),
-                        enrichRetrievalMetadata(readMetadata(rs.getString("metadata")), rs.getInt("active_version_no"))
+                        enrichRetrievalMetadata(
+                                readMetadata(rs.getString("metadata")),
+                                rs.getInt("active_version_no"),
+                                getNullableLong(rs, "knowledge_domain_id"),
+                                getNullableLong(rs, "chunking_profile_id"),
+                                readMetadata(rs.getString("document_metadata"))
+                        )
                 ),
                 args.toArray()
         );
@@ -1163,6 +1191,10 @@ public class KnowledgeRepository {
     public List<RetrievalResult> findTopKByKeywordFallback(
             long tenantId,
             Long knowledgeBaseId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            List<String> tags,
             List<String> terms,
             int topK,
             boolean versionConsistencyEnabled
@@ -1177,6 +1209,9 @@ public class KnowledgeRepository {
                     dc.id AS chunk_id,
                     kd.title AS document_title,
                     kd.active_version_no,
+                    kd.knowledge_domain_id,
+                    kd.chunking_profile_id,
+                    kd.metadata AS document_metadata,
                     dc.chunk_no,
                     dc.content,
                     dc.section_title,
@@ -1218,6 +1253,7 @@ public class KnowledgeRepository {
             sql.append(" AND kd.knowledge_base_id = ?");
             args.add(knowledgeBaseId);
         }
+        appendRetrievalDocumentFilters(sql, args, knowledgeDomainId, chunkingProfileId, category, tags);
         if (versionConsistencyEnabled) {
             sql.append("""
                      AND COALESCE(NULLIF(dc.metadata ->> 'versionNo', '')::int, kd.active_version_no) = kd.active_version_no
@@ -1235,7 +1271,13 @@ public class KnowledgeRepository {
                         rs.getString("content"),
                         rs.getString("section_title"),
                         rs.getDouble("score"),
-                        enrichRetrievalMetadata(readMetadata(rs.getString("metadata")), rs.getInt("active_version_no"))
+                        enrichRetrievalMetadata(
+                                readMetadata(rs.getString("metadata")),
+                                rs.getInt("active_version_no"),
+                                getNullableLong(rs, "knowledge_domain_id"),
+                                getNullableLong(rs, "chunking_profile_id"),
+                                readMetadata(rs.getString("document_metadata"))
+                        )
                 ),
                 args.toArray()
         );
@@ -1260,6 +1302,9 @@ public class KnowledgeRepository {
                             dc.id AS chunk_id,
                             kd.title AS document_title,
                             kd.active_version_no,
+                            kd.knowledge_domain_id,
+                            kd.chunking_profile_id,
+                            kd.metadata AS document_metadata,
                             dc.chunk_no,
                             dc.content,
                             dc.section_title,
@@ -1288,7 +1333,13 @@ public class KnowledgeRepository {
                         rs.getString("content"),
                         rs.getString("section_title"),
                         rs.getDouble("score"),
-                        enrichRetrievalMetadata(readMetadata(rs.getString("metadata")), rs.getInt("active_version_no"))
+                        enrichRetrievalMetadata(
+                                readMetadata(rs.getString("metadata")),
+                                rs.getInt("active_version_no"),
+                                getNullableLong(rs, "knowledge_domain_id"),
+                                getNullableLong(rs, "chunking_profile_id"),
+                                readMetadata(rs.getString("document_metadata"))
+                        )
                 ),
                 tenantId,
                 tenantId,
@@ -1444,11 +1495,62 @@ public class KnowledgeRepository {
         );
     }
 
-    private Map<String, Object> enrichRetrievalMetadata(Map<String, Object> metadata, int activeVersionNo) {
+    private Map<String, Object> enrichRetrievalMetadata(
+            Map<String, Object> metadata,
+            int activeVersionNo,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            Map<String, Object> documentMetadata
+    ) {
         Map<String, Object> enriched = new LinkedHashMap<>(metadata == null ? Map.of() : metadata);
         enriched.put("activeVersionNo", activeVersionNo);
         enriched.putIfAbsent("chunkVersionNo", resolveChunkVersionNo(enriched, activeVersionNo));
+        if (knowledgeDomainId != null) {
+            enriched.put("knowledgeDomainId", knowledgeDomainId);
+        }
+        if (chunkingProfileId != null) {
+            enriched.putIfAbsent("chunkingProfileId", chunkingProfileId);
+        }
+        if (documentMetadata != null && !documentMetadata.isEmpty()) {
+            if (documentMetadata.get("category") instanceof String category && !category.isBlank()) {
+                enriched.putIfAbsent("category", category);
+            }
+            if (documentMetadata.get("tags") instanceof List<?> tagList) {
+                enriched.putIfAbsent("tags", tagList.stream().map(String::valueOf).toList());
+            }
+        }
         return enriched;
+    }
+
+    private void appendRetrievalDocumentFilters(
+            StringBuilder sql,
+            List<Object> args,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            List<String> tags
+    ) {
+        if (knowledgeDomainId != null) {
+            sql.append(" AND kd.knowledge_domain_id = ?");
+            args.add(knowledgeDomainId);
+        }
+        if (chunkingProfileId != null) {
+            sql.append(" AND kd.chunking_profile_id = ?");
+            args.add(chunkingProfileId);
+        }
+        if (category != null && !category.isBlank()) {
+            sql.append(" AND COALESCE(kd.metadata ->> 'category', '') = ?");
+            args.add(category.trim());
+        }
+        if (tags != null && !tags.isEmpty()) {
+            for (String tag : tags) {
+                if (tag == null || tag.isBlank()) {
+                    continue;
+                }
+                sql.append(" AND jsonb_exists(kd.metadata -> 'tags', ?)");
+                args.add(tag.trim());
+            }
+        }
     }
 
     private int resolveActiveVersionNo(Map<String, Object> metadata) {
@@ -1485,6 +1587,9 @@ public class KnowledgeRepository {
     }
 
     private Map<String, Object> readMetadata(String rawMetadata) {
+        if (rawMetadata == null || rawMetadata.isBlank()) {
+            return Map.of();
+        }
         try {
             return objectMapper.readValue(rawMetadata, MAP_TYPE);
         } catch (Exception exception) {

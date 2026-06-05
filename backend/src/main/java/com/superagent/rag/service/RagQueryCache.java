@@ -48,6 +48,10 @@ public class RagQueryCache {
             String channel,
             long tenantId,
             Long knowledgeBaseId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            List<String> tags,
             String query,
             int topK,
             boolean versionConsistencyEnabled,
@@ -61,7 +65,18 @@ public class RagQueryCache {
             return new CachedRetrievalResult(results, false);
         }
 
-        String cacheKey = buildCacheKey(channel, tenantId, knowledgeBaseId, query, topK, versionConsistencyEnabled);
+        String cacheKey = buildCacheKey(
+                channel,
+                tenantId,
+                knowledgeBaseId,
+                knowledgeDomainId,
+                chunkingProfileId,
+                category,
+                tags,
+                query,
+                topK,
+                versionConsistencyEnabled
+        );
         List<RetrievalResult> cached = readRedis(cacheKey);
         if (cached == null) {
             cached = readLocal(cacheKey);
@@ -177,15 +192,27 @@ public class RagQueryCache {
             String channel,
             long tenantId,
             Long knowledgeBaseId,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            List<String> tags,
             String query,
             int topK,
             boolean versionConsistencyEnabled
     ) {
         String normalizedQuery = query == null ? "" : query.trim();
+        String normalizedCategory = category == null ? "" : category.trim();
+        String normalizedTags = tags == null || tags.isEmpty() ? "" : String.join("|", tags.stream().sorted().toList());
         return "rag:query-cache:%s:t%d:kb%s:top%d:vc%s:q%s".formatted(
                 channel,
                 tenantId,
-                knowledgeBaseId == null ? "all" : knowledgeBaseId,
+                "%s:kd%s:cp%s:c%s:t%s".formatted(
+                        knowledgeBaseId == null ? "all" : knowledgeBaseId,
+                        knowledgeDomainId == null ? "all" : knowledgeDomainId,
+                        chunkingProfileId == null ? "all" : chunkingProfileId,
+                        digest(normalizedCategory),
+                        digest(normalizedTags)
+                ),
                 topK,
                 versionConsistencyEnabled,
                 digest(normalizedQuery)

@@ -28,9 +28,21 @@ public class RetrievalController {
     public ApiResponse<KnowledgeController.PagedResponse<RetrievalItem>> search(
             @RequestParam @Size(max = 1000) String query,
             @RequestParam(required = false) Long knowledgeBaseId,
+            @RequestParam(required = false) Long knowledgeDomainId,
+            @RequestParam(required = false) Long chunkingProfileId,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) List<String> tags,
             @RequestParam(required = false) Integer topK
     ) {
-        List<RetrievalResult> results = retrievalService.search(query, knowledgeBaseId, topK);
+        List<RetrievalResult> results = retrievalService.search(
+                query,
+                knowledgeBaseId,
+                knowledgeDomainId,
+                chunkingProfileId,
+                category,
+                tags,
+                topK
+        );
         return ApiResponse.success(new KnowledgeController.PagedResponse<>(
                 results.stream().map(this::toItem).toList(),
                 1,

@@ -707,6 +707,10 @@ public class ConversationService {
         filters.put("subQuestion", query.subQuestion());
         filters.put("subQuestionNo", query.subQuestionNo());
         filters.put("knowledgeBaseId", query.knowledgeBaseId());
+        filters.put("knowledgeDomainId", query.knowledgeDomainId());
+        filters.put("chunkingProfileId", query.chunkingProfileId());
+        filters.put("category", query.category());
+        filters.put("tags", query.tags());
         filters.put("answerMode", query.answerMode());
         filters.put("queryUnderstandingSource", query.queryUnderstandingSource());
         filters.put("queryUnderstandingConfidence", query.queryUnderstandingConfidence());
@@ -764,6 +768,10 @@ public class ConversationService {
             metadata.put("originalQuestion", firstQuery.originalQuestion());
             metadata.put("rewrittenQuestion", firstQuery.rewrittenQuestion());
             metadata.put("knowledgeBaseId", firstQuery.knowledgeBaseId());
+            metadata.put("knowledgeDomainId", firstQuery.knowledgeDomainId());
+            metadata.put("chunkingProfileId", firstQuery.chunkingProfileId());
+            metadata.put("category", firstQuery.category());
+            metadata.put("tags", firstQuery.tags());
         }
         return metadata;
     }
@@ -883,7 +891,11 @@ public class ConversationService {
             Integer rrfK,
             Boolean rerankEnabled,
             Integer evidenceLimit,
-            Double minRelevanceScore
+            Double minRelevanceScore,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            java.util.List<String> tags
     ) {
     }
 

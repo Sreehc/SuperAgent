@@ -1,11 +1,17 @@
 package com.superagent.rag.domain;
 
+import java.util.List;
+
 public record RagSearchQuery(
         String originalQuestion,
         String rewrittenQuestion,
         String subQuestion,
         int subQuestionNo,
         Long knowledgeBaseId,
+        Long knowledgeDomainId,
+        Long chunkingProfileId,
+        String category,
+        List<String> tags,
         String answerMode,
         String queryUnderstandingSource,
         double queryUnderstandingConfidence,
