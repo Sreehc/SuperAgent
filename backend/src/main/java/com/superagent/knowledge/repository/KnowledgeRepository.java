@@ -1137,7 +1137,21 @@ public class KnowledgeRepository {
                     dc.content,
                     dc.section_title,
                     dc.metadata,
-                    ts_rank_cd(dc.search_vector, websearch_to_tsquery('simple', ?)) AS score
+                    (
+                        ts_rank_cd(dc.search_vector, websearch_to_tsquery('simple', ?))
+                        + CASE
+                            WHEN COALESCE(kd.title, '') <> ''
+                                 AND to_tsvector('simple', kd.title) @@ websearch_to_tsquery('simple', ?)
+                            THEN 0.30
+                            ELSE 0.0
+                          END
+                        + CASE
+                            WHEN COALESCE(dc.section_title, '') <> ''
+                                 AND to_tsvector('simple', dc.section_title) @@ websearch_to_tsquery('simple', ?)
+                            THEN 0.18
+                            ELSE 0.0
+                          END
+                    ) AS score
                 FROM document_chunk dc
                 JOIN knowledge_document kd ON kd.id = dc.document_id
                 JOIN knowledge_base kb ON kb.id = kd.knowledge_base_id
@@ -1147,12 +1161,26 @@ public class KnowledgeRepository {
                   AND kd.deleted_at IS NULL
                   AND kb.deleted_at IS NULL
                   AND kb.status = 'published'
-                  AND dc.search_vector @@ websearch_to_tsquery('simple', ?)
+                  AND (
+                        dc.search_vector @@ websearch_to_tsquery('simple', ?)
+                        OR (
+                            COALESCE(kd.title, '') <> ''
+                            AND to_tsvector('simple', kd.title) @@ websearch_to_tsquery('simple', ?)
+                        )
+                        OR (
+                            COALESCE(dc.section_title, '') <> ''
+                            AND to_tsvector('simple', dc.section_title) @@ websearch_to_tsquery('simple', ?)
+                        )
+                  )
                 """);
         ArrayList<Object> args = new ArrayList<>();
         args.add(query);
+        args.add(query);
+        args.add(query);
         args.add(tenantId);
         args.add(tenantId);
+        args.add(query);
+        args.add(query);
         args.add(query);
         if (knowledgeBaseId != null) {
             sql.append(" AND kd.knowledge_base_id = ?");
@@ -1223,7 +1251,16 @@ public class KnowledgeRepository {
             if (index > 0) {
                 sql.append(" + ");
             }
-            sql.append("CASE WHEN dc.content ILIKE ? THEN 1 ELSE 0 END");
+            sql.append("""
+                    CASE
+                        WHEN dc.content ILIKE ? THEN 1
+                        WHEN COALESCE(dc.section_title, '') <> '' AND dc.section_title ILIKE ? THEN 1
+                        WHEN COALESCE(kd.title, '') <> '' AND kd.title ILIKE ? THEN 1
+                        ELSE 0
+                    END
+                    """);
+            args.add("%" + terms.get(index) + "%");
+            args.add("%" + terms.get(index) + "%");
             args.add("%" + terms.get(index) + "%");
         }
         sql.append("""
@@ -1245,7 +1282,9 @@ public class KnowledgeRepository {
             if (index > 0) {
                 sql.append(" OR ");
             }
-            sql.append("dc.content ILIKE ?");
+            sql.append("(dc.content ILIKE ? OR COALESCE(dc.section_title, '') ILIKE ? OR COALESCE(kd.title, '') ILIKE ?)");
+            args.add("%" + terms.get(index) + "%");
+            args.add("%" + terms.get(index) + "%");
             args.add("%" + terms.get(index) + "%");
         }
         sql.append(")");

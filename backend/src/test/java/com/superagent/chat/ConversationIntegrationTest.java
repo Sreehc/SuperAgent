@@ -594,6 +594,71 @@ class ConversationIntegrationTest {
         assertThat(assistantContent).doesNotContain("[9]");
     }
 
+    @Test
+    void shouldPreferStructuredDocumentWhenQuestionMatchesTitleAndSection() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "结构排序知识库", "published");
+        long markdownProfileId = createChunkingProfile(token, tenantId, "md-structure", "Markdown Structure", "markdown_heading", false);
+        String sharedBody = """
+                # 办理说明
+                所有售后申请都通过统一入口提交，并由客服审核处理。
+
+                ## 处理规则
+                用户需根据页面指引提交材料，系统会自动分配对应工单。
+                """;
+
+        uploadAndProcessKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                "退款规则手册.md",
+                sharedBody,
+                null,
+                List.of(),
+                null,
+                markdownProfileId
+        );
+        uploadAndProcessKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                "配送规则手册.md",
+                sharedBody,
+                null,
+                List.of(),
+                null,
+                markdownProfileId
+        );
+        long sessionId = createConversation(token, tenantId, "结构排序测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "退款规则是什么？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("退款规则手册.md");
+        Integer topReferenceDocumentCount = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*)
+                        FROM conversation_reference
+                        WHERE exchange_id = (
+                            SELECT id FROM conversation_exchange WHERE session_id = ? ORDER BY id DESC LIMIT 1
+                        )
+                          AND ordinal = 1
+                          AND title = '退款规则手册.md'
+                        """,
+                Integer.class,
+                sessionId
+        );
+        assertThat(topReferenceDocumentCount).isEqualTo(1);
+    }
+
     private JsonNode login(String username, String password) throws Exception {
         MvcResult response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

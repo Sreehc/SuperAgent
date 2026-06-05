@@ -164,4 +164,51 @@ class RagSupportServiceTest {
         assertThat(query.baseForceCitationEnabled()).isFalse();
         assertThat(query.forceCitationEnabled()).isTrue();
     }
+
+    @Test
+    void shouldBoostStructuredEvidenceWhenTitleAndSectionMatch() {
+        RagSupportService service = new RagSupportService(new SuperAgentProperties(), null);
+
+        List<RagEvidence> evidences = List.of(
+                new RagEvidence(
+                        "keyword",
+                        1L,
+                        10L,
+                        100L,
+                        "退款规则总览",
+                        1,
+                        "这里描述统一售后办理入口。",
+                        "退款规则",
+                        0.30d,
+                        Map.of(
+                                "channels", List.of("keyword"),
+                                "blockType", "heading_section",
+                                "headingPath", List.of("售后制度", "退款规则")
+                        )
+                ),
+                new RagEvidence(
+                        "keyword",
+                        1L,
+                        11L,
+                        101L,
+                        "售后办理说明",
+                        1,
+                        "这里描述统一售后办理入口。",
+                        "办理步骤",
+                        0.30d,
+                        Map.of("channels", List.of("keyword"))
+                )
+        );
+
+        RagSupportService.BudgetedEvidenceResult filtered = service.applyThresholdAndBudget("退款规则是什么", evidences, 0.35d, 2, 2, 1000, 1000);
+
+        assertThat(filtered.evidences()).hasSize(1);
+        assertThat(filtered.evidences().getFirst().chunkId()).isEqualTo(100L);
+        assertThat(filtered.evidences().getFirst().metadata())
+                .containsEntry("titleMatched", true)
+                .containsEntry("sectionMatched", true)
+                .containsEntry("headingMatched", true)
+                .containsEntry("structuredBlock", true);
+        assertThat(filtered.evidences().getFirst().score()).isGreaterThan(0.60d);
+    }
 }

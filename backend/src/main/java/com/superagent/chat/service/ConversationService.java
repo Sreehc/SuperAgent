@@ -650,6 +650,7 @@ public class ConversationService {
     private void persistFusedItems(long tenantId, long retrievalTraceId, List<RagEvidence> fusedResults, List<RagEvidence> selectedResults) {
         for (int index = 0; index < fusedResults.size(); index++) {
             RagEvidence result = fusedResults.get(index);
+            RagEvidence selected = findSelectedEvidence(selectedResults, result.chunkId());
             conversationRepository.createRetrievalTraceItem(
                     tenantId,
                     retrievalTraceId,
@@ -657,9 +658,14 @@ public class ConversationService {
                     result.chunkId(),
                     index + 1,
                     BigDecimal.valueOf(result.score()),
-                    BigDecimal.valueOf(result.score()),
+                    BigDecimal.valueOf(selected == null ? result.score() : selected.score()),
                     containsChunk(selectedResults, result.chunkId()),
-                    buildTraceMetadata(result.documentTitle(), result.sectionTitle(), result.channel(), result.metadata())
+                    buildTraceMetadata(
+                            result.documentTitle(),
+                            result.sectionTitle(),
+                            result.channel(),
+                            selected == null ? result.metadata() : mergeTraceMetadata(result.metadata(), selected.metadata())
+                    )
             );
         }
     }
@@ -676,6 +682,24 @@ public class ConversationService {
 
     private boolean containsChunk(List<RagEvidence> selectedResults, long chunkId) {
         return selectedResults.stream().anyMatch(evidence -> evidence.chunkId() == chunkId);
+    }
+
+    private RagEvidence findSelectedEvidence(List<RagEvidence> selectedResults, long chunkId) {
+        return selectedResults.stream()
+                .filter(evidence -> evidence.chunkId() == chunkId)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Map<String, Object> mergeTraceMetadata(Map<String, Object> baseMetadata, Map<String, Object> selectedMetadata) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (baseMetadata != null && !baseMetadata.isEmpty()) {
+            merged.putAll(baseMetadata);
+        }
+        if (selectedMetadata != null && !selectedMetadata.isEmpty()) {
+            merged.putAll(selectedMetadata);
+        }
+        return merged;
     }
 
     private Map<String, Object> buildTraceMetadata(

@@ -430,6 +430,10 @@ public class RagSupportService {
 
     private RagEvidence adjustRelevance(String query, RagEvidence evidence) {
         boolean lexicalMatched = hasMeaningfulLexicalMatch(query, evidence.content());
+        boolean titleMatched = hasMeaningfulLexicalMatch(query, evidence.documentTitle());
+        boolean sectionMatched = hasMeaningfulLexicalMatch(query, evidence.sectionTitle());
+        boolean headingMatched = hasHeadingPathMatch(query, evidence.metadata());
+        boolean structuredBlock = isStructuredBlock(evidence.metadata());
         @SuppressWarnings("unchecked")
         List<String> channels = (List<String>) evidence.metadata().getOrDefault("channels", List.of());
         boolean keywordMatched = channels.stream().anyMatch("keyword"::equalsIgnoreCase);
@@ -444,9 +448,25 @@ public class RagSupportService {
         if (neighborExpanded) {
             adjustedScore += 0.28d;
         }
+        if (titleMatched) {
+            adjustedScore += 0.14d;
+        }
+        if (sectionMatched) {
+            adjustedScore += 0.10d;
+        }
+        if (headingMatched) {
+            adjustedScore += 0.08d;
+        }
+        if (structuredBlock) {
+            adjustedScore += 0.04d;
+        }
         adjustedScore = Math.min(1.0d, adjustedScore);
         Map<String, Object> metadata = new LinkedHashMap<>(evidence.metadata());
         metadata.put("lexicalMatched", lexicalMatched);
+        metadata.put("titleMatched", titleMatched);
+        metadata.put("sectionMatched", sectionMatched);
+        metadata.put("headingMatched", headingMatched);
+        metadata.put("structuredBlock", structuredBlock);
         metadata.put("neighborExpanded", neighborExpanded);
         metadata.put("adjustedScore", adjustedScore);
         return new RagEvidence(
@@ -473,6 +493,30 @@ public class RagSupportService {
                 .filter(normalizedContent::contains)
                 .count();
         return matchedCount >= 1;
+    }
+
+    private boolean hasHeadingPathMatch(String query, Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return false;
+        }
+        Object headingPath = metadata.get("headingPath");
+        if (!(headingPath instanceof List<?> headingSegments) || headingSegments.isEmpty()) {
+            return false;
+        }
+        String joined = headingSegments.stream()
+                .map(String::valueOf)
+                .filter(segment -> !segment.isBlank())
+                .reduce((left, right) -> left + " " + right)
+                .orElse("");
+        return hasMeaningfulLexicalMatch(query, joined);
+    }
+
+    private boolean isStructuredBlock(Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return false;
+        }
+        String blockType = String.valueOf(metadata.getOrDefault("blockType", ""));
+        return !blockType.isBlank() && !"null".equalsIgnoreCase(blockType);
     }
 
     public List<String> extractKeywordTerms(String text) {

@@ -286,6 +286,81 @@ class TraceQueryRepositoryTest {
                 .containsEntry("category", "售后");
     }
 
+    @Test
+    void shouldExposeStructuredRankingMetadataInRetrievalTrace() throws Exception {
+        var login = objectMapper.readTree(mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("username", "admin", "password", "password123"))))
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long profileId = createChunkingProfile(token, tenantId, "md-structure", "Markdown Structure", "markdown_heading", false);
+
+        long knowledgeBaseId = objectMapper.readTree(mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/knowledge-bases")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("name", "结构 Trace Repo", "description", "desc", "visibility", "tenant"))))
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8)).path("data").path("id").asLong();
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/knowledge-bases/{knowledgeBaseId}", knowledgeBaseId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("status", "published"))))
+                .andReturn();
+
+        String sharedBody = """
+                # 办理说明
+                所有售后申请都通过统一入口提交，并由客服审核处理。
+
+                ## 处理规则
+                用户需根据页面指引提交材料，系统会自动分配对应工单。
+                """;
+        uploadAndProcessDocument(token, tenantId, knowledgeBaseId, "退款规则手册.md", sharedBody, profileId);
+        uploadAndProcessDocument(token, tenantId, knowledgeBaseId, "配送规则手册.md", sharedBody, profileId);
+
+        long sessionId = objectMapper.readTree(mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/conversations")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("title", "结构 Trace 对话", "memoryStrategy", "SLIDING_WINDOW", "knowledgeBaseId", knowledgeBaseId))))
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8)).path("data").path("id").asLong();
+
+        var streamResult = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "退款规则是什么？"))))
+                .andReturn();
+        long deadline = System.currentTimeMillis() + 5_000L;
+        String body;
+        do {
+            body = streamResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
+            if (body.contains("event:done")) {
+                break;
+            }
+            Thread.sleep(50L);
+        } while (System.currentTimeMillis() < deadline);
+        long exchangeId = Long.parseLong(body.substring(body.indexOf("\"exchangeId\":") + 13, body.indexOf(",", body.indexOf("\"exchangeId\":") + 13)).trim());
+
+        var retrievals = traceQueryRepository.listRetrievals(tenantId, exchangeId, "rrf", 1, 20);
+        assertThat(retrievals).hasSize(1);
+        assertThat(retrievals.getFirst().items()).isNotEmpty();
+        assertThat(retrievals.getFirst().items().getFirst().metadata())
+                .containsEntry("documentTitle", "退款规则手册.md")
+                .containsEntry("titleMatched", true)
+                .containsEntry("sectionMatched", true)
+                .containsEntry("headingMatched", true)
+                .containsEntry("structuredBlock", true);
+    }
+
     private long createKnowledgeDomain(String token, long tenantId, String code, String name) throws Exception {
         MvcResult response = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/admin/knowledge-domains")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
@@ -318,5 +393,25 @@ class TraceQueryRepositoryTest {
                 .andReturn();
         return objectMapper.readTree(response.getResponse().getContentAsString(StandardCharsets.UTF_8))
                 .path("data").path("id").asLong();
+    }
+
+    private void uploadAndProcessDocument(String token, long tenantId, long knowledgeBaseId, String fileName, String content, long chunkingProfileId) throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", fileName, "text/markdown", content.getBytes(StandardCharsets.UTF_8));
+        var uploaded = objectMapper.readTree(mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                        .file(file)
+                        .param("title", fileName)
+                        .param("chunkingProfileId", String.valueOf(chunkingProfileId))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        documentProcessingService.process(new DocumentTaskMessage(
+                tenantId,
+                uploaded.path("data").path("id").asLong(),
+                uploaded.path("data").path("taskId").asLong(),
+                "test"
+        ));
     }
 }

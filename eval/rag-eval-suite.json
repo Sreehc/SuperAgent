@@ -76,6 +76,13 @@
       "tags": ["retrieval", "neighbor-expansion", "trace-fields"]
     },
     {
+      "caseKey": "rag-structured-ranking",
+      "description": "Structured document signals should influence ranking when title and section match the question.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldPreferStructuredDocumentWhenQuestionMatchesTitleAndSection test",
+      "tags": ["retrieval", "grounding", "trace-fields", "guardrails"]
+    },
+    {
       "caseKey": "rag-high-risk-grounding",
       "description": "High-risk questions should trigger stricter evidence and grounded fallback behavior.",
       "cwd": "backend",

@@ -199,6 +199,71 @@ class RetrievalIntegrationTest {
         assertThat(firstItem.path("metadata").path("tags").toString()).contains("refund");
     }
 
+    @Test
+    void shouldRetrieveByDocumentTitleAndSectionTitleWhenContentIsShared() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        LoginSession member = login("member", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "结构检索知识库", "published");
+        long markdownProfileId = createChunkingProfile(owner, "md-structure", "Markdown Structure", "markdown_heading", false);
+        String sharedBody = """
+                # 办理说明
+                所有售后申请都通过统一入口提交，并由客服审核处理。
+
+                ## 处理规则
+                用户需根据页面指引提交材料，系统会自动分配对应工单。
+                """;
+
+        uploadAndProcessDocument(
+                owner,
+                knowledgeBaseId,
+                "refund-structure.md",
+                "退款规则手册",
+                sharedBody,
+                null,
+                List.of(),
+                null,
+                markdownProfileId
+        );
+        uploadAndProcessDocument(
+                owner,
+                knowledgeBaseId,
+                "shipping-structure.md",
+                "配送规则手册",
+                sharedBody,
+                null,
+                List.of(),
+                null,
+                markdownProfileId
+        );
+
+        JsonNode titleRetrieval = objectMapper.readTree(mockMvc.perform(get("/api/v1/retrievals")
+                        .param("query", "退款规则")
+                        .param("knowledgeBaseId", String.valueOf(knowledgeBaseId))
+                        .param("topK", "5")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + member.accessToken())
+                        .header("X-Tenant-Id", member.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(titleRetrieval.path("data").path("items")).isNotEmpty();
+        assertThat(titleRetrieval.path("data").path("items").get(0).path("documentTitle").asText()).isEqualTo("退款规则手册");
+
+        JsonNode sectionRetrieval = objectMapper.readTree(mockMvc.perform(get("/api/v1/retrievals")
+                        .param("query", "处理规则")
+                        .param("knowledgeBaseId", String.valueOf(knowledgeBaseId))
+                        .param("topK", "5")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + member.accessToken())
+                        .header("X-Tenant-Id", member.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(sectionRetrieval.path("data").path("items")).isNotEmpty();
+        assertThat(sectionRetrieval.path("data").path("items").get(0).path("sectionTitle").asText()).isEqualTo("处理规则");
+        assertThat(sectionRetrieval.path("data").path("items").get(0).path("metadata").path("blockType").asText()).isEqualTo("heading_section");
+    }
+
     private long uploadAndProcessDocument(
             LoginSession owner,
             long knowledgeBaseId,
