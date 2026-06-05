@@ -291,9 +291,18 @@ class KnowledgeIntegrationTest {
         assertThat(processedDetail.path("data").path("activeVersionNo").asInt()).isEqualTo(1);
         assertThat(chunks.path("data").path("total").asInt()).isGreaterThan(0);
         assertThat(chunks.path("data").path("items").get(0).path("content").asText()).contains("说明");
+        assertThat(chunks.path("data").path("items").get(0).path("sectionTitle").asText()).isEqualTo("第一章");
         assertThat(chunks.path("data").path("items").get(0).path("metadata").path("strategy").asText()).isEqualTo("markdown_heading");
+        assertThat(chunks.path("data").path("items").get(0).path("metadata").path("blockType").asText()).isEqualTo("heading_section");
+        assertThat(chunks.path("data").path("items").get(0).path("metadata").path("headingLevel").asInt()).isEqualTo(1);
+        assertThat(chunks.path("data").path("items").get(0).path("metadata").path("headingPath").get(0).asText()).isEqualTo("第一章");
         assertThat(chunks.path("data").path("items").get(0).path("metadata").path("chunkingProfileId").asLong()).isEqualTo(markdownProfileId);
         assertThat(chunks.path("data").path("items").get(0).path("metadata").path("versionNo").asInt()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT section_title FROM document_chunk WHERE document_id = ? AND chunk_no = 1",
+                String.class,
+                documentId
+        )).isEqualTo("第一章");
 
         JsonNode tasks = objectMapper.readTree(mockMvc.perform(get("/api/v1/documents/{documentId}/tasks", documentId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
@@ -412,6 +421,14 @@ class KnowledgeIntegrationTest {
         assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("metadata").path("strategy").asText()).isEqualTo("slide_section");
         assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("metadata").path("versionNo").asInt()).isEqualTo(2);
         assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("metadata").path("chunkingProfileId").asLong()).isEqualTo(slideProfileId);
+        assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("sectionTitle").asText()).isEqualTo("第一章");
+        assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("metadata").path("blockType").asText()).isEqualTo("slide_section");
+        assertThat(chunksAfterReprocess.path("data").path("items").get(0).path("metadata").path("headingLevel").asInt()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT section_title FROM document_chunk WHERE document_id = ? AND chunk_no = 1",
+                String.class,
+                documentId
+        )).isEqualTo("第一章");
         JsonNode rebuiltGraph = objectMapper.readTree(mockMvc.perform(post("/api/v1/documents/{documentId}/graph/rebuild", documentId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
                         .header("X-Tenant-Id", owner.tenantId()))

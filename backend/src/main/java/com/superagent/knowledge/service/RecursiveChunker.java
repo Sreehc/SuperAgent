@@ -5,6 +5,7 @@ import com.superagent.common.exception.AppException;
 import com.superagent.infra.config.SuperAgentProperties;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
@@ -36,7 +37,7 @@ public class RecursiveChunker {
                 continue;
             }
             if (candidate.length() <= chunkSize) {
-                chunks.add(new ChunkCandidate(chunks.size() + 1, candidate));
+                chunks.add(new ChunkCandidate(chunks.size() + 1, null, candidate, Map.of()));
                 carry = tail(candidate, overlap);
             } else {
                 int start = 0;
@@ -44,7 +45,7 @@ public class RecursiveChunker {
                     int end = Math.min(start + chunkSize, candidate.length());
                     String sliced = candidate.substring(start, end).trim();
                     if (!sliced.isBlank()) {
-                        chunks.add(new ChunkCandidate(chunks.size() + 1, sliced));
+                        chunks.add(new ChunkCandidate(chunks.size() + 1, null, sliced, Map.of()));
                     }
                     if (end >= candidate.length()) {
                         carry = tail(candidate.substring(Math.max(0, end - overlap), end), overlap);
@@ -112,6 +113,9 @@ public class RecursiveChunker {
         return content.substring(content.length() - overlap);
     }
 
-    public record ChunkCandidate(int chunkNo, String content) {
+    public record ChunkCandidate(int chunkNo, String sectionTitle, String content, Map<String, Object> metadata) {
+        public ChunkCandidate(int chunkNo, String content) {
+            this(chunkNo, null, content, Map.of());
+        }
     }
 }

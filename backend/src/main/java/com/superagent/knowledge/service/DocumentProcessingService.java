@@ -17,15 +17,23 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class DocumentProcessingService {
+
+    private static final Pattern MARKDOWN_HEADING_PATTERN = Pattern.compile("^(#{1,6})\\s+(.+?)\\s*$");
+    private static final Pattern SLIDE_MARKER_PATTERN = Pattern.compile("^(?:slide|page)\\s*(\\d+)\\s*[:：-]?\\s*(.*)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CHINESE_PAGE_PATTERN = Pattern.compile("^第\\s*(\\d+)\\s*[页章节]\\s*[:：-]?\\s*(.*)$");
+    private static final Pattern STRUCTURED_SPLIT_PATTERN = Pattern.compile("(?im)(?=^(slide\\s*\\d+|page\\s*\\d+|第\\s*\\d+\\s*[页章节]|#{1,6}\\s))");
 
     private final KnowledgeRepository knowledgeRepository;
     private final ObjectStorageService objectStorageService;
@@ -180,12 +188,12 @@ public class DocumentProcessingService {
                         .map(candidate -> new KnowledgeRepository.ChunkInsert(
                                 null,
                                 candidate.chunkNo(),
-                                null,
+                                candidate.sectionTitle(),
                                 candidate.content(),
                                 hashContent(candidate.content()),
                                 candidate.content().length(),
                                 null,
-                                buildChunkMetadata(chunkingPlan.strategy(), version, chunkTaskId)
+                                buildChunkMetadata(chunkingPlan.strategy(), version, chunkTaskId, candidate.metadata())
                         ))
                         .toList();
                 knowledgeRepository.replaceDocumentChunks(tenantId, document.id(), inserts);
@@ -375,15 +383,30 @@ public class DocumentProcessingService {
         if (normalized.isBlank()) {
             return List.of();
         }
-        String[] blocks = normalized.split("(?m)(?=^#{1,6}\\s)");
-        List<RecursiveChunker.ChunkCandidate> chunks = new java.util.ArrayList<>();
-        for (String block : blocks) {
-            String candidate = block.trim();
-            if (candidate.isBlank()) {
-                continue;
+        List<RecursiveChunker.ChunkCandidate> chunks = new ArrayList<>();
+        List<String> headingStack = new ArrayList<>();
+        List<String> currentLines = new ArrayList<>();
+        String currentSectionTitle = null;
+        Map<String, Object> currentMetadata = Map.of();
+        for (String line : normalized.split("\\n")) {
+            Matcher matcher = MARKDOWN_HEADING_PATTERN.matcher(line.trim());
+            if (matcher.matches()) {
+                appendStructuredChunk(chunks, currentSectionTitle, currentLines, currentMetadata);
+                int level = matcher.group(1).length();
+                String title = matcher.group(2).trim();
+                while (headingStack.size() >= level) {
+                    headingStack.remove(headingStack.size() - 1);
+                }
+                headingStack.add(title);
+                currentSectionTitle = title;
+                currentMetadata = new LinkedHashMap<>();
+                currentMetadata.put("blockType", "heading_section");
+                currentMetadata.put("headingLevel", level);
+                currentMetadata.put("headingPath", List.copyOf(headingStack));
             }
-            chunks.add(new RecursiveChunker.ChunkCandidate(chunks.size() + 1, candidate));
+            currentLines.add(line);
         }
+        appendStructuredChunk(chunks, currentSectionTitle, currentLines, currentMetadata);
         if (chunks.isEmpty()) {
             return recursiveChunker.chunk(content);
         }
@@ -395,19 +418,74 @@ public class DocumentProcessingService {
         if (normalized.isBlank()) {
             return List.of();
         }
-        String[] blocks = normalized.split("(?im)(?=^(slide\\s*\\d+|page\\s*\\d+|第\\s*\\d+\\s*[页章节]|#{1,6}\\s))");
+        String[] blocks = STRUCTURED_SPLIT_PATTERN.split(normalized);
         List<RecursiveChunker.ChunkCandidate> chunks = new java.util.ArrayList<>();
         for (String block : blocks) {
             String candidate = block.trim();
             if (candidate.isBlank()) {
                 continue;
             }
-            chunks.add(new RecursiveChunker.ChunkCandidate(chunks.size() + 1, candidate));
+            chunks.add(buildSlideChunkCandidate(chunks.size() + 1, candidate));
         }
         if (chunks.isEmpty()) {
             return recursiveChunker.chunk(content);
         }
         return chunks;
+    }
+
+    private RecursiveChunker.ChunkCandidate buildSlideChunkCandidate(int chunkNo, String candidate) {
+        List<String> lines = candidate.lines()
+                .map(String::trim)
+                .filter(line -> !line.isBlank())
+                .toList();
+        String firstLine = lines.isEmpty() ? candidate : lines.get(0);
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("blockType", "slide_section");
+        Matcher slideMatcher = SLIDE_MARKER_PATTERN.matcher(firstLine);
+        Matcher chinesePageMatcher = CHINESE_PAGE_PATTERN.matcher(firstLine);
+        String sectionTitle = firstLine;
+        if (slideMatcher.matches()) {
+            metadata.put("slideNo", Integer.parseInt(slideMatcher.group(1)));
+            String suffix = slideMatcher.group(2) == null ? "" : slideMatcher.group(2).trim();
+            if (!suffix.isBlank()) {
+                sectionTitle = suffix;
+            }
+        } else if (chinesePageMatcher.matches()) {
+            metadata.put("pageNo", Integer.parseInt(chinesePageMatcher.group(1)));
+            String suffix = chinesePageMatcher.group(2) == null ? "" : chinesePageMatcher.group(2).trim();
+            if (!suffix.isBlank()) {
+                sectionTitle = suffix;
+            }
+        } else {
+            Matcher headingMatcher = MARKDOWN_HEADING_PATTERN.matcher(firstLine);
+            if (headingMatcher.matches()) {
+                sectionTitle = headingMatcher.group(2).trim();
+                metadata.put("headingLevel", headingMatcher.group(1).length());
+            }
+        }
+        return new RecursiveChunker.ChunkCandidate(chunkNo, sectionTitle, candidate, metadata);
+    }
+
+    private void appendStructuredChunk(
+            List<RecursiveChunker.ChunkCandidate> chunks,
+            String sectionTitle,
+            List<String> currentLines,
+            Map<String, Object> metadata
+    ) {
+        if (currentLines.isEmpty()) {
+            return;
+        }
+        String candidate = String.join("\n", currentLines).trim();
+        currentLines.clear();
+        if (candidate.isBlank()) {
+            return;
+        }
+        chunks.add(new RecursiveChunker.ChunkCandidate(
+                chunks.size() + 1,
+                sectionTitle,
+                candidate,
+                metadata == null ? Map.of() : Map.copyOf(metadata)
+        ));
     }
 
     private Map<String, Object> mergeVersionMetadata(Map<String, Object> base, Map<String, Object> patch) {
@@ -425,13 +503,25 @@ public class DocumentProcessingService {
         return merged;
     }
 
-    private Map<String, Object> buildChunkMetadata(String strategy, KnowledgeDocumentVersion version, long chunkTaskId) {
+    private Map<String, Object> buildChunkMetadata(
+            String strategy,
+            KnowledgeDocumentVersion version,
+            long chunkTaskId,
+            Map<String, Object> candidateMetadata
+    ) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("strategy", strategy);
         metadata.put("versionNo", version.versionNo());
         metadata.put("sourceTaskId", chunkTaskId);
         if (version.chunkingProfileId() != null) {
             metadata.put("chunkingProfileId", version.chunkingProfileId());
+        }
+        if (candidateMetadata != null) {
+            candidateMetadata.forEach((key, value) -> {
+                if (value != null) {
+                    metadata.put(key, value);
+                }
+            });
         }
         return metadata;
     }
