@@ -506,6 +506,16 @@ public class ConversationService {
         conversationRepository.completeTraceStage(stageId, tenantId, status, outputSummary, errorMessage);
     }
 
+    private String normalizeTraceStageStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "failed";
+        }
+        return switch (status) {
+            case "pending", "running", "success", "failed", "skipped" -> status;
+            default -> "failed";
+        };
+    }
+
     private void persistRetrievalTrace(
             long exchangeId,
             long tenantId,
@@ -609,14 +619,15 @@ public class ConversationService {
                 rerankStep.errorMessage(),
                 buildRerankMetadata(diagnostics)
         );
+        String traceStageStatus = normalizeTraceStageStatus(rerankStep.status());
         completeTraceStage(
                 stage.id(),
                 tenantId,
-                rerankStep.status(),
+                traceStageStatus,
                 rerankStep.enabled() ? "reranked=" + rerankStep.outputCount() : rerankStep.skippedReason(),
                 rerankStep.errorMessage()
         );
-        sendEvent(emitter, "trace_stage", new TraceStageEvent("rerank", rerankStep.status(), 80L));
+        sendEvent(emitter, "trace_stage", new TraceStageEvent("rerank", traceStageStatus, 80L));
     }
 
     private void persistRetrievalResultItems(long tenantId, long retrievalTraceId, List<RetrievalResult> results, List<RagEvidence> selectedResults) {

@@ -11,14 +11,19 @@ public class TestRerankClientConfiguration {
     @Bean
     @Primary
     public RerankClient testRerankClient() {
-        return (query, evidences) -> new RerankClient.RerankResult(
-                evidences,
-                "test-rerank-provider",
-                "test-rerank-model",
-                "success",
-                null,
-                null,
-                5
-        );
+        return (query, evidences) -> {
+            if (query != null && query.contains("rerank异常")) {
+                throw new IllegalStateException("simulated rerank failure");
+            }
+            return new RerankClient.RerankResult(
+                    evidences,
+                    "test-rerank-provider",
+                    "test-rerank-model",
+                    "success",
+                    null,
+                    null,
+                    5
+            );
+        };
     }
 }

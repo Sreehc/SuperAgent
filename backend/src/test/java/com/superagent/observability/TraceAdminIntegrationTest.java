@@ -263,6 +263,60 @@ class TraceAdminIntegrationTest {
     }
 
     @Test
+    void shouldFallbackToFilteredEvidenceWhenRerankThrowsException() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "rerankEnabled", true,
+                                "noEvidenceMinResults", 1,
+                                "forceCitationEnabled", true
+                        ))))
+                .andExpect(status().isOk());
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "Rerank Error Trace 知识库");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "trace-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
+        long sessionId = createConversation(token, tenantId, "Rerank Error Trace 对话", knowledgeBaseId);
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "rerank异常退款规则是什么？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("event:reference");
+        int exchangeIdStart = body.indexOf("\"exchangeId\":") + 13;
+        long exchangeId = Long.parseLong(body.substring(exchangeIdStart, body.indexOf(",", exchangeIdStart)).trim());
+        String assistantContent = jdbcTemplate.queryForObject(
+                "SELECT content FROM conversation_message WHERE role = 'assistant' ORDER BY id DESC LIMIT 1",
+                String.class
+        );
+        assertThat(assistantContent).contains("退款规则包括在 7 日内提交申请并提供订单截图");
+
+        JsonNode detailJson = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/traces/{exchangeId}", exchangeId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+
+        assertThat(detailJson.path("data").path("modelCalls").get(0).path("provider").asText()).isEqualTo("test-provider");
+        assertThat(detailJson.path("data").path("reranks").get(0).path("status").asText()).isEqualTo("error");
+        assertThat(detailJson.path("data").path("reranks").get(0).path("metadata").path("fallbackReason").asText())
+                .isEqualTo("rerank_error_used_filtered");
+        assertThat(detailJson.path("data").path("reranks").get(0).path("errorMessage").asText())
+                .contains("simulated rerank failure");
+    }
+
+    @Test
     void shouldForbidMemberFromAccessingTraceAdminApis() throws Exception {
         JsonNode login = login("member", "password123");
         String token = login.path("data").path("accessToken").asText();

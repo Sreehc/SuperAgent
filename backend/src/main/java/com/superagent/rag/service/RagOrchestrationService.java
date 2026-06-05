@@ -136,22 +136,39 @@ public class RagOrchestrationService {
         RagResponseDiagnostics.RerankStep rerankStep;
         String fallbackReason = null;
         if (rootQuery.rerankEnabled()) {
-            RerankClient.RerankResult rerankResult = rerankClient.rerank(rewrittenQuestion, filtered);
-            reranked = rerankResult.status().equals("success") ? rerankResult.evidences() : filtered;
-            if (!"success".equals(rerankResult.status())) {
-                fallbackReason = "rerank_" + rerankResult.status() + "_used_filtered";
+            long rerankStartedAt = System.nanoTime();
+            try {
+                RerankClient.RerankResult rerankResult = rerankClient.rerank(rewrittenQuestion, filtered);
+                reranked = rerankResult.status().equals("success") ? rerankResult.evidences() : filtered;
+                if (!"success".equals(rerankResult.status())) {
+                    fallbackReason = "rerank_" + rerankResult.status() + "_used_filtered";
+                }
+                rerankStep = new RagResponseDiagnostics.RerankStep(
+                        true,
+                        rerankResult.provider(),
+                        rerankResult.model(),
+                        rerankResult.status(),
+                        rerankResult.skippedReason(),
+                        rerankResult.errorMessage(),
+                        rerankResult.latencyMs(),
+                        filtered.size(),
+                        reranked.size()
+                );
+            } catch (Exception exception) {
+                reranked = filtered;
+                fallbackReason = "rerank_error_used_filtered";
+                rerankStep = new RagResponseDiagnostics.RerankStep(
+                        true,
+                        null,
+                        null,
+                        "error",
+                        null,
+                        exception.getMessage(),
+                        elapsedMillis(rerankStartedAt),
+                        filtered.size(),
+                        filtered.size()
+                );
             }
-            rerankStep = new RagResponseDiagnostics.RerankStep(
-                    true,
-                    rerankResult.provider(),
-                    rerankResult.model(),
-                    rerankResult.status(),
-                    rerankResult.skippedReason(),
-                    rerankResult.errorMessage(),
-                    rerankResult.latencyMs(),
-                    filtered.size(),
-                    reranked.size()
-            );
         } else {
             rerankStep = new RagResponseDiagnostics.RerankStep(
                     false,
