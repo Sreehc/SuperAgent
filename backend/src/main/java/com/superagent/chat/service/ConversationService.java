@@ -737,10 +737,16 @@ public class ConversationService {
         filters.put("perQuestionEvidenceCharLimit", query.perQuestionEvidenceCharLimit());
         filters.put("totalEvidenceCharLimit", query.totalEvidenceCharLimit());
         filters.put("minRelevanceScore", query.minRelevanceScore());
+        filters.put("baseAnswerConfidenceThreshold", query.baseAnswerConfidenceThreshold());
         filters.put("answerConfidenceThreshold", query.answerConfidenceThreshold());
         filters.put("rerankEnabled", query.rerankEnabled());
+        filters.put("baseNoEvidenceMinResults", query.baseNoEvidenceMinResults());
         filters.put("noEvidenceMinResults", query.noEvidenceMinResults());
+        filters.put("baseForceCitationEnabled", query.baseForceCitationEnabled());
         filters.put("forceCitationEnabled", query.forceCitationEnabled());
+        filters.put("highRiskGuardApplied", query.highRiskGuardApplied());
+        filters.put("questionRiskLevel", query.questionRiskLevel());
+        filters.put("questionRiskReasons", query.questionRiskReasons());
         filters.put("queryRewriteApplied", !query.originalQuestion().equals(query.rewrittenQuestion()));
         filters.put("hybridRetrievalEnabled", true);
         if (step != null) {
@@ -783,6 +789,12 @@ public class ConversationService {
             metadata.put("chunkingProfileId", firstQuery.chunkingProfileId());
             metadata.put("category", firstQuery.category());
             metadata.put("tags", firstQuery.tags());
+            metadata.put("baseAnswerConfidenceThreshold", firstQuery.baseAnswerConfidenceThreshold());
+            metadata.put("baseNoEvidenceMinResults", firstQuery.baseNoEvidenceMinResults());
+            metadata.put("baseForceCitationEnabled", firstQuery.baseForceCitationEnabled());
+            metadata.put("highRiskGuardApplied", firstQuery.highRiskGuardApplied());
+            metadata.put("questionRiskLevel", firstQuery.questionRiskLevel());
+            metadata.put("questionRiskReasons", firstQuery.questionRiskReasons());
         }
         return metadata;
     }

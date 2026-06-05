@@ -263,6 +263,61 @@ class TraceAdminIntegrationTest {
     }
 
     @Test
+    void shouldExposeHighRiskGuardMetadataWhenQuestionNeedsStricterGrounding() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "rerankEnabled", true,
+                                "noEvidenceMinResults", 1,
+                                "answerConfidenceThreshold", 0.55d,
+                                "forceCitationEnabled", false
+                        ))))
+                .andExpect(status().isOk());
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "High Risk Trace 知识库");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "trace-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
+        long sessionId = createConversation(token, tenantId, "High Risk Trace 对话", knowledgeBaseId);
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "这个退款规则在法律上一定合法吗？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        int exchangeIdStart = body.indexOf("\"exchangeId\":") + 13;
+        long exchangeId = Long.parseLong(body.substring(exchangeIdStart, body.indexOf(",", exchangeIdStart)).trim());
+
+        JsonNode detailJson = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/traces/{exchangeId}", exchangeId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+
+        assertThat(detailJson.path("data").path("modelCalls").get(0).path("provider").asText()).isEqualTo("system");
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("highRiskGuardApplied").asBoolean()).isTrue();
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("questionRiskLevel").asText()).isEqualTo("high");
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("questionRiskReasons").toString()).contains("legal");
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("baseNoEvidenceMinResults").asInt()).isEqualTo(1);
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("noEvidenceMinResults").asInt()).isEqualTo(2);
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("baseForceCitationEnabled").asBoolean()).isFalse();
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("forceCitationEnabled").asBoolean()).isTrue();
+        assertThat(detailJson.path("data").path("reranks").get(0).path("metadata").path("highRiskGuardApplied").asBoolean()).isTrue();
+        assertThat(detailJson.path("data").path("reranks").get(0).path("metadata").path("questionRiskLevel").asText()).isEqualTo("high");
+        assertThat(detailJson.path("data").path("reranks").get(0).path("metadata").path("fallbackReason").asText())
+                .isEqualTo("insufficient_evidence_results");
+    }
+
+    @Test
     void shouldFallbackToFilteredEvidenceWhenRerankThrowsException() throws Exception {
         JsonNode login = login("admin", "password123");
         String token = login.path("data").path("accessToken").asText();

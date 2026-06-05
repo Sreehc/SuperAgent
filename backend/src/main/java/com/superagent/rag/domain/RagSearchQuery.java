@@ -27,11 +27,17 @@ public record RagSearchQuery(
         int perQuestionEvidenceCharLimit,
         int totalEvidenceCharLimit,
         double minRelevanceScore,
+        double baseAnswerConfidenceThreshold,
         double answerConfidenceThreshold,
         boolean queryResultCacheEnabled,
         long queryResultCacheTtlSeconds,
+        int baseNoEvidenceMinResults,
         boolean rerankEnabled,
         int noEvidenceMinResults,
-        boolean forceCitationEnabled
+        boolean baseForceCitationEnabled,
+        boolean forceCitationEnabled,
+        boolean highRiskGuardApplied,
+        String questionRiskLevel,
+        List<String> questionRiskReasons
 ) {
 }

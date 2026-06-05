@@ -19,6 +19,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class RagSupportService {
 
+    private static final List<RiskKeywordGroup> HIGH_RISK_KEYWORD_GROUPS = List.of(
+            new RiskKeywordGroup("legal", List.of("法律", "合法", "违法", "合规", "处罚", "合同", "起诉", "诉讼", "lawful", "legal", "illegal", "compliance")),
+            new RiskKeywordGroup("medical", List.of("医疗", "诊断", "用药", "药物", "症状", "治疗", "手术", "medical", "diagnosis", "treatment", "medication")),
+            new RiskKeywordGroup("financial", List.of("投资", "理财", "收益", "回报", "税务", "报税", "股票", "基金", "financial", "investment", "tax", "stock")),
+            new RiskKeywordGroup("security", List.of("漏洞", "密钥", "密码", "隐私", "泄露", "权限", "攻击", "security", "privacy", "secret", "password"))
+    );
+
     private final SuperAgentProperties properties;
     private final RuntimeSettingsService runtimeSettingsService;
 
@@ -121,6 +128,7 @@ public class RagSupportService {
             double queryUnderstandingConfidence,
             EffectiveRagSettings settings
     ) {
+        QuestionRiskAssessment riskAssessment = assessQuestionRisk(originalQuestion, rewrittenQuestion, subQuestion, settings);
         return new RagSearchQuery(
                 originalQuestion,
                 rewrittenQuestion,
@@ -147,11 +155,45 @@ public class RagSupportService {
                 settings.totalEvidenceCharLimit(),
                 settings.minRelevanceScore(),
                 settings.answerConfidenceThreshold(),
+                riskAssessment.answerConfidenceThreshold(),
                 settings.queryResultCacheEnabled(),
                 settings.queryResultCacheTtlSeconds(),
-                settings.rerankEnabled(),
                 settings.noEvidenceMinResults(),
-                settings.forceCitationEnabled()
+                settings.rerankEnabled(),
+                riskAssessment.noEvidenceMinResults(),
+                settings.forceCitationEnabled(),
+                riskAssessment.forceCitationEnabled(),
+                riskAssessment.highRisk(),
+                riskAssessment.level(),
+                riskAssessment.reasons()
+        );
+    }
+
+    private QuestionRiskAssessment assessQuestionRisk(
+            String originalQuestion,
+            String rewrittenQuestion,
+            String subQuestion,
+            EffectiveRagSettings settings
+    ) {
+        String normalized = String.join("\n",
+                normalizeNullable(originalQuestion) == null ? "" : originalQuestion.trim(),
+                normalizeNullable(rewrittenQuestion) == null ? "" : rewrittenQuestion.trim(),
+                normalizeNullable(subQuestion) == null ? "" : subQuestion.trim()
+        ).toLowerCase(Locale.ROOT);
+        LinkedHashSet<String> reasons = new LinkedHashSet<>();
+        for (RiskKeywordGroup group : HIGH_RISK_KEYWORD_GROUPS) {
+            if (group.matches(normalized)) {
+                reasons.add(group.reason());
+            }
+        }
+        boolean highRisk = !reasons.isEmpty();
+        return new QuestionRiskAssessment(
+                highRisk ? "high" : "normal",
+                List.copyOf(reasons),
+                highRisk ? Math.max(settings.answerConfidenceThreshold(), 0.72d) : settings.answerConfidenceThreshold(),
+                highRisk ? Math.max(settings.noEvidenceMinResults(), 2) : settings.noEvidenceMinResults(),
+                highRisk || settings.forceCitationEnabled(),
+                highRisk
         );
     }
 
@@ -521,5 +563,27 @@ public class RagSupportService {
             List<RagEvidence> evidences,
             int trimmedCount
     ) {
+    }
+
+    private record QuestionRiskAssessment(
+            String level,
+            List<String> reasons,
+            double answerConfidenceThreshold,
+            int noEvidenceMinResults,
+            boolean forceCitationEnabled,
+            boolean highRisk
+    ) {
+    }
+
+    private record RiskKeywordGroup(
+            String reason,
+            List<String> keywords
+    ) {
+        private boolean matches(String normalizedText) {
+            if (normalizedText == null || normalizedText.isBlank()) {
+                return false;
+            }
+            return keywords.stream().anyMatch(normalizedText::contains);
+        }
     }
 }

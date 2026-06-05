@@ -453,6 +453,39 @@ class ConversationIntegrationTest {
     }
 
     @Test
+    void shouldFallbackForHighRiskQuestionWhenEvidenceIsTooThin() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "高风险知识库", "published");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "refund-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "noEvidenceMinResults", 1,
+                                "answerConfidenceThreshold", 0.55d,
+                                "forceCitationEnabled", false
+                        ))))
+                .andExpect(status().isOk());
+        long sessionId = createConversation(token, tenantId, "高风险测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "这个退款规则在法律上一定合法吗？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("未检索到足够证据");
+        assertThat(body).doesNotContain("event:reference");
+    }
+
+    @Test
     void shouldApplyMetadataFiltersToRagConversationFlow() throws Exception {
         JsonNode login = login("admin", "password123");
         String token = login.path("data").path("accessToken").asText();

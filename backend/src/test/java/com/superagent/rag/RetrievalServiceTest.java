@@ -122,11 +122,17 @@ class RetrievalServiceTest {
                 8400,
                 0.35d,
                 0.55d,
+                0.55d,
                 false,
                 30L,
+                1,
                 false,
                 1,
-                true
+                true,
+                true,
+                false,
+                "normal",
+                List.of()
         );
         List<RagEvidence> base = List.of(
                 new RagEvidence(
@@ -198,11 +204,17 @@ class RetrievalServiceTest {
                 8400,
                 0.35d,
                 0.55d,
+                0.55d,
                 true,
                 30L,
+                1,
                 false,
                 1,
-                true
+                true,
+                true,
+                false,
+                "normal",
+                List.of()
         );
         List<RetrievalResult> repositoryResults = List.of(
                 new RetrievalResult(

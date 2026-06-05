@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.rag.domain.RagEvidence;
+import com.superagent.rag.domain.RagSearchQuery;
 import com.superagent.rag.domain.RetrievalResult;
 import com.superagent.rag.service.RagSupportService;
 import java.util.List;
@@ -89,5 +90,57 @@ class RagSupportServiceTest {
         RagSupportService.BudgetedEvidenceResult totalBudgeted = service.applyTotalBudget(evidences, 2, 2, 12);
         assertThat(totalBudgeted.evidences()).singleElement().extracting(RagEvidence::chunkId).isEqualTo(100L);
         assertThat(totalBudgeted.charBudgetTrimmedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRaiseEvidenceThresholdForHighRiskQuestion() {
+        RagSupportService service = new RagSupportService(new SuperAgentProperties(), null);
+
+        RagSearchQuery query = service.resolveSearchQuery(
+                "这个退款规则在法律上一定合法吗？",
+                "这个退款规则在法律上一定合法吗？",
+                "这个退款规则在法律上一定合法吗？",
+                1,
+                1L,
+                null,
+                "single_question",
+                "provider_unavailable",
+                0.5d,
+                new RagSupportService.EffectiveRagSettings(
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        20,
+                        20,
+                        20,
+                        60,
+                        false,
+                        1,
+                        3,
+                        8,
+                        2800,
+                        8400,
+                        0.35d,
+                        0.55d,
+                        false,
+                        30L,
+                        4,
+                        1,
+                        false
+                )
+        );
+
+        assertThat(query.highRiskGuardApplied()).isTrue();
+        assertThat(query.questionRiskLevel()).isEqualTo("high");
+        assertThat(query.questionRiskReasons()).contains("legal");
+        assertThat(query.baseAnswerConfidenceThreshold()).isEqualTo(0.55d);
+        assertThat(query.answerConfidenceThreshold()).isEqualTo(0.72d);
+        assertThat(query.baseNoEvidenceMinResults()).isEqualTo(1);
+        assertThat(query.noEvidenceMinResults()).isEqualTo(2);
+        assertThat(query.baseForceCitationEnabled()).isFalse();
+        assertThat(query.forceCitationEnabled()).isTrue();
     }
 }

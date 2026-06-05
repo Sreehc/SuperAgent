@@ -46,11 +46,17 @@ class RagRuntimeMetricsTest {
                 6000,
                 0.35d,
                 0.55d,
+                0.55d,
                 false,
                 30L,
+                1,
                 true,
                 1,
-                true
+                true,
+                true,
+                false,
+                "normal",
+                List.of()
         );
         RagResponseDiagnostics.RetrievalStep step = new RagResponseDiagnostics.RetrievalStep(
                 query,
