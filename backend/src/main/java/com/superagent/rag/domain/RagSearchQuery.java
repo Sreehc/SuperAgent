@@ -22,6 +22,8 @@ public record RagSearchQuery(
         int totalEvidenceCharLimit,
         double minRelevanceScore,
         double answerConfidenceThreshold,
+        boolean queryResultCacheEnabled,
+        long queryResultCacheTtlSeconds,
         boolean rerankEnabled,
         int noEvidenceMinResults,
         boolean forceCitationEnabled

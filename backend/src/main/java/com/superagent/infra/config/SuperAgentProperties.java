@@ -569,6 +569,12 @@ public class SuperAgentProperties {
         @Min(1)
         private int maxSubQuestions = 4;
 
+        @NotNull
+        private Boolean queryResultCacheEnabled = false;
+
+        @Min(1)
+        private long queryResultCacheTtlSeconds = 30L;
+
         public Boolean getQueryUnderstandingEnabled() {
             return queryUnderstandingEnabled;
         }
@@ -727,6 +733,22 @@ public class SuperAgentProperties {
 
         public void setMaxSubQuestions(int maxSubQuestions) {
             this.maxSubQuestions = maxSubQuestions;
+        }
+
+        public Boolean getQueryResultCacheEnabled() {
+            return queryResultCacheEnabled;
+        }
+
+        public void setQueryResultCacheEnabled(Boolean queryResultCacheEnabled) {
+            this.queryResultCacheEnabled = queryResultCacheEnabled;
+        }
+
+        public long getQueryResultCacheTtlSeconds() {
+            return queryResultCacheTtlSeconds;
+        }
+
+        public void setQueryResultCacheTtlSeconds(long queryResultCacheTtlSeconds) {
+            this.queryResultCacheTtlSeconds = queryResultCacheTtlSeconds;
         }
     }
 

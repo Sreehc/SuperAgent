@@ -26,17 +26,20 @@ public class RetrievalService {
     private final EmbeddingClient embeddingClient;
     private final KnowledgeRepository knowledgeRepository;
     private final RagSupportService ragSupportService;
+    private final RagQueryCache ragQueryCache;
 
     public RetrievalService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
             EmbeddingClient embeddingClient,
             KnowledgeRepository knowledgeRepository,
-            RagSupportService ragSupportService
+            RagSupportService ragSupportService,
+            RagQueryCache ragQueryCache
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.embeddingClient = embeddingClient;
         this.knowledgeRepository = knowledgeRepository;
         this.ragSupportService = ragSupportService;
+        this.ragQueryCache = ragQueryCache;
     }
 
     public List<RetrievalResult> search(String query, Long knowledgeBaseId, Integer topK) {
@@ -67,35 +70,61 @@ public class RetrievalService {
 
     public List<RetrievalResult> searchVector(RagSearchQuery query) {
         TenantContext tenantContext = requireTenantContext();
-        EmbeddingClient.EmbeddingResult embedding = embeddingClient.embed(List.of(query.subQuestion()));
-        return knowledgeRepository.findTopKByVector(
+        int resolvedTopK = Math.max(query.vectorTopK(), query.candidateTopK());
+        return ragQueryCache.getOrLoad(
+                "vector",
                 tenantContext.tenantId(),
                 query.knowledgeBaseId(),
-                embedding.vectors().getFirst(),
-                Math.max(query.vectorTopK(), query.candidateTopK()),
-                query.versionConsistencyEnabled()
-        );
+                query.subQuestion(),
+                resolvedTopK,
+                query.versionConsistencyEnabled(),
+                query.queryResultCacheEnabled(),
+                query.queryResultCacheTtlSeconds(),
+                () -> {
+                    EmbeddingClient.EmbeddingResult embedding = embeddingClient.embed(List.of(query.subQuestion()));
+                    return knowledgeRepository.findTopKByVector(
+                            tenantContext.tenantId(),
+                            query.knowledgeBaseId(),
+                            embedding.vectors().getFirst(),
+                            resolvedTopK,
+                            query.versionConsistencyEnabled()
+                    );
+                }
+        ).results();
     }
 
     public List<RetrievalResult> searchKeyword(RagSearchQuery query) {
         TenantContext tenantContext = requireTenantContext();
-        List<RetrievalResult> results = knowledgeRepository.findTopKByKeyword(
+        int resolvedTopK = Math.max(query.keywordTopK(), query.candidateTopK());
+        return ragQueryCache.getOrLoad(
+                "keyword",
                 tenantContext.tenantId(),
                 query.knowledgeBaseId(),
                 query.subQuestion(),
-                Math.max(query.keywordTopK(), query.candidateTopK()),
-                query.versionConsistencyEnabled()
-        );
-        if (!results.isEmpty()) {
-            return results;
-        }
-        return knowledgeRepository.findTopKByKeywordFallback(
-                tenantContext.tenantId(),
-                query.knowledgeBaseId(),
-                ragSupportService.extractKeywordTerms(query.subQuestion()),
-                Math.max(query.keywordTopK(), query.candidateTopK()),
-                query.versionConsistencyEnabled()
-        );
+                resolvedTopK,
+                query.versionConsistencyEnabled(),
+                query.queryResultCacheEnabled(),
+                query.queryResultCacheTtlSeconds(),
+                () -> {
+                    List<RetrievalResult> results = knowledgeRepository.findTopKByKeyword(
+                            tenantContext.tenantId(),
+                            query.knowledgeBaseId(),
+                            query.subQuestion(),
+                            resolvedTopK,
+                            query.versionConsistencyEnabled()
+                    );
+                    if (!results.isEmpty()) {
+                        return results;
+                    }
+                    return knowledgeRepository.findTopKByKeywordFallback(
+                            tenantContext.tenantId(),
+                            query.knowledgeBaseId(),
+                            ragSupportService.extractKeywordTerms(query.subQuestion()),
+                            resolvedTopK,
+                            query.versionConsistencyEnabled()
+                    );
+                }
+        ).results();
     }
 
     public List<RagEvidence> expandNeighbors(RagSearchQuery query, List<RagEvidence> evidences) {

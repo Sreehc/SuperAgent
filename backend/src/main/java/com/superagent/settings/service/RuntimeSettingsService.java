@@ -115,6 +115,8 @@ public class RuntimeSettingsService {
                 patch.totalEvidenceCharLimit() == null ? existing.totalEvidenceCharLimit() : patch.totalEvidenceCharLimit(),
                 patch.minRelevanceScore() == null ? existing.minRelevanceScore() : patch.minRelevanceScore(),
                 patch.answerConfidenceThreshold() == null ? existing.answerConfidenceThreshold() : patch.answerConfidenceThreshold(),
+                patch.queryResultCacheEnabled() == null ? existing.queryResultCacheEnabled() : patch.queryResultCacheEnabled(),
+                patch.queryResultCacheTtlSeconds() == null ? existing.queryResultCacheTtlSeconds() : patch.queryResultCacheTtlSeconds(),
                 patch.noEvidenceMinResults() == null ? existing.noEvidenceMinResults() : patch.noEvidenceMinResults(),
                 patch.forceCitationEnabled() == null ? existing.forceCitationEnabled() : patch.forceCitationEnabled()
         );
@@ -140,6 +142,8 @@ public class RuntimeSettingsService {
         ragDetail.put("totalEvidenceCharLimit", merged.totalEvidenceCharLimit());
         ragDetail.put("minRelevanceScore", merged.minRelevanceScore());
         ragDetail.put("answerConfidenceThreshold", merged.answerConfidenceThreshold());
+        ragDetail.put("queryResultCacheEnabled", merged.queryResultCacheEnabled());
+        ragDetail.put("queryResultCacheTtlSeconds", merged.queryResultCacheTtlSeconds());
         ragDetail.put("noEvidenceMinResults", merged.noEvidenceMinResults());
         ragDetail.put("forceCitationEnabled", merged.forceCitationEnabled());
         auditLogRepository.append(
@@ -296,6 +300,8 @@ public class RuntimeSettingsService {
                 getInt(overrides, "totalEvidenceCharLimit", properties.getRag().getTotalEvidenceCharLimit()),
                 getDouble(overrides, "minRelevanceScore", properties.getRag().getMinRelevanceScore()),
                 getDouble(overrides, "answerConfidenceThreshold", properties.getRag().getAnswerConfidenceThreshold()),
+                getBoolean(overrides, "queryResultCacheEnabled", properties.getRag().getQueryResultCacheEnabled()),
+                getLong(overrides, "queryResultCacheTtlSeconds", properties.getRag().getQueryResultCacheTtlSeconds()),
                 getInt(overrides, "noEvidenceMinResults", properties.getRag().getNoEvidenceMinResults()),
                 getBoolean(overrides, "forceCitationEnabled", properties.getRag().getForceCitationEnabled())
         );
@@ -363,6 +369,8 @@ public class RuntimeSettingsService {
                 properties.getRag().getTotalEvidenceCharLimit(),
                 properties.getRag().getMinRelevanceScore(),
                 properties.getRag().getAnswerConfidenceThreshold(),
+                properties.getRag().getQueryResultCacheEnabled(),
+                properties.getRag().getQueryResultCacheTtlSeconds(),
                 properties.getRag().getNoEvidenceMinResults(),
                 properties.getRag().getForceCitationEnabled()
         );
@@ -399,6 +407,8 @@ public class RuntimeSettingsService {
         map.put("totalEvidenceCharLimit", settings.totalEvidenceCharLimit());
         map.put("minRelevanceScore", settings.minRelevanceScore());
         map.put("answerConfidenceThreshold", settings.answerConfidenceThreshold());
+        map.put("queryResultCacheEnabled", settings.queryResultCacheEnabled());
+        map.put("queryResultCacheTtlSeconds", settings.queryResultCacheTtlSeconds());
         map.put("noEvidenceMinResults", settings.noEvidenceMinResults());
         map.put("forceCitationEnabled", settings.forceCitationEnabled());
         return map;
@@ -519,6 +529,14 @@ public class RuntimeSettingsService {
         return value instanceof Number number ? number.doubleValue() : Double.parseDouble(value.toString());
     }
 
+    private long getLong(Map<String, Object> source, String key, long fallback) {
+        Object value = source.get(key);
+        if (value == null) {
+            return fallback;
+        }
+        return value instanceof Number number ? number.longValue() : Long.parseLong(value.toString());
+    }
+
     private MemoryStrategy getMemoryStrategy(Map<String, Object> source, String key, MemoryStrategy fallback) {
         Object value = source.get(key);
         if (value == null) {
@@ -559,6 +577,8 @@ public class RuntimeSettingsService {
             Integer totalEvidenceCharLimit,
             Double minRelevanceScore,
             Double answerConfidenceThreshold,
+            Boolean queryResultCacheEnabled,
+            Long queryResultCacheTtlSeconds,
             Integer noEvidenceMinResults,
             Boolean forceCitationEnabled
     ) {

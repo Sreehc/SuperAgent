@@ -77,6 +77,8 @@ public class AdminSettingsController {
                 settings.totalEvidenceCharLimit(),
                 settings.minRelevanceScore(),
                 settings.answerConfidenceThreshold(),
+                settings.queryResultCacheEnabled(),
+                settings.queryResultCacheTtlSeconds(),
                 settings.noEvidenceMinResults(),
                 settings.forceCitationEnabled()
         ));
@@ -104,6 +106,8 @@ public class AdminSettingsController {
                 request.totalEvidenceCharLimit(),
                 request.minRelevanceScore(),
                 request.answerConfidenceThreshold(),
+                request.queryResultCacheEnabled(),
+                request.queryResultCacheTtlSeconds(),
                 request.noEvidenceMinResults(),
                 request.forceCitationEnabled()
         ));
@@ -235,6 +239,8 @@ public class AdminSettingsController {
             int totalEvidenceCharLimit,
             double minRelevanceScore,
             double answerConfidenceThreshold,
+            boolean queryResultCacheEnabled,
+            long queryResultCacheTtlSeconds,
             int noEvidenceMinResults,
             boolean forceCitationEnabled
     ) {
@@ -260,6 +266,8 @@ public class AdminSettingsController {
             @Min(1) Integer totalEvidenceCharLimit,
             @DecimalMin("0.0") Double minRelevanceScore,
             @DecimalMin("0.0") Double answerConfidenceThreshold,
+            Boolean queryResultCacheEnabled,
+            @Min(1) Long queryResultCacheTtlSeconds,
             @Min(1) Integer noEvidenceMinResults,
             Boolean forceCitationEnabled
     ) {

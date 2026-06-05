@@ -64,6 +64,8 @@ public class RagSupportService {
                 base.totalEvidenceCharLimit(),
                 ragOptions == null || ragOptions.minRelevanceScore() == null ? base.minRelevanceScore() : ragOptions.minRelevanceScore(),
                 base.answerConfidenceThreshold(),
+                base.queryResultCacheEnabled(),
+                base.queryResultCacheTtlSeconds(),
                 base.maxSubQuestions(),
                 base.noEvidenceMinResults(),
                 base.forceCitationEnabled()
@@ -140,6 +142,8 @@ public class RagSupportService {
                 settings.totalEvidenceCharLimit(),
                 settings.minRelevanceScore(),
                 settings.answerConfidenceThreshold(),
+                settings.queryResultCacheEnabled(),
+                settings.queryResultCacheTtlSeconds(),
                 settings.rerankEnabled(),
                 settings.noEvidenceMinResults(),
                 settings.forceCitationEnabled()
@@ -264,6 +268,8 @@ public class RagSupportService {
                 properties.getRag().getTotalEvidenceCharLimit(),
                 properties.getRag().getMinRelevanceScore(),
                 properties.getRag().getAnswerConfidenceThreshold(),
+                properties.getRag().getQueryResultCacheEnabled(),
+                properties.getRag().getQueryResultCacheTtlSeconds(),
                 properties.getRag().getNoEvidenceMinResults(),
                 properties.getRag().getForceCitationEnabled()
         );
@@ -468,6 +474,8 @@ public class RagSupportService {
             int totalEvidenceCharLimit,
             double minRelevanceScore,
             double answerConfidenceThreshold,
+            boolean queryResultCacheEnabled,
+            long queryResultCacheTtlSeconds,
             int maxSubQuestions,
             int noEvidenceMinResults,
             boolean forceCitationEnabled

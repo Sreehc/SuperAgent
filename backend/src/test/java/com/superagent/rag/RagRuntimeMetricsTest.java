@@ -42,6 +42,8 @@ class RagRuntimeMetricsTest {
                 6000,
                 0.35d,
                 0.55d,
+                false,
+                30L,
                 true,
                 1,
                 true

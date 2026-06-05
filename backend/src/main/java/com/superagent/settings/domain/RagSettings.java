@@ -20,6 +20,8 @@ public record RagSettings(
         int totalEvidenceCharLimit,
         double minRelevanceScore,
         double answerConfidenceThreshold,
+        boolean queryResultCacheEnabled,
+        long queryResultCacheTtlSeconds,
         int noEvidenceMinResults,
         boolean forceCitationEnabled
 ) {

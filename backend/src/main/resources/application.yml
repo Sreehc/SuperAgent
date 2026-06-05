@@ -118,9 +118,12 @@ super-agent:
     per-question-evidence-char-limit: ${RAG_PER_QUESTION_EVIDENCE_CHAR_LIMIT:4000}
     total-evidence-char-limit: ${RAG_TOTAL_EVIDENCE_CHAR_LIMIT:12000}
     min-relevance-score: ${RAG_MIN_RELEVANCE_SCORE:0.35}
+    answer-confidence-threshold: ${RAG_ANSWER_CONFIDENCE_THRESHOLD:0.55}
     no-evidence-min-results: ${RAG_NO_EVIDENCE_MIN_RESULTS:1}
     force-citation-enabled: ${RAG_FORCE_CITATION_ENABLED:true}
     max-sub-questions: ${RAG_MAX_SUB_QUESTIONS:4}
+    query-result-cache-enabled: ${RAG_QUERY_RESULT_CACHE_ENABLED:false}
+    query-result-cache-ttl-seconds: ${RAG_QUERY_RESULT_CACHE_TTL_SECONDS:30}
   agent:
     service-base-url: ${AGENT_SERVICE_BASE_URL:http://localhost:18081}
     enabled-default: ${AGENT_ENABLED_DEFAULT:false}
