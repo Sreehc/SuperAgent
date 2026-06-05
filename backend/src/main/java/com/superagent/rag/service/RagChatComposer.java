@@ -21,7 +21,8 @@ public class RagChatComposer {
             String rewrittenQuestion,
             Long knowledgeBaseId,
             String memoryContext,
-            List<RagEvidence> evidences
+            List<RagEvidence> evidences,
+            boolean forceCitationEnabled
     ) {
         String prompt = buildPrompt(rewrittenQuestion, memoryContext, evidences);
         ChatModelClient.ModelResponse response = chatModelClient.generateReply(new ChatModelClient.ModelRequest(
@@ -31,7 +32,7 @@ public class RagChatComposer {
                 knowledgeBaseId,
                 List.of(memoryContext, userQuestion)
         ));
-        return new RagAnswer(
+        RagAnswer answer = new RagAnswer(
                 response.fullText(),
                 response.deltas(),
                 response.recommendations(),
@@ -41,6 +42,7 @@ public class RagChatComposer {
                 response.outputTokens(),
                 response.finishReason()
         );
+        return ensureCitationSuffix(answer, evidences, forceCitationEnabled);
     }
 
     private String buildPrompt(String rewrittenQuestion, String memoryContext, List<RagEvidence> evidences) {
@@ -74,6 +76,32 @@ public class RagChatComposer {
                 null,
                 "stop"
         );
+    }
+
+    private RagAnswer ensureCitationSuffix(RagAnswer answer, List<RagEvidence> evidences, boolean forceCitationEnabled) {
+        if (!forceCitationEnabled || evidences == null || evidences.isEmpty() || containsCitation(answer.fullText())) {
+            return answer;
+        }
+        StringBuilder suffix = new StringBuilder("\n\n参考依据：");
+        int citationCount = Math.min(3, evidences.size());
+        for (int index = 0; index < citationCount; index++) {
+            suffix.append("[").append(index + 1).append("]");
+        }
+        String fullText = answer.fullText() + suffix;
+        return new RagAnswer(
+                fullText,
+                slice(fullText, 18),
+                answer.recommendations(),
+                answer.provider(),
+                answer.model(),
+                answer.inputTokens(),
+                answer.outputTokens() == null ? null : fullText.length(),
+                answer.finishReason()
+        );
+    }
+
+    private boolean containsCitation(String text) {
+        return text != null && text.matches("(?s).*\\[\\d+].*");
     }
 
     private List<String> slice(String text, int chunkSize) {

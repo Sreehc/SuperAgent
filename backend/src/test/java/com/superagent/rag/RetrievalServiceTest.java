@@ -96,8 +96,12 @@ class RetrievalServiceTest {
                 1,
                 3,
                 3,
+                2800,
+                8400,
                 0.35d,
-                false
+                false,
+                1,
+                true
         );
         List<RagEvidence> base = List.of(
                 new RagEvidence(

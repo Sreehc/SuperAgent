@@ -86,7 +86,8 @@ public class RagOrchestrationService {
                     expanded,
                     query.minRelevanceScore(),
                     perQuestionBudget,
-                    query.maxChunksPerDocument()
+                    query.maxChunksPerDocument(),
+                    query.perQuestionEvidenceCharLimit()
             );
             fusedEvidences.addAll(selected);
             retrievalSteps.add(new RagResponseDiagnostics.RetrievalStep(
@@ -101,14 +102,19 @@ public class RagOrchestrationService {
         List<RagEvidence> filtered = ragSupportService.applyTotalBudget(
                 deduplicateByChunk(fusedEvidences),
                 rootQuery.evidenceLimit(),
-                rootQuery.maxChunksPerDocument()
+                rootQuery.maxChunksPerDocument(),
+                rootQuery.totalEvidenceCharLimit()
         );
 
         List<RagEvidence> reranked = filtered;
         RagResponseDiagnostics.RerankStep rerankStep;
+        String fallbackReason = null;
         if (rootQuery.rerankEnabled()) {
             RerankClient.RerankResult rerankResult = rerankClient.rerank(rewrittenQuestion, filtered);
             reranked = rerankResult.status().equals("success") ? rerankResult.evidences() : filtered;
+            if (!"success".equals(rerankResult.status())) {
+                fallbackReason = "rerank_" + rerankResult.status() + "_used_filtered";
+            }
             rerankStep = new RagResponseDiagnostics.RerankStep(
                     true,
                     rerankResult.provider(),
@@ -129,26 +135,41 @@ public class RagOrchestrationService {
                     "disabled_by_config",
                     null,
                     null,
-                    filtered.size(),
-                    filtered.size()
+                filtered.size(),
+                filtered.size()
             );
         }
 
-        RagAnswer answer = reranked.isEmpty()
+        boolean noEvidence = reranked.isEmpty() || reranked.size() < rootQuery.noEvidenceMinResults();
+        if (reranked.isEmpty()) {
+            fallbackReason = "no_selected_evidence";
+        } else if (reranked.size() < rootQuery.noEvidenceMinResults()) {
+            fallbackReason = "insufficient_evidence_results";
+        }
+        List<RagEvidence> finalEvidences = noEvidence ? List.of() : reranked;
+        RagAnswer answer = noEvidence
                 ? ragChatComposer.noEvidence(question)
-                : ragChatComposer.answer(question, rewrittenQuestion, knowledgeBaseId, memoryContext, reranked);
+                : ragChatComposer.answer(
+                        question,
+                        rewrittenQuestion,
+                        knowledgeBaseId,
+                        memoryContext,
+                        finalEvidences,
+                        rootQuery.forceCitationEnabled()
+                );
 
         return new RagResponse(
                 rewrittenQuestion,
                 subQuestions,
-                reranked,
+                finalEvidences,
                 answer,
                 new RagResponseDiagnostics(
                         summarizeMemory(recentMessages),
                         retrievalSteps,
                         rerankStep,
-                        reranked.isEmpty() ? "no_evidence_fallback_prompt" : "rag_prompt_with_evidence_" + reranked.size(),
-                        summarizeModelOutput(answer)
+                        noEvidence ? "no_evidence_fallback_prompt" : "rag_prompt_with_evidence_" + reranked.size(),
+                        summarizeModelOutput(answer),
+                        fallbackReason
                 )
         );
     }

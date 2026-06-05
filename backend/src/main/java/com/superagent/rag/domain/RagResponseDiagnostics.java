@@ -7,7 +7,8 @@ public record RagResponseDiagnostics(
         List<RetrievalStep> retrievalSteps,
         RerankStep rerankStep,
         String promptSummary,
-        String modelSummary
+        String modelSummary,
+        String fallbackReason
 ) {
 
     public record RetrievalStep(

@@ -30,7 +30,8 @@ public record RagResponse(
                         List.of(),
                         new RagResponseDiagnostics.RerankStep(false, null, null, "skipped", "not_applicable", null, null, 0, 0),
                         planSummary,
-                        "clarification_response"
+                        "clarification_response",
+                        "clarification_required"
                 )
         );
     }

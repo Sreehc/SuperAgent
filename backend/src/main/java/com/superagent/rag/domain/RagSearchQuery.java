@@ -18,7 +18,11 @@ public record RagSearchQuery(
         int neighborWindow,
         int maxChunksPerDocument,
         int evidenceLimit,
+        int perQuestionEvidenceCharLimit,
+        int totalEvidenceCharLimit,
         double minRelevanceScore,
-        boolean rerankEnabled
+        boolean rerankEnabled,
+        int noEvidenceMinResults,
+        boolean forceCitationEnabled
 ) {
 }

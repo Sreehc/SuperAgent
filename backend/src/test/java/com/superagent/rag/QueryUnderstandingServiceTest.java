@@ -55,8 +55,12 @@ class QueryUnderstandingServiceTest {
                 1,
                 3,
                 8,
+                2800,
+                8400,
                 0.35d,
-                4
+                4,
+                1,
+                true
         );
 
         QueryUnderstandingService.QueryUnderstandingResult result = service.understand(
@@ -130,8 +134,12 @@ class QueryUnderstandingServiceTest {
                 1,
                 3,
                 8,
+                2800,
+                8400,
                 0.35d,
-                4
+                4,
+                1,
+                true
         );
 
         QueryUnderstandingService.QueryUnderstandingResult result = service.understand(

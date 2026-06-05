@@ -75,7 +75,9 @@ public class AdminSettingsController {
                 settings.evidenceLimit(),
                 settings.perQuestionEvidenceCharLimit(),
                 settings.totalEvidenceCharLimit(),
-                settings.minRelevanceScore()
+                settings.minRelevanceScore(),
+                settings.noEvidenceMinResults(),
+                settings.forceCitationEnabled()
         ));
     }
 
@@ -99,7 +101,9 @@ public class AdminSettingsController {
                 request.evidenceLimit(),
                 request.perQuestionEvidenceCharLimit(),
                 request.totalEvidenceCharLimit(),
-                request.minRelevanceScore()
+                request.minRelevanceScore(),
+                request.noEvidenceMinResults(),
+                request.forceCitationEnabled()
         ));
         return ApiResponse.success(new UpdateResponse(result.updated()));
     }
@@ -227,7 +231,9 @@ public class AdminSettingsController {
             int evidenceLimit,
             int perQuestionEvidenceCharLimit,
             int totalEvidenceCharLimit,
-            double minRelevanceScore
+            double minRelevanceScore,
+            int noEvidenceMinResults,
+            boolean forceCitationEnabled
     ) {
     }
 
@@ -249,7 +255,9 @@ public class AdminSettingsController {
             @Min(1) Integer evidenceLimit,
             @Min(1) Integer perQuestionEvidenceCharLimit,
             @Min(1) Integer totalEvidenceCharLimit,
-            @DecimalMin("0.0") Double minRelevanceScore
+            @DecimalMin("0.0") Double minRelevanceScore,
+            @Min(1) Integer noEvidenceMinResults,
+            Boolean forceCitationEnabled
     ) {
     }
 

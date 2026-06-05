@@ -113,7 +113,9 @@ public class RuntimeSettingsService {
                 patch.evidenceLimit() == null ? existing.evidenceLimit() : patch.evidenceLimit(),
                 patch.perQuestionEvidenceCharLimit() == null ? existing.perQuestionEvidenceCharLimit() : patch.perQuestionEvidenceCharLimit(),
                 patch.totalEvidenceCharLimit() == null ? existing.totalEvidenceCharLimit() : patch.totalEvidenceCharLimit(),
-                patch.minRelevanceScore() == null ? existing.minRelevanceScore() : patch.minRelevanceScore()
+                patch.minRelevanceScore() == null ? existing.minRelevanceScore() : patch.minRelevanceScore(),
+                patch.noEvidenceMinResults() == null ? existing.noEvidenceMinResults() : patch.noEvidenceMinResults(),
+                patch.forceCitationEnabled() == null ? existing.forceCitationEnabled() : patch.forceCitationEnabled()
         );
         runtimeSettingsRepository.upsertSection(tenantContext.tenantId(), RAG_SECTION, toStorageMap(merged));
         Map<String, Object> ragDetail = new LinkedHashMap<>();
@@ -136,6 +138,8 @@ public class RuntimeSettingsService {
         ragDetail.put("perQuestionEvidenceCharLimit", merged.perQuestionEvidenceCharLimit());
         ragDetail.put("totalEvidenceCharLimit", merged.totalEvidenceCharLimit());
         ragDetail.put("minRelevanceScore", merged.minRelevanceScore());
+        ragDetail.put("noEvidenceMinResults", merged.noEvidenceMinResults());
+        ragDetail.put("forceCitationEnabled", merged.forceCitationEnabled());
         auditLogRepository.append(
                 tenantContext.tenantId(),
                 principal.userId(),
@@ -288,7 +292,9 @@ public class RuntimeSettingsService {
                 getInt(overrides, "evidenceLimit", properties.getRag().getEvidenceLimit()),
                 getInt(overrides, "perQuestionEvidenceCharLimit", properties.getRag().getPerQuestionEvidenceCharLimit()),
                 getInt(overrides, "totalEvidenceCharLimit", properties.getRag().getTotalEvidenceCharLimit()),
-                getDouble(overrides, "minRelevanceScore", properties.getRag().getMinRelevanceScore())
+                getDouble(overrides, "minRelevanceScore", properties.getRag().getMinRelevanceScore()),
+                getInt(overrides, "noEvidenceMinResults", properties.getRag().getNoEvidenceMinResults()),
+                getBoolean(overrides, "forceCitationEnabled", properties.getRag().getForceCitationEnabled())
         );
     }
 
@@ -352,7 +358,9 @@ public class RuntimeSettingsService {
                 properties.getRag().getEvidenceLimit(),
                 properties.getRag().getPerQuestionEvidenceCharLimit(),
                 properties.getRag().getTotalEvidenceCharLimit(),
-                properties.getRag().getMinRelevanceScore()
+                properties.getRag().getMinRelevanceScore(),
+                properties.getRag().getNoEvidenceMinResults(),
+                properties.getRag().getForceCitationEnabled()
         );
     }
 
@@ -386,6 +394,8 @@ public class RuntimeSettingsService {
         map.put("perQuestionEvidenceCharLimit", settings.perQuestionEvidenceCharLimit());
         map.put("totalEvidenceCharLimit", settings.totalEvidenceCharLimit());
         map.put("minRelevanceScore", settings.minRelevanceScore());
+        map.put("noEvidenceMinResults", settings.noEvidenceMinResults());
+        map.put("forceCitationEnabled", settings.forceCitationEnabled());
         return map;
     }
 
@@ -542,7 +552,9 @@ public class RuntimeSettingsService {
             Integer evidenceLimit,
             Integer perQuestionEvidenceCharLimit,
             Integer totalEvidenceCharLimit,
-            Double minRelevanceScore
+            Double minRelevanceScore,
+            Integer noEvidenceMinResults,
+            Boolean forceCitationEnabled
     ) {
     }
 

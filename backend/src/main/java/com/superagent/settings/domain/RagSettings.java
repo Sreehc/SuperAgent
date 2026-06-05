@@ -18,6 +18,8 @@ public record RagSettings(
         int evidenceLimit,
         int perQuestionEvidenceCharLimit,
         int totalEvidenceCharLimit,
-        double minRelevanceScore
+        double minRelevanceScore,
+        int noEvidenceMinResults,
+        boolean forceCitationEnabled
 ) {
 }

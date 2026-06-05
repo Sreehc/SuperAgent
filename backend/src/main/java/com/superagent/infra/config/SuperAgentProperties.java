@@ -558,6 +558,12 @@ public class SuperAgentProperties {
         private double minRelevanceScore = 0.35d;
 
         @Min(1)
+        private int noEvidenceMinResults = 1;
+
+        @NotNull
+        private Boolean forceCitationEnabled = true;
+
+        @Min(1)
         private int maxSubQuestions = 4;
 
         public Boolean getQueryUnderstandingEnabled() {
@@ -686,6 +692,22 @@ public class SuperAgentProperties {
 
         public void setMinRelevanceScore(double minRelevanceScore) {
             this.minRelevanceScore = minRelevanceScore;
+        }
+
+        public int getNoEvidenceMinResults() {
+            return noEvidenceMinResults;
+        }
+
+        public void setNoEvidenceMinResults(int noEvidenceMinResults) {
+            this.noEvidenceMinResults = noEvidenceMinResults;
+        }
+
+        public Boolean getForceCitationEnabled() {
+            return forceCitationEnabled;
+        }
+
+        public void setForceCitationEnabled(Boolean forceCitationEnabled) {
+            this.forceCitationEnabled = forceCitationEnabled;
         }
 
         public int getMaxSubQuestions() {

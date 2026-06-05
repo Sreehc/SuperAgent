@@ -167,6 +167,7 @@ class ConversationIntegrationTest {
         assertThat(body).contains("event:recommendation");
         assertThat(body).contains("event:done");
         assertThat(body).contains("execution_planning");
+        assertThat(body).contains("[1]");
 
         Integer messageCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM conversation_message WHERE session_id = ?",
@@ -383,6 +384,39 @@ class ConversationIntegrationTest {
 
         String body = awaitStreamBody(streamResult, "event:done");
         assertThat(body).contains("未检索到足够证据");
+        assertThat(body).doesNotContain("event:reference");
+    }
+
+    @Test
+    void shouldFallbackWhenEvidenceCountIsBelowConfiguredThreshold() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "阈值知识库", "published");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "refund-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "noEvidenceMinResults", 2,
+                                "forceCitationEnabled", true
+                        ))))
+                .andExpect(status().isOk());
+        long sessionId = createConversation(token, tenantId, "阈值测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "退款规则是什么？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("未检索到足够证据");
+        assertThat(body).doesNotContain("event:reference");
     }
 
     private JsonNode login(String username, String password) throws Exception {

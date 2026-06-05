@@ -60,8 +60,12 @@ public class RagSupportService {
                 base.neighborWindow(),
                 base.maxChunksPerDocument(),
                 ragOptions == null || ragOptions.evidenceLimit() == null ? base.evidenceLimit() : ragOptions.evidenceLimit(),
+                base.perQuestionEvidenceCharLimit(),
+                base.totalEvidenceCharLimit(),
                 ragOptions == null || ragOptions.minRelevanceScore() == null ? base.minRelevanceScore() : ragOptions.minRelevanceScore(),
-                base.maxSubQuestions()
+                base.maxSubQuestions(),
+                base.noEvidenceMinResults(),
+                base.forceCitationEnabled()
         );
     }
 
@@ -131,8 +135,12 @@ public class RagSupportService {
                 settings.neighborWindow(),
                 settings.maxChunksPerDocument(),
                 settings.evidenceLimit(),
+                settings.perQuestionEvidenceCharLimit(),
+                settings.totalEvidenceCharLimit(),
                 settings.minRelevanceScore(),
-                settings.rerankEnabled()
+                settings.rerankEnabled(),
+                settings.noEvidenceMinResults(),
+                settings.forceCitationEnabled()
         );
     }
 
@@ -152,27 +160,33 @@ public class RagSupportService {
             List<RagEvidence> evidences,
             double minScore,
             int evidenceLimit,
-            int maxChunksPerDocument
+            int maxChunksPerDocument,
+            int evidenceCharLimit
     ) {
-        return limitPerDocument(
+        return limitByTotalChars(limitPerDocument(
                 evidences.stream()
                 .map(evidence -> adjustRelevance(query, evidence))
                 .filter(evidence -> evidence.score() >= minScore)
                 .sorted((left, right) -> Double.compare(right.score(), left.score()))
                 .toList(),
                 maxChunksPerDocument
-        ).stream()
+        ), evidenceCharLimit).stream()
                 .limit(evidenceLimit)
                 .toList();
     }
 
-    public List<RagEvidence> applyTotalBudget(List<RagEvidence> evidences, int evidenceLimit, int maxChunksPerDocument) {
-        return limitPerDocument(
+    public List<RagEvidence> applyTotalBudget(
+            List<RagEvidence> evidences,
+            int evidenceLimit,
+            int maxChunksPerDocument,
+            int totalEvidenceCharLimit
+    ) {
+        return limitByTotalChars(limitPerDocument(
                 evidences.stream()
                 .sorted((left, right) -> Double.compare(right.score(), left.score()))
                 .toList(),
                 maxChunksPerDocument
-        ).stream()
+        ), totalEvidenceCharLimit).stream()
                 .limit(evidenceLimit)
                 .toList();
     }
@@ -210,8 +224,30 @@ public class RagSupportService {
                 properties.getRag().getEvidenceLimit(),
                 properties.getRag().getPerQuestionEvidenceCharLimit(),
                 properties.getRag().getTotalEvidenceCharLimit(),
-                properties.getRag().getMinRelevanceScore()
+                properties.getRag().getMinRelevanceScore(),
+                properties.getRag().getNoEvidenceMinResults(),
+                properties.getRag().getForceCitationEnabled()
         );
+    }
+
+    private List<RagEvidence> limitByTotalChars(List<RagEvidence> evidences, int maxChars) {
+        if (maxChars <= 0) {
+            return evidences;
+        }
+        int totalChars = 0;
+        List<RagEvidence> limited = new ArrayList<>();
+        for (RagEvidence evidence : evidences) {
+            int candidateChars = evidence.content() == null ? 0 : evidence.content().length();
+            if (!limited.isEmpty() && totalChars + candidateChars > maxChars) {
+                continue;
+            }
+            limited.add(evidence);
+            totalChars += candidateChars;
+            if (totalChars >= maxChars) {
+                break;
+            }
+        }
+        return limited;
     }
 
     private List<RagEvidence> limitPerDocument(List<RagEvidence> evidences, int maxChunksPerDocument) {
@@ -384,8 +420,12 @@ public class RagSupportService {
             int neighborWindow,
             int maxChunksPerDocument,
             int evidenceLimit,
+            int perQuestionEvidenceCharLimit,
+            int totalEvidenceCharLimit,
             double minRelevanceScore,
-            int maxSubQuestions
+            int maxSubQuestions,
+            int noEvidenceMinResults,
+            boolean forceCitationEnabled
     ) {
     }
 }

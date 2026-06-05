@@ -719,8 +719,12 @@ public class ConversationService {
         filters.put("neighborWindow", query.neighborWindow());
         filters.put("maxChunksPerDocument", query.maxChunksPerDocument());
         filters.put("evidenceLimit", query.evidenceLimit());
+        filters.put("perQuestionEvidenceCharLimit", query.perQuestionEvidenceCharLimit());
+        filters.put("totalEvidenceCharLimit", query.totalEvidenceCharLimit());
         filters.put("minRelevanceScore", query.minRelevanceScore());
         filters.put("rerankEnabled", query.rerankEnabled());
+        filters.put("noEvidenceMinResults", query.noEvidenceMinResults());
+        filters.put("forceCitationEnabled", query.forceCitationEnabled());
         filters.put("queryRewriteApplied", !query.originalQuestion().equals(query.rewrittenQuestion()));
         filters.put("hybridRetrievalEnabled", true);
         if (step != null) {
@@ -740,6 +744,7 @@ public class ConversationService {
         metadata.put("memorySummary", diagnostics.memorySummary());
         metadata.put("promptSummary", diagnostics.promptSummary());
         metadata.put("modelSummary", diagnostics.modelSummary());
+        metadata.put("fallbackReason", diagnostics.fallbackReason());
         metadata.put("retrievalStepCount", diagnostics.retrievalSteps().size());
         metadata.put("subQuestionCount", diagnostics.retrievalSteps().size());
         metadata.put("selectedEvidenceCount", diagnostics.retrievalSteps().stream()
