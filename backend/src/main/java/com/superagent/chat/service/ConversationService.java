@@ -707,6 +707,9 @@ public class ConversationService {
         filters.put("subQuestion", query.subQuestion());
         filters.put("subQuestionNo", query.subQuestionNo());
         filters.put("knowledgeBaseId", query.knowledgeBaseId());
+        filters.put("answerMode", query.answerMode());
+        filters.put("queryUnderstandingSource", query.queryUnderstandingSource());
+        filters.put("queryUnderstandingConfidence", query.queryUnderstandingConfidence());
         filters.put("vectorTopK", query.vectorTopK());
         filters.put("keywordTopK", query.keywordTopK());
         filters.put("rrfK", query.rrfK());

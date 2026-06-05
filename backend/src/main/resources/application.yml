@@ -102,6 +102,8 @@ super-agent:
     chunk-overlap: ${DOCUMENT_CHUNK_OVERLAP:120}
     max-chunk-count: ${DOCUMENT_MAX_CHUNK_COUNT:5000}
   rag:
+    query-understanding-enabled: ${RAG_QUERY_UNDERSTANDING_ENABLED:true}
+    decomposition-enabled: ${RAG_DECOMPOSITION_ENABLED:true}
     rewrite-enabled: ${RAG_REWRITE_ENABLED:true}
     sub-question-enabled: ${RAG_SUB_QUESTION_ENABLED:true}
     vector-top-k: ${RAG_VECTOR_TOP_K:20}

@@ -58,6 +58,8 @@ public class AdminSettingsController {
     public ApiResponse<RagSettingsItem> getRagSettings() {
         RagSettings settings = runtimeSettingsService.getRagSettings();
         return ApiResponse.success(new RagSettingsItem(
+                settings.queryUnderstandingEnabled(),
+                settings.decompositionEnabled(),
                 settings.rewriteEnabled(),
                 settings.subQuestionEnabled(),
                 settings.maxSubQuestions(),
@@ -75,6 +77,8 @@ public class AdminSettingsController {
     @PatchMapping("/rag")
     public ApiResponse<UpdateResponse> updateRagSettings(@Valid @RequestBody UpdateRagSettingsRequest request) {
         RuntimeSettingsService.UpdateResult result = runtimeSettingsService.updateRagSettings(new RuntimeSettingsService.RagSettingsPatch(
+                request.queryUnderstandingEnabled(),
+                request.decompositionEnabled(),
                 request.rewriteEnabled(),
                 request.subQuestionEnabled(),
                 request.maxSubQuestions(),
@@ -196,6 +200,8 @@ public class AdminSettingsController {
     }
 
     public record RagSettingsItem(
+            boolean queryUnderstandingEnabled,
+            boolean decompositionEnabled,
             boolean rewriteEnabled,
             boolean subQuestionEnabled,
             int maxSubQuestions,
@@ -211,6 +217,8 @@ public class AdminSettingsController {
     }
 
     public record UpdateRagSettingsRequest(
+            Boolean queryUnderstandingEnabled,
+            Boolean decompositionEnabled,
             Boolean rewriteEnabled,
             Boolean subQuestionEnabled,
             @Min(1) Integer maxSubQuestions,

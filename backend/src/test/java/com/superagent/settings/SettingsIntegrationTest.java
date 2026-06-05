@@ -105,6 +105,8 @@ class SettingsIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode ragJson = objectMapper.readTree(ragResponse.getResponse().getContentAsString());
+        assertThat(ragJson.path("data").path("queryUnderstandingEnabled").asBoolean()).isTrue();
+        assertThat(ragJson.path("data").path("decompositionEnabled").asBoolean()).isTrue();
         assertThat(ragJson.path("data").path("rewriteEnabled").asBoolean()).isFalse();
         assertThat(ragJson.path("data").path("rerankEnabled").asBoolean()).isTrue();
         assertThat(ragJson.path("data").path("perQuestionEvidenceCharLimit").asInt()).isEqualTo(2800);
@@ -159,6 +161,8 @@ class SettingsIntegrationTest {
 
     private Map<String, Object> buildRagPatch() {
         Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("queryUnderstandingEnabled", true);
+        payload.put("decompositionEnabled", true);
         payload.put("rewriteEnabled", false);
         payload.put("subQuestionEnabled", false);
         payload.put("maxSubQuestions", 2);

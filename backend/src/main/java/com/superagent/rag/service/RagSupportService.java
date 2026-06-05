@@ -46,6 +46,8 @@ public class RagSupportService {
                 ? defaultRagSettings()
                 : runtimeSettingsService.resolveRagSettingsForCurrentTenant();
         return new EffectiveRagSettings(
+                base.queryUnderstandingEnabled(),
+                base.decompositionEnabled(),
                 ragOptions == null || ragOptions.rewriteEnabled() == null ? base.rewriteEnabled() : ragOptions.rewriteEnabled(),
                 ragOptions == null || ragOptions.subQuestionEnabled() == null ? base.subQuestionEnabled() : ragOptions.subQuestionEnabled(),
                 ragOptions == null || ragOptions.vectorTopK() == null ? base.vectorTopK() : ragOptions.vectorTopK(),
@@ -101,6 +103,9 @@ public class RagSupportService {
             String subQuestion,
             int subQuestionNo,
             Long knowledgeBaseId,
+            String answerMode,
+            String queryUnderstandingSource,
+            double queryUnderstandingConfidence,
             EffectiveRagSettings settings
     ) {
         return new RagSearchQuery(
@@ -109,6 +114,9 @@ public class RagSupportService {
                 subQuestion,
                 subQuestionNo,
                 knowledgeBaseId,
+                answerMode,
+                queryUnderstandingSource,
+                queryUnderstandingConfidence,
                 settings.vectorTopK(),
                 settings.keywordTopK(),
                 settings.rrfK(),
@@ -161,6 +169,8 @@ public class RagSupportService {
 
     private RagSettings defaultRagSettings() {
         return new RagSettings(
+                properties.getRag().getQueryUnderstandingEnabled(),
+                properties.getRag().getDecompositionEnabled(),
                 properties.getRag().getRewriteEnabled(),
                 properties.getRag().getSubQuestionEnabled(),
                 properties.getRag().getMaxSubQuestions(),
@@ -309,6 +319,8 @@ public class RagSupportService {
     }
 
     public record EffectiveRagSettings(
+            boolean queryUnderstandingEnabled,
+            boolean decompositionEnabled,
             boolean rewriteEnabled,
             boolean subQuestionEnabled,
             int vectorTopK,

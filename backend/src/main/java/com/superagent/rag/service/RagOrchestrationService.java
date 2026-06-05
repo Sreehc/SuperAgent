@@ -16,17 +16,20 @@ public class RagOrchestrationService {
 
     private final RetrievalService retrievalService;
     private final RagSupportService ragSupportService;
+    private final QueryUnderstandingService queryUnderstandingService;
     private final RerankClient rerankClient;
     private final RagChatComposer ragChatComposer;
 
     public RagOrchestrationService(
             RetrievalService retrievalService,
             RagSupportService ragSupportService,
+            QueryUnderstandingService queryUnderstandingService,
             RerankClient rerankClient,
             RagChatComposer ragChatComposer
     ) {
         this.retrievalService = retrievalService;
         this.ragSupportService = ragSupportService;
+        this.queryUnderstandingService = queryUnderstandingService;
         this.rerankClient = rerankClient;
         this.ragChatComposer = ragChatComposer;
     }
@@ -39,14 +42,23 @@ public class RagOrchestrationService {
     ) {
         String memoryContext = ragSupportService.assembleMemory(recentMessages, question);
         RagSupportService.EffectiveRagSettings effectiveSettings = ragSupportService.resolveEffectiveSettings(ragOptions);
-        String rewrittenQuestion = ragSupportService.rewriteQuestion(question, recentMessages, effectiveSettings);
-        List<String> subQuestions = ragSupportService.splitSubQuestions(rewrittenQuestion, effectiveSettings);
+        QueryUnderstandingService.QueryUnderstandingResult understanding = queryUnderstandingService.understand(
+                question,
+                recentMessages,
+                effectiveSettings,
+                ragSupportService
+        );
+        String rewrittenQuestion = understanding.rewrittenQuestion();
+        List<String> subQuestions = understanding.subQuestions();
         RagSearchQuery rootQuery = ragSupportService.resolveSearchQuery(
                 question,
                 rewrittenQuestion,
                 rewrittenQuestion,
                 1,
                 knowledgeBaseId,
+                understanding.answerMode(),
+                understanding.source(),
+                understanding.confidence(),
                 effectiveSettings
         );
         int perQuestionBudget = Math.max(1, rootQuery.evidenceLimit() / Math.max(1, subQuestions.size()));
@@ -60,6 +72,9 @@ public class RagOrchestrationService {
                     subQuestions.get(index),
                     index + 1,
                     knowledgeBaseId,
+                    understanding.answerMode(),
+                    understanding.source(),
+                    understanding.confidence(),
                     effectiveSettings
             );
             List<RetrievalResult> vectorResults = retrievalService.searchVector(query);

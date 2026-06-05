@@ -96,6 +96,8 @@ public class RuntimeSettingsService {
         TenantContext tenantContext = requireTenantContext();
         RagSettings existing = resolveRagSettings(tenantContext.tenantId());
         RagSettings merged = new RagSettings(
+                patch.queryUnderstandingEnabled() == null ? existing.queryUnderstandingEnabled() : patch.queryUnderstandingEnabled(),
+                patch.decompositionEnabled() == null ? existing.decompositionEnabled() : patch.decompositionEnabled(),
                 patch.rewriteEnabled() == null ? existing.rewriteEnabled() : patch.rewriteEnabled(),
                 patch.subQuestionEnabled() == null ? existing.subQuestionEnabled() : patch.subQuestionEnabled(),
                 patch.maxSubQuestions() == null ? existing.maxSubQuestions() : patch.maxSubQuestions(),
@@ -111,6 +113,8 @@ public class RuntimeSettingsService {
         runtimeSettingsRepository.upsertSection(tenantContext.tenantId(), RAG_SECTION, toStorageMap(merged));
         Map<String, Object> ragDetail = new LinkedHashMap<>();
         ragDetail.put("section", RAG_SECTION);
+        ragDetail.put("queryUnderstandingEnabled", merged.queryUnderstandingEnabled());
+        ragDetail.put("decompositionEnabled", merged.decompositionEnabled());
         ragDetail.put("rewriteEnabled", merged.rewriteEnabled());
         ragDetail.put("subQuestionEnabled", merged.subQuestionEnabled());
         ragDetail.put("maxSubQuestions", merged.maxSubQuestions());
@@ -257,6 +261,8 @@ public class RuntimeSettingsService {
     public RagSettings resolveRagSettings(long tenantId) {
         Map<String, Object> overrides = runtimeSettingsRepository.findSection(tenantId, RAG_SECTION).orElse(Map.of());
         return new RagSettings(
+                getBoolean(overrides, "queryUnderstandingEnabled", properties.getRag().getQueryUnderstandingEnabled()),
+                getBoolean(overrides, "decompositionEnabled", properties.getRag().getDecompositionEnabled()),
                 getBoolean(overrides, "rewriteEnabled", properties.getRag().getRewriteEnabled()),
                 getBoolean(overrides, "subQuestionEnabled", properties.getRag().getSubQuestionEnabled()),
                 getInt(overrides, "maxSubQuestions", properties.getRag().getMaxSubQuestions()),
@@ -314,6 +320,8 @@ public class RuntimeSettingsService {
 
     private RagSettings defaultRagSettings() {
         return new RagSettings(
+                properties.getRag().getQueryUnderstandingEnabled(),
+                properties.getRag().getDecompositionEnabled(),
                 properties.getRag().getRewriteEnabled(),
                 properties.getRag().getSubQuestionEnabled(),
                 properties.getRag().getMaxSubQuestions(),
@@ -340,6 +348,8 @@ public class RuntimeSettingsService {
 
     private Map<String, Object> toStorageMap(RagSettings settings) {
         Map<String, Object> map = new LinkedHashMap<>();
+        map.put("queryUnderstandingEnabled", settings.queryUnderstandingEnabled());
+        map.put("decompositionEnabled", settings.decompositionEnabled());
         map.put("rewriteEnabled", settings.rewriteEnabled());
         map.put("subQuestionEnabled", settings.subQuestionEnabled());
         map.put("maxSubQuestions", settings.maxSubQuestions());
@@ -490,6 +500,8 @@ public class RuntimeSettingsService {
     }
 
     public record RagSettingsPatch(
+            Boolean queryUnderstandingEnabled,
+            Boolean decompositionEnabled,
             Boolean rewriteEnabled,
             Boolean subQuestionEnabled,
             Integer maxSubQuestions,

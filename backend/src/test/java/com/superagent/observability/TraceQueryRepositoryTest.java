@@ -154,6 +154,8 @@ class TraceQueryRepositoryTest {
         assertThat(retrievals.getFirst().filters())
                 .containsEntry("originalQuestion", "退款规则是什么？")
                 .containsEntry("rewrittenQuestion", "退款规则是什么？")
+                .containsEntry("answerMode", "single_question")
+                .containsEntry("queryUnderstandingSource", "provider_unavailable")
                 .containsEntry("hybridRetrievalEnabled", true);
         assertThat(retrievals.getFirst().items().getFirst().metadata())
                 .containsEntry("documentTitle", "trace-guide.txt");

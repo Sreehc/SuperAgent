@@ -1,6 +1,8 @@
 package com.superagent.settings.domain;
 
 public record RagSettings(
+        boolean queryUnderstandingEnabled,
+        boolean decompositionEnabled,
         boolean rewriteEnabled,
         boolean subQuestionEnabled,
         int maxSubQuestions,

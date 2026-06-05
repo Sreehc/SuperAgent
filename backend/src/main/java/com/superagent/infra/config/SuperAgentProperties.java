@@ -510,6 +510,12 @@ public class SuperAgentProperties {
     public static class Rag {
 
         @NotNull
+        private Boolean queryUnderstandingEnabled = true;
+
+        @NotNull
+        private Boolean decompositionEnabled = true;
+
+        @NotNull
         private Boolean rewriteEnabled = true;
 
         @NotNull
@@ -538,6 +544,22 @@ public class SuperAgentProperties {
 
         @Min(1)
         private int maxSubQuestions = 4;
+
+        public Boolean getQueryUnderstandingEnabled() {
+            return queryUnderstandingEnabled;
+        }
+
+        public void setQueryUnderstandingEnabled(Boolean queryUnderstandingEnabled) {
+            this.queryUnderstandingEnabled = queryUnderstandingEnabled;
+        }
+
+        public Boolean getDecompositionEnabled() {
+            return decompositionEnabled;
+        }
+
+        public void setDecompositionEnabled(Boolean decompositionEnabled) {
+            this.decompositionEnabled = decompositionEnabled;
+        }
 
         public Boolean getRewriteEnabled() {
             return rewriteEnabled;
