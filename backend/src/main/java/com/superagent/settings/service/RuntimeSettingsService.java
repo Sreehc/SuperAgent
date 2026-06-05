@@ -113,6 +113,7 @@ public class RuntimeSettingsService {
                 patch.evidenceLimit() == null ? existing.evidenceLimit() : patch.evidenceLimit(),
                 patch.perQuestionEvidenceCharLimit() == null ? existing.perQuestionEvidenceCharLimit() : patch.perQuestionEvidenceCharLimit(),
                 patch.totalEvidenceCharLimit() == null ? existing.totalEvidenceCharLimit() : patch.totalEvidenceCharLimit(),
+                patch.maxEvidenceContentChars() == null ? existing.maxEvidenceContentChars() : patch.maxEvidenceContentChars(),
                 patch.minRelevanceScore() == null ? existing.minRelevanceScore() : patch.minRelevanceScore(),
                 patch.answerConfidenceThreshold() == null ? existing.answerConfidenceThreshold() : patch.answerConfidenceThreshold(),
                 patch.queryResultCacheEnabled() == null ? existing.queryResultCacheEnabled() : patch.queryResultCacheEnabled(),
@@ -140,6 +141,7 @@ public class RuntimeSettingsService {
         ragDetail.put("evidenceLimit", merged.evidenceLimit());
         ragDetail.put("perQuestionEvidenceCharLimit", merged.perQuestionEvidenceCharLimit());
         ragDetail.put("totalEvidenceCharLimit", merged.totalEvidenceCharLimit());
+        ragDetail.put("maxEvidenceContentChars", merged.maxEvidenceContentChars());
         ragDetail.put("minRelevanceScore", merged.minRelevanceScore());
         ragDetail.put("answerConfidenceThreshold", merged.answerConfidenceThreshold());
         ragDetail.put("queryResultCacheEnabled", merged.queryResultCacheEnabled());
@@ -298,6 +300,7 @@ public class RuntimeSettingsService {
                 getInt(overrides, "evidenceLimit", properties.getRag().getEvidenceLimit()),
                 getInt(overrides, "perQuestionEvidenceCharLimit", properties.getRag().getPerQuestionEvidenceCharLimit()),
                 getInt(overrides, "totalEvidenceCharLimit", properties.getRag().getTotalEvidenceCharLimit()),
+                getInt(overrides, "maxEvidenceContentChars", properties.getRag().getMaxEvidenceContentChars()),
                 getDouble(overrides, "minRelevanceScore", properties.getRag().getMinRelevanceScore()),
                 getDouble(overrides, "answerConfidenceThreshold", properties.getRag().getAnswerConfidenceThreshold()),
                 getBoolean(overrides, "queryResultCacheEnabled", properties.getRag().getQueryResultCacheEnabled()),
@@ -367,6 +370,7 @@ public class RuntimeSettingsService {
                 properties.getRag().getEvidenceLimit(),
                 properties.getRag().getPerQuestionEvidenceCharLimit(),
                 properties.getRag().getTotalEvidenceCharLimit(),
+                properties.getRag().getMaxEvidenceContentChars(),
                 properties.getRag().getMinRelevanceScore(),
                 properties.getRag().getAnswerConfidenceThreshold(),
                 properties.getRag().getQueryResultCacheEnabled(),
@@ -405,6 +409,7 @@ public class RuntimeSettingsService {
         map.put("evidenceLimit", settings.evidenceLimit());
         map.put("perQuestionEvidenceCharLimit", settings.perQuestionEvidenceCharLimit());
         map.put("totalEvidenceCharLimit", settings.totalEvidenceCharLimit());
+        map.put("maxEvidenceContentChars", settings.maxEvidenceContentChars());
         map.put("minRelevanceScore", settings.minRelevanceScore());
         map.put("answerConfidenceThreshold", settings.answerConfidenceThreshold());
         map.put("queryResultCacheEnabled", settings.queryResultCacheEnabled());
@@ -575,6 +580,7 @@ public class RuntimeSettingsService {
             Integer evidenceLimit,
             Integer perQuestionEvidenceCharLimit,
             Integer totalEvidenceCharLimit,
+            Integer maxEvidenceContentChars,
             Double minRelevanceScore,
             Double answerConfidenceThreshold,
             Boolean queryResultCacheEnabled,

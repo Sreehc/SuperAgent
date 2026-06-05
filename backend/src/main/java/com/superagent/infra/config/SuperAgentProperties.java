@@ -576,6 +576,9 @@ public class SuperAgentProperties {
         @Min(1)
         private int totalEvidenceCharLimit = 12000;
 
+        @Min(1)
+        private int maxEvidenceContentChars = 1600;
+
         @Min(0)
         private double minRelevanceScore = 0.35d;
 
@@ -715,6 +718,14 @@ public class SuperAgentProperties {
 
         public void setTotalEvidenceCharLimit(int totalEvidenceCharLimit) {
             this.totalEvidenceCharLimit = totalEvidenceCharLimit;
+        }
+
+        public int getMaxEvidenceContentChars() {
+            return maxEvidenceContentChars;
+        }
+
+        public void setMaxEvidenceContentChars(int maxEvidenceContentChars) {
+            this.maxEvidenceContentChars = maxEvidenceContentChars;
         }
 
         public double getMinRelevanceScore() {

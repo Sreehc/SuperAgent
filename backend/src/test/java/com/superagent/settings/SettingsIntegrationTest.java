@@ -115,6 +115,7 @@ class SettingsIntegrationTest {
         assertThat(ragJson.path("data").path("neighborWindow").asInt()).isEqualTo(1);
         assertThat(ragJson.path("data").path("maxChunksPerDocument").asInt()).isEqualTo(2);
         assertThat(ragJson.path("data").path("perQuestionEvidenceCharLimit").asInt()).isEqualTo(2800);
+        assertThat(ragJson.path("data").path("maxEvidenceContentChars").asInt()).isEqualTo(1500);
         assertThat(ragJson.path("data").path("answerConfidenceThreshold").asDouble()).isEqualTo(0.61d);
         assertThat(ragJson.path("data").path("queryResultCacheEnabled").asBoolean()).isTrue();
         assertThat(ragJson.path("data").path("queryResultCacheTtlSeconds").asLong()).isEqualTo(45L);
@@ -188,6 +189,7 @@ class SettingsIntegrationTest {
         payload.put("evidenceLimit", 5);
         payload.put("perQuestionEvidenceCharLimit", 2800);
         payload.put("totalEvidenceCharLimit", 8400);
+        payload.put("maxEvidenceContentChars", 1500);
         payload.put("minRelevanceScore", 0.42d);
         payload.put("answerConfidenceThreshold", 0.61d);
         payload.put("queryResultCacheEnabled", true);

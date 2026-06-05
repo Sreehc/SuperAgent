@@ -99,7 +99,8 @@ public class RagOrchestrationService {
                     query.minRelevanceScore(),
                     perQuestionBudget,
                     query.maxChunksPerDocument(),
-                    query.perQuestionEvidenceCharLimit()
+                    query.perQuestionEvidenceCharLimit(),
+                    query.maxEvidenceContentChars()
             );
             Integer fusedLatencyMs = elapsedMillis(fusedStartedAt);
             List<RagEvidence> selected = selectedBudget.evidences();
@@ -116,6 +117,7 @@ public class RagOrchestrationService {
                     selectedBudget.diversityLimited(),
                     selectedBudget.belowThresholdFilteredCount(),
                     selectedBudget.perDocumentTrimmedCount(),
+                    selectedBudget.contentTrimmedCount(),
                     selectedBudget.charBudgetTrimmedCount(),
                     selectedBudget.evidenceLimitTrimmedCount()
             );
@@ -128,7 +130,8 @@ public class RagOrchestrationService {
                 deduplicateByChunk(fusedEvidences),
                 rootQuery.evidenceLimit(),
                 rootQuery.maxChunksPerDocument(),
-                rootQuery.totalEvidenceCharLimit()
+                rootQuery.totalEvidenceCharLimit(),
+                rootQuery.maxEvidenceContentChars()
         );
         List<RagEvidence> filtered = finalBudget.evidences();
 

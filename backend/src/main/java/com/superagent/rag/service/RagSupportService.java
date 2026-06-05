@@ -69,6 +69,7 @@ public class RagSupportService {
                 ragOptions == null || ragOptions.evidenceLimit() == null ? base.evidenceLimit() : ragOptions.evidenceLimit(),
                 base.perQuestionEvidenceCharLimit(),
                 base.totalEvidenceCharLimit(),
+                base.maxEvidenceContentChars(),
                 ragOptions == null || ragOptions.minRelevanceScore() == null ? base.minRelevanceScore() : ragOptions.minRelevanceScore(),
                 base.answerConfidenceThreshold(),
                 base.queryResultCacheEnabled(),
@@ -153,6 +154,7 @@ public class RagSupportService {
                 settings.evidenceLimit(),
                 settings.perQuestionEvidenceCharLimit(),
                 settings.totalEvidenceCharLimit(),
+                settings.maxEvidenceContentChars(),
                 settings.minRelevanceScore(),
                 settings.answerConfidenceThreshold(),
                 riskAssessment.answerConfidenceThreshold(),
@@ -214,7 +216,8 @@ public class RagSupportService {
             double minScore,
             int evidenceLimit,
             int maxChunksPerDocument,
-            int evidenceCharLimit
+            int evidenceCharLimit,
+            int maxEvidenceContentChars
     ) {
         List<RagEvidence> adjusted = evidences.stream()
                 .map(evidence -> adjustRelevance(query, evidence))
@@ -225,7 +228,8 @@ public class RagSupportService {
                 .toList();
         int belowThresholdFilteredCount = Math.max(0, adjusted.size() - thresholdFiltered.size());
         LimitedEvidenceResult perDocumentLimited = limitPerDocument(thresholdFiltered, maxChunksPerDocument);
-        LimitedEvidenceResult charLimited = limitByTotalChars(perDocumentLimited.evidences(), evidenceCharLimit);
+        ContentLimitedEvidenceResult contentLimited = limitEvidenceContent(perDocumentLimited.evidences(), maxEvidenceContentChars);
+        LimitedEvidenceResult charLimited = limitByTotalChars(contentLimited.evidences(), evidenceCharLimit);
         List<RagEvidence> finalEvidences = charLimited.evidences().stream()
                 .limit(evidenceLimit)
                 .toList();
@@ -236,6 +240,7 @@ public class RagSupportService {
                 diversityLimited,
                 belowThresholdFilteredCount,
                 perDocumentLimited.trimmedCount(),
+                contentLimited.trimmedCount(),
                 charLimited.trimmedCount(),
                 evidenceLimitTrimmedCount
         );
@@ -245,7 +250,8 @@ public class RagSupportService {
             List<RagEvidence> evidences,
             int evidenceLimit,
             int maxChunksPerDocument,
-            int totalEvidenceCharLimit
+            int totalEvidenceCharLimit,
+            int maxEvidenceContentChars
     ) {
         LimitedEvidenceResult perDocumentLimited = limitPerDocument(
                 evidences.stream()
@@ -253,7 +259,8 @@ public class RagSupportService {
                 .toList(),
                 maxChunksPerDocument
         );
-        LimitedEvidenceResult charLimited = limitByTotalChars(perDocumentLimited.evidences(), totalEvidenceCharLimit);
+        ContentLimitedEvidenceResult contentLimited = limitEvidenceContent(perDocumentLimited.evidences(), maxEvidenceContentChars);
+        LimitedEvidenceResult charLimited = limitByTotalChars(contentLimited.evidences(), totalEvidenceCharLimit);
         List<RagEvidence> finalEvidences = charLimited.evidences().stream()
                 .limit(evidenceLimit)
                 .toList();
@@ -264,6 +271,7 @@ public class RagSupportService {
                 diversityLimited,
                 0,
                 perDocumentLimited.trimmedCount(),
+                contentLimited.trimmedCount(),
                 charLimited.trimmedCount(),
                 evidenceLimitTrimmedCount
         );
@@ -333,6 +341,7 @@ public class RagSupportService {
                 properties.getRag().getEvidenceLimit(),
                 properties.getRag().getPerQuestionEvidenceCharLimit(),
                 properties.getRag().getTotalEvidenceCharLimit(),
+                properties.getRag().getMaxEvidenceContentChars(),
                 properties.getRag().getMinRelevanceScore(),
                 properties.getRag().getAnswerConfidenceThreshold(),
                 properties.getRag().getQueryResultCacheEnabled(),
@@ -382,6 +391,41 @@ public class RagSupportService {
             limited.add(evidence);
         }
         return new LimitedEvidenceResult(limited, trimmedCount);
+    }
+
+    private ContentLimitedEvidenceResult limitEvidenceContent(List<RagEvidence> evidences, int maxEvidenceContentChars) {
+        if (maxEvidenceContentChars <= 0) {
+            return new ContentLimitedEvidenceResult(evidences, 0);
+        }
+        List<RagEvidence> limited = new ArrayList<>(evidences.size());
+        int trimmedCount = 0;
+        for (RagEvidence evidence : evidences) {
+            String content = evidence.content();
+            if (content == null || content.length() <= maxEvidenceContentChars) {
+                limited.add(evidence);
+                continue;
+            }
+            trimmedCount++;
+            int cutoff = Math.max(1, maxEvidenceContentChars - 3);
+            String trimmedContent = content.substring(0, Math.min(content.length(), cutoff)).trim() + "...";
+            Map<String, Object> metadata = new LinkedHashMap<>(evidence.metadata());
+            metadata.put("contentTrimmed", true);
+            metadata.put("originalContentLength", content.length());
+            metadata.put("trimmedContentLength", trimmedContent.length());
+            limited.add(new RagEvidence(
+                    evidence.channel(),
+                    evidence.knowledgeBaseId(),
+                    evidence.documentId(),
+                    evidence.chunkId(),
+                    evidence.documentTitle(),
+                    evidence.chunkNo(),
+                    trimmedContent,
+                    evidence.sectionTitle(),
+                    evidence.score(),
+                    metadata
+            ));
+        }
+        return new ContentLimitedEvidenceResult(limited, trimmedCount);
     }
 
     private RagEvidence adjustRelevance(String query, RagEvidence evidence) {
@@ -539,6 +583,7 @@ public class RagSupportService {
             int evidenceLimit,
             int perQuestionEvidenceCharLimit,
             int totalEvidenceCharLimit,
+            int maxEvidenceContentChars,
             double minRelevanceScore,
             double answerConfidenceThreshold,
             boolean queryResultCacheEnabled,
@@ -554,8 +599,15 @@ public class RagSupportService {
             boolean diversityLimited,
             int belowThresholdFilteredCount,
             int perDocumentTrimmedCount,
+            int contentTrimmedCount,
             int charBudgetTrimmedCount,
             int evidenceLimitTrimmedCount
+    ) {
+    }
+
+    private record ContentLimitedEvidenceResult(
+            List<RagEvidence> evidences,
+            int trimmedCount
     ) {
     }
 

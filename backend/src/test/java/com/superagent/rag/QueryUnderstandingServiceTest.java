@@ -213,6 +213,7 @@ class QueryUnderstandingServiceTest {
                 8,
                 2800,
                 8400,
+                1600,
                 0.35d,
                 0.55d,
                 false,

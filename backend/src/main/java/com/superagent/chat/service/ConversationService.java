@@ -736,6 +736,7 @@ public class ConversationService {
         filters.put("evidenceLimit", query.evidenceLimit());
         filters.put("perQuestionEvidenceCharLimit", query.perQuestionEvidenceCharLimit());
         filters.put("totalEvidenceCharLimit", query.totalEvidenceCharLimit());
+        filters.put("maxEvidenceContentChars", query.maxEvidenceContentChars());
         filters.put("minRelevanceScore", query.minRelevanceScore());
         filters.put("baseAnswerConfidenceThreshold", query.baseAnswerConfidenceThreshold());
         filters.put("answerConfidenceThreshold", query.answerConfidenceThreshold());
@@ -760,6 +761,7 @@ public class ConversationService {
             filters.put("diversityLimited", step.diversityLimited());
             filters.put("belowThresholdFilteredCount", step.belowThresholdFilteredCount());
             filters.put("perDocumentTrimmedCount", step.perDocumentTrimmedCount());
+            filters.put("contentTrimmedCount", step.contentTrimmedCount());
             filters.put("charBudgetTrimmedCount", step.charBudgetTrimmedCount());
             filters.put("evidenceLimitTrimmedCount", step.evidenceLimitTrimmedCount());
         }
@@ -792,6 +794,7 @@ public class ConversationService {
             metadata.put("baseAnswerConfidenceThreshold", firstQuery.baseAnswerConfidenceThreshold());
             metadata.put("baseNoEvidenceMinResults", firstQuery.baseNoEvidenceMinResults());
             metadata.put("baseForceCitationEnabled", firstQuery.baseForceCitationEnabled());
+            metadata.put("maxEvidenceContentChars", firstQuery.maxEvidenceContentChars());
             metadata.put("highRiskGuardApplied", firstQuery.highRiskGuardApplied());
             metadata.put("questionRiskLevel", firstQuery.questionRiskLevel());
             metadata.put("questionRiskReasons", firstQuery.questionRiskReasons());

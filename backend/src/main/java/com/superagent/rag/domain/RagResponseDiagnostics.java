@@ -26,6 +26,7 @@ public record RagResponseDiagnostics(
             boolean diversityLimited,
             int belowThresholdFilteredCount,
             int perDocumentTrimmedCount,
+            int contentTrimmedCount,
             int charBudgetTrimmedCount,
             int evidenceLimitTrimmedCount
     ) {

@@ -26,6 +26,7 @@ public record RagSearchQuery(
         int evidenceLimit,
         int perQuestionEvidenceCharLimit,
         int totalEvidenceCharLimit,
+        int maxEvidenceContentChars,
         double minRelevanceScore,
         double baseAnswerConfidenceThreshold,
         double answerConfidenceThreshold,

@@ -18,6 +18,7 @@ public record RagSettings(
         int evidenceLimit,
         int perQuestionEvidenceCharLimit,
         int totalEvidenceCharLimit,
+        int maxEvidenceContentChars,
         double minRelevanceScore,
         double answerConfidenceThreshold,
         boolean queryResultCacheEnabled,

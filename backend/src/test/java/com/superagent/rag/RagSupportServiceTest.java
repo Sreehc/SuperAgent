@@ -30,7 +30,7 @@ class RagSupportServiceTest {
         assertThat(fused.getFirst().chunkId()).isEqualTo(100L);
         assertThat(fused.getFirst().score()).isBetween(0.9d, 1.0d);
 
-        RagSupportService.BudgetedEvidenceResult budgeted = service.applyThresholdAndBudget("A1", fused, 0.35d, 2, 2, 1000);
+        RagSupportService.BudgetedEvidenceResult budgeted = service.applyThresholdAndBudget("A1", fused, 0.35d, 2, 2, 1000, 1000);
         assertThat(budgeted.evidences()).singleElement().extracting(RagEvidence::chunkId).isEqualTo(100L);
         assertThat(budgeted.evidences().getFirst().metadata()).containsKey("channels");
         assertThat(budgeted.evidences().getFirst().metadata()).containsEntry("lexicalMatched", true);
@@ -47,11 +47,11 @@ class RagSupportServiceTest {
                 new RagEvidence("hybrid", 1L, 12L, 102L, "文档C", 1, "退款申请需要订单截图", null, 0.7d, Map.of("channels", List.of("vector", "keyword")))
         );
 
-        RagSupportService.BudgetedEvidenceResult filtered = service.applyThresholdAndBudget("退款 规则 七日", evidences, 0.35d, 3, 3, 1000);
+        RagSupportService.BudgetedEvidenceResult filtered = service.applyThresholdAndBudget("退款 规则 七日", evidences, 0.35d, 3, 3, 1000, 1000);
         assertThat(filtered.evidences()).extracting(RagEvidence::chunkId).containsExactly(100L, 102L);
         assertThat(filtered.belowThresholdFilteredCount()).isEqualTo(1);
 
-        RagSupportService.BudgetedEvidenceResult totalBudgeted = service.applyTotalBudget(filtered.evidences(), 1, 3, 1000);
+        RagSupportService.BudgetedEvidenceResult totalBudgeted = service.applyTotalBudget(filtered.evidences(), 1, 3, 1000, 1000);
         assertThat(totalBudgeted.evidences()).singleElement().extracting(RagEvidence::chunkId).isEqualTo(100L);
         assertThat(totalBudgeted.evidenceLimitTrimmedCount()).isEqualTo(1);
     }
@@ -67,7 +67,7 @@ class RagSupportServiceTest {
                 new RagEvidence("hybrid", 1L, 11L, 103L, "文档B", 1, "售后工单入口", null, 0.6d, Map.of("channels", List.of("vector", "keyword")))
         );
 
-        RagSupportService.BudgetedEvidenceResult filtered = service.applyThresholdAndBudget("退款 规则", evidences, 0.35d, 4, 2, 1000);
+        RagSupportService.BudgetedEvidenceResult filtered = service.applyThresholdAndBudget("退款 规则", evidences, 0.35d, 4, 2, 1000, 1000);
 
         assertThat(filtered.evidences()).extracting(RagEvidence::chunkId).containsExactly(100L, 101L, 103L);
         assertThat(filtered.diversityLimited()).isTrue();
@@ -83,13 +83,33 @@ class RagSupportServiceTest {
                 new RagEvidence("hybrid", 1L, 11L, 101L, "文档B", 1, "退款申请需要订单截图和售后工单编号", null, 0.8d, Map.of("channels", List.of("vector", "keyword")))
         );
 
-        RagSupportService.BudgetedEvidenceResult perQuestionBudgeted = service.applyThresholdAndBudget("退款 规则", evidences, 0.35d, 2, 2, 12);
+        RagSupportService.BudgetedEvidenceResult perQuestionBudgeted = service.applyThresholdAndBudget("退款 规则", evidences, 0.35d, 2, 2, 12, 1000);
         assertThat(perQuestionBudgeted.evidences()).singleElement().extracting(RagEvidence::chunkId).isEqualTo(100L);
         assertThat(perQuestionBudgeted.charBudgetTrimmedCount()).isEqualTo(1);
 
-        RagSupportService.BudgetedEvidenceResult totalBudgeted = service.applyTotalBudget(evidences, 2, 2, 12);
+        RagSupportService.BudgetedEvidenceResult totalBudgeted = service.applyTotalBudget(evidences, 2, 2, 12, 1000);
         assertThat(totalBudgeted.evidences()).singleElement().extracting(RagEvidence::chunkId).isEqualTo(100L);
         assertThat(totalBudgeted.charBudgetTrimmedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldTrimEachEvidenceContentBeforeApplyingTotalBudget() {
+        RagSupportService service = new RagSupportService(new SuperAgentProperties(), null);
+
+        List<RagEvidence> evidences = List.of(
+                new RagEvidence("hybrid", 1L, 10L, 100L, "文档A", 1, "退款规则：7日内申请，并提供订单截图和售后工单编号。", null, 0.9d, Map.of("channels", List.of("vector", "keyword"))),
+                new RagEvidence("hybrid", 1L, 11L, 101L, "文档B", 1, "退款到账一般在3个工作日内完成。", null, 0.8d, Map.of("channels", List.of("vector", "keyword")))
+        );
+
+        RagSupportService.BudgetedEvidenceResult budgeted = service.applyTotalBudget(evidences, 2, 2, 60, 16);
+
+        assertThat(budgeted.contentTrimmedCount()).isEqualTo(1);
+        assertThat(budgeted.charBudgetTrimmedCount()).isEqualTo(0);
+        assertThat(budgeted.evidences()).hasSize(2);
+        assertThat(budgeted.evidences().getFirst().content()).endsWith("...");
+        assertThat(budgeted.evidences().getFirst().content().length()).isLessThanOrEqualTo(16);
+        assertThat(budgeted.evidences().getFirst().metadata()).containsEntry("contentTrimmed", true);
+        assertThat(budgeted.evidences().getFirst().metadata()).containsEntry("originalContentLength", evidences.getFirst().content().length());
     }
 
     @Test
@@ -123,6 +143,7 @@ class RagSupportServiceTest {
                         8,
                         2800,
                         8400,
+                        1600,
                         0.35d,
                         0.55d,
                         false,
