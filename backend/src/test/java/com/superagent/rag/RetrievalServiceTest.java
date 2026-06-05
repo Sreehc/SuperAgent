@@ -99,6 +99,7 @@ class RetrievalServiceTest {
                 2800,
                 8400,
                 0.35d,
+                0.55d,
                 false,
                 1,
                 true

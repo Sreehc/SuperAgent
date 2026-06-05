@@ -63,6 +63,7 @@ public class RagSupportService {
                 base.perQuestionEvidenceCharLimit(),
                 base.totalEvidenceCharLimit(),
                 ragOptions == null || ragOptions.minRelevanceScore() == null ? base.minRelevanceScore() : ragOptions.minRelevanceScore(),
+                base.answerConfidenceThreshold(),
                 base.maxSubQuestions(),
                 base.noEvidenceMinResults(),
                 base.forceCitationEnabled()
@@ -138,6 +139,7 @@ public class RagSupportService {
                 settings.perQuestionEvidenceCharLimit(),
                 settings.totalEvidenceCharLimit(),
                 settings.minRelevanceScore(),
+                settings.answerConfidenceThreshold(),
                 settings.rerankEnabled(),
                 settings.noEvidenceMinResults(),
                 settings.forceCitationEnabled()
@@ -155,7 +157,7 @@ public class RagSupportService {
                 .toList();
     }
 
-    public List<RagEvidence> applyThresholdAndBudget(
+    public BudgetedEvidenceResult applyThresholdAndBudget(
             String query,
             List<RagEvidence> evidences,
             double minScore,
@@ -163,32 +165,68 @@ public class RagSupportService {
             int maxChunksPerDocument,
             int evidenceCharLimit
     ) {
-        return limitByTotalChars(limitPerDocument(
-                evidences.stream()
+        List<RagEvidence> adjusted = evidences.stream()
                 .map(evidence -> adjustRelevance(query, evidence))
-                .filter(evidence -> evidence.score() >= minScore)
                 .sorted((left, right) -> Double.compare(right.score(), left.score()))
-                .toList(),
-                maxChunksPerDocument
-        ), evidenceCharLimit).stream()
+                .toList();
+        List<RagEvidence> thresholdFiltered = adjusted.stream()
+                .filter(evidence -> evidence.score() >= minScore)
+                .toList();
+        int belowThresholdFilteredCount = Math.max(0, adjusted.size() - thresholdFiltered.size());
+        LimitedEvidenceResult perDocumentLimited = limitPerDocument(thresholdFiltered, maxChunksPerDocument);
+        LimitedEvidenceResult charLimited = limitByTotalChars(perDocumentLimited.evidences(), evidenceCharLimit);
+        List<RagEvidence> finalEvidences = charLimited.evidences().stream()
                 .limit(evidenceLimit)
                 .toList();
+        int evidenceLimitTrimmedCount = Math.max(0, charLimited.evidences().size() - finalEvidences.size());
+        boolean diversityLimited = perDocumentLimited.trimmedCount() > 0 || evidenceLimitTrimmedCount > 0;
+        return new BudgetedEvidenceResult(
+                finalEvidences,
+                diversityLimited,
+                belowThresholdFilteredCount,
+                perDocumentLimited.trimmedCount(),
+                charLimited.trimmedCount(),
+                evidenceLimitTrimmedCount
+        );
     }
 
-    public List<RagEvidence> applyTotalBudget(
+    public BudgetedEvidenceResult applyTotalBudget(
             List<RagEvidence> evidences,
             int evidenceLimit,
             int maxChunksPerDocument,
             int totalEvidenceCharLimit
     ) {
-        return limitByTotalChars(limitPerDocument(
+        LimitedEvidenceResult perDocumentLimited = limitPerDocument(
                 evidences.stream()
                 .sorted((left, right) -> Double.compare(right.score(), left.score()))
                 .toList(),
                 maxChunksPerDocument
-        ), totalEvidenceCharLimit).stream()
+        );
+        LimitedEvidenceResult charLimited = limitByTotalChars(perDocumentLimited.evidences(), totalEvidenceCharLimit);
+        List<RagEvidence> finalEvidences = charLimited.evidences().stream()
                 .limit(evidenceLimit)
                 .toList();
+        int evidenceLimitTrimmedCount = Math.max(0, charLimited.evidences().size() - finalEvidences.size());
+        boolean diversityLimited = perDocumentLimited.trimmedCount() > 0 || evidenceLimitTrimmedCount > 0;
+        return new BudgetedEvidenceResult(
+                finalEvidences,
+                diversityLimited,
+                0,
+                perDocumentLimited.trimmedCount(),
+                charLimited.trimmedCount(),
+                evidenceLimitTrimmedCount
+        );
+    }
+
+    public double calculateAnswerConfidence(List<RagEvidence> evidences) {
+        if (evidences == null || evidences.isEmpty()) {
+            return 0.0d;
+        }
+        return evidences.stream()
+                .mapToDouble(RagEvidence::score)
+                .limit(3)
+                .average()
+                .orElse(0.0d);
     }
 
     private void mergeRanked(Map<Long, RagEvidenceAccumulator> accumulator, List<RetrievalResult> results, int rrfK) {
@@ -225,20 +263,23 @@ public class RagSupportService {
                 properties.getRag().getPerQuestionEvidenceCharLimit(),
                 properties.getRag().getTotalEvidenceCharLimit(),
                 properties.getRag().getMinRelevanceScore(),
+                properties.getRag().getAnswerConfidenceThreshold(),
                 properties.getRag().getNoEvidenceMinResults(),
                 properties.getRag().getForceCitationEnabled()
         );
     }
 
-    private List<RagEvidence> limitByTotalChars(List<RagEvidence> evidences, int maxChars) {
+    private LimitedEvidenceResult limitByTotalChars(List<RagEvidence> evidences, int maxChars) {
         if (maxChars <= 0) {
-            return evidences;
+            return new LimitedEvidenceResult(evidences, 0);
         }
         int totalChars = 0;
         List<RagEvidence> limited = new ArrayList<>();
+        int trimmedCount = 0;
         for (RagEvidence evidence : evidences) {
             int candidateChars = evidence.content() == null ? 0 : evidence.content().length();
             if (!limited.isEmpty() && totalChars + candidateChars > maxChars) {
+                trimmedCount++;
                 continue;
             }
             limited.add(evidence);
@@ -247,24 +288,27 @@ public class RagSupportService {
                 break;
             }
         }
-        return limited;
+        trimmedCount += Math.max(0, evidences.size() - limited.size() - trimmedCount);
+        return new LimitedEvidenceResult(limited, trimmedCount);
     }
 
-    private List<RagEvidence> limitPerDocument(List<RagEvidence> evidences, int maxChunksPerDocument) {
+    private LimitedEvidenceResult limitPerDocument(List<RagEvidence> evidences, int maxChunksPerDocument) {
         if (maxChunksPerDocument <= 0) {
-            return evidences;
+            return new LimitedEvidenceResult(evidences, 0);
         }
         Map<Long, Integer> counts = new LinkedHashMap<>();
         List<RagEvidence> limited = new ArrayList<>();
+        int trimmedCount = 0;
         for (RagEvidence evidence : evidences) {
             int currentCount = counts.getOrDefault(evidence.documentId(), 0);
             if (currentCount >= maxChunksPerDocument) {
+                trimmedCount++;
                 continue;
             }
             counts.put(evidence.documentId(), currentCount + 1);
             limited.add(evidence);
         }
-        return limited;
+        return new LimitedEvidenceResult(limited, trimmedCount);
     }
 
     private RagEvidence adjustRelevance(String query, RagEvidence evidence) {
@@ -423,9 +467,26 @@ public class RagSupportService {
             int perQuestionEvidenceCharLimit,
             int totalEvidenceCharLimit,
             double minRelevanceScore,
+            double answerConfidenceThreshold,
             int maxSubQuestions,
             int noEvidenceMinResults,
             boolean forceCitationEnabled
+    ) {
+    }
+
+    public record BudgetedEvidenceResult(
+            List<RagEvidence> evidences,
+            boolean diversityLimited,
+            int belowThresholdFilteredCount,
+            int perDocumentTrimmedCount,
+            int charBudgetTrimmedCount,
+            int evidenceLimitTrimmedCount
+    ) {
+    }
+
+    private record LimitedEvidenceResult(
+            List<RagEvidence> evidences,
+            int trimmedCount
     ) {
     }
 }

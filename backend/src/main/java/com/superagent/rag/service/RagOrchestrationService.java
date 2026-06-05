@@ -91,7 +91,7 @@ public class RagOrchestrationService {
             long fusedStartedAt = System.nanoTime();
             List<RagEvidence> fused = ragSupportService.fuseWithRrf(vectorResults, keywordResults, query.rrfK());
             List<RagEvidence> expanded = retrievalService.expandNeighbors(query, deduplicateByChunk(fused));
-            List<RagEvidence> selected = ragSupportService.applyThresholdAndBudget(
+            RagSupportService.BudgetedEvidenceResult selectedBudget = ragSupportService.applyThresholdAndBudget(
                     query.subQuestion(),
                     expanded,
                     query.minRelevanceScore(),
@@ -100,6 +100,7 @@ public class RagOrchestrationService {
                     query.perQuestionEvidenceCharLimit()
             );
             Integer fusedLatencyMs = elapsedMillis(fusedStartedAt);
+            List<RagEvidence> selected = selectedBudget.evidences();
 
             RagResponseDiagnostics.RetrievalStep retrievalStep = new RagResponseDiagnostics.RetrievalStep(
                     query,
@@ -109,19 +110,25 @@ public class RagOrchestrationService {
                     selected,
                     vectorLatencyMs,
                     keywordLatencyMs,
-                    fusedLatencyMs
+                    fusedLatencyMs,
+                    selectedBudget.diversityLimited(),
+                    selectedBudget.belowThresholdFilteredCount(),
+                    selectedBudget.perDocumentTrimmedCount(),
+                    selectedBudget.charBudgetTrimmedCount(),
+                    selectedBudget.evidenceLimitTrimmedCount()
             );
             fusedEvidences.addAll(selected);
             retrievalSteps.add(retrievalStep);
             ragRuntimeMetrics.recordRetrievalStep(retrievalStep);
         }
 
-        List<RagEvidence> filtered = ragSupportService.applyTotalBudget(
+        RagSupportService.BudgetedEvidenceResult finalBudget = ragSupportService.applyTotalBudget(
                 deduplicateByChunk(fusedEvidences),
                 rootQuery.evidenceLimit(),
                 rootQuery.maxChunksPerDocument(),
                 rootQuery.totalEvidenceCharLimit()
         );
+        List<RagEvidence> filtered = finalBudget.evidences();
 
         List<RagEvidence> reranked = filtered;
         RagResponseDiagnostics.RerankStep rerankStep;
@@ -157,11 +164,16 @@ public class RagOrchestrationService {
             );
         }
 
-        boolean noEvidence = reranked.isEmpty() || reranked.size() < rootQuery.noEvidenceMinResults();
+        double answerConfidenceScore = ragSupportService.calculateAnswerConfidence(reranked);
+        boolean noEvidence = reranked.isEmpty()
+                || reranked.size() < rootQuery.noEvidenceMinResults()
+                || answerConfidenceScore < rootQuery.answerConfidenceThreshold();
         if (reranked.isEmpty()) {
             fallbackReason = "no_selected_evidence";
         } else if (reranked.size() < rootQuery.noEvidenceMinResults()) {
             fallbackReason = "insufficient_evidence_results";
+        } else if (answerConfidenceScore < rootQuery.answerConfidenceThreshold()) {
+            fallbackReason = "low_answer_confidence";
         }
         List<RagEvidence> finalEvidences = noEvidence ? List.of() : reranked;
         RagAnswer answer = noEvidence
@@ -187,7 +199,9 @@ public class RagOrchestrationService {
                         noEvidence ? "no_evidence_fallback_prompt" : "rag_prompt_with_evidence_" + reranked.size(),
                         summarizeModelOutput(answer),
                         fallbackReason,
-                        answer.citationAppended()
+                        answer.citationAppended(),
+                        answerConfidenceScore,
+                        rootQuery.answerConfidenceThreshold()
                 )
         );
         ragRuntimeMetrics.recordAnswer(response);

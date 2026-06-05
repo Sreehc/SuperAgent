@@ -114,6 +114,7 @@ public class RuntimeSettingsService {
                 patch.perQuestionEvidenceCharLimit() == null ? existing.perQuestionEvidenceCharLimit() : patch.perQuestionEvidenceCharLimit(),
                 patch.totalEvidenceCharLimit() == null ? existing.totalEvidenceCharLimit() : patch.totalEvidenceCharLimit(),
                 patch.minRelevanceScore() == null ? existing.minRelevanceScore() : patch.minRelevanceScore(),
+                patch.answerConfidenceThreshold() == null ? existing.answerConfidenceThreshold() : patch.answerConfidenceThreshold(),
                 patch.noEvidenceMinResults() == null ? existing.noEvidenceMinResults() : patch.noEvidenceMinResults(),
                 patch.forceCitationEnabled() == null ? existing.forceCitationEnabled() : patch.forceCitationEnabled()
         );
@@ -138,6 +139,7 @@ public class RuntimeSettingsService {
         ragDetail.put("perQuestionEvidenceCharLimit", merged.perQuestionEvidenceCharLimit());
         ragDetail.put("totalEvidenceCharLimit", merged.totalEvidenceCharLimit());
         ragDetail.put("minRelevanceScore", merged.minRelevanceScore());
+        ragDetail.put("answerConfidenceThreshold", merged.answerConfidenceThreshold());
         ragDetail.put("noEvidenceMinResults", merged.noEvidenceMinResults());
         ragDetail.put("forceCitationEnabled", merged.forceCitationEnabled());
         auditLogRepository.append(
@@ -293,6 +295,7 @@ public class RuntimeSettingsService {
                 getInt(overrides, "perQuestionEvidenceCharLimit", properties.getRag().getPerQuestionEvidenceCharLimit()),
                 getInt(overrides, "totalEvidenceCharLimit", properties.getRag().getTotalEvidenceCharLimit()),
                 getDouble(overrides, "minRelevanceScore", properties.getRag().getMinRelevanceScore()),
+                getDouble(overrides, "answerConfidenceThreshold", properties.getRag().getAnswerConfidenceThreshold()),
                 getInt(overrides, "noEvidenceMinResults", properties.getRag().getNoEvidenceMinResults()),
                 getBoolean(overrides, "forceCitationEnabled", properties.getRag().getForceCitationEnabled())
         );
@@ -359,6 +362,7 @@ public class RuntimeSettingsService {
                 properties.getRag().getPerQuestionEvidenceCharLimit(),
                 properties.getRag().getTotalEvidenceCharLimit(),
                 properties.getRag().getMinRelevanceScore(),
+                properties.getRag().getAnswerConfidenceThreshold(),
                 properties.getRag().getNoEvidenceMinResults(),
                 properties.getRag().getForceCitationEnabled()
         );
@@ -394,6 +398,7 @@ public class RuntimeSettingsService {
         map.put("perQuestionEvidenceCharLimit", settings.perQuestionEvidenceCharLimit());
         map.put("totalEvidenceCharLimit", settings.totalEvidenceCharLimit());
         map.put("minRelevanceScore", settings.minRelevanceScore());
+        map.put("answerConfidenceThreshold", settings.answerConfidenceThreshold());
         map.put("noEvidenceMinResults", settings.noEvidenceMinResults());
         map.put("forceCitationEnabled", settings.forceCitationEnabled());
         return map;
@@ -553,6 +558,7 @@ public class RuntimeSettingsService {
             Integer perQuestionEvidenceCharLimit,
             Integer totalEvidenceCharLimit,
             Double minRelevanceScore,
+            Double answerConfidenceThreshold,
             Integer noEvidenceMinResults,
             Boolean forceCitationEnabled
     ) {

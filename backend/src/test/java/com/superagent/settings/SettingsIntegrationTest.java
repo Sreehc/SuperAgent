@@ -115,6 +115,7 @@ class SettingsIntegrationTest {
         assertThat(ragJson.path("data").path("neighborWindow").asInt()).isEqualTo(1);
         assertThat(ragJson.path("data").path("maxChunksPerDocument").asInt()).isEqualTo(2);
         assertThat(ragJson.path("data").path("perQuestionEvidenceCharLimit").asInt()).isEqualTo(2800);
+        assertThat(ragJson.path("data").path("answerConfidenceThreshold").asDouble()).isEqualTo(0.61d);
         assertThat(ragJson.path("data").path("noEvidenceMinResults").asInt()).isEqualTo(2);
         assertThat(ragJson.path("data").path("forceCitationEnabled").asBoolean()).isFalse();
 
@@ -186,6 +187,7 @@ class SettingsIntegrationTest {
         payload.put("perQuestionEvidenceCharLimit", 2800);
         payload.put("totalEvidenceCharLimit", 8400);
         payload.put("minRelevanceScore", 0.42d);
+        payload.put("answerConfidenceThreshold", 0.61d);
         payload.put("noEvidenceMinResults", 2);
         payload.put("forceCitationEnabled", false);
         return payload;

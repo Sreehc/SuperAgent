@@ -9,7 +9,9 @@ public record RagResponseDiagnostics(
         String promptSummary,
         String modelSummary,
         String fallbackReason,
-        boolean citationAppended
+        boolean citationAppended,
+        double answerConfidenceScore,
+        double answerConfidenceThreshold
 ) {
 
     public record RetrievalStep(
@@ -20,7 +22,12 @@ public record RagResponseDiagnostics(
             List<RagEvidence> selectedResults,
             Integer vectorLatencyMs,
             Integer keywordLatencyMs,
-            Integer fusedLatencyMs
+            Integer fusedLatencyMs,
+            boolean diversityLimited,
+            int belowThresholdFilteredCount,
+            int perDocumentTrimmedCount,
+            int charBudgetTrimmedCount,
+            int evidenceLimitTrimmedCount
     ) {
     }
 

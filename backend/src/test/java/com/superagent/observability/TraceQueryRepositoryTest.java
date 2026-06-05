@@ -168,9 +168,15 @@ class TraceQueryRepositoryTest {
                 .containsEntry("neighborWindow", 1)
                 .containsEntry("perQuestionEvidenceCharLimit", 2800)
                 .containsEntry("totalEvidenceCharLimit", 8400)
+                .containsEntry("answerConfidenceThreshold", 0.55d)
                 .containsEntry("noEvidenceMinResults", 2)
                 .containsEntry("forceCitationEnabled", false)
-                .containsEntry("hybridRetrievalEnabled", true);
+                .containsEntry("hybridRetrievalEnabled", true)
+                .containsEntry("diversityLimited", false)
+                .containsEntry("belowThresholdFilteredCount", 0)
+                .containsEntry("perDocumentTrimmedCount", 0)
+                .containsEntry("charBudgetTrimmedCount", 0)
+                .containsEntry("evidenceLimitTrimmedCount", 0);
         assertThat(retrievals.getFirst().items().getFirst().metadata())
                 .containsEntry("documentTitle", "trace-guide.txt")
                 .containsEntry("activeVersionNo", 1)

@@ -76,6 +76,7 @@ public class AdminSettingsController {
                 settings.perQuestionEvidenceCharLimit(),
                 settings.totalEvidenceCharLimit(),
                 settings.minRelevanceScore(),
+                settings.answerConfidenceThreshold(),
                 settings.noEvidenceMinResults(),
                 settings.forceCitationEnabled()
         ));
@@ -102,6 +103,7 @@ public class AdminSettingsController {
                 request.perQuestionEvidenceCharLimit(),
                 request.totalEvidenceCharLimit(),
                 request.minRelevanceScore(),
+                request.answerConfidenceThreshold(),
                 request.noEvidenceMinResults(),
                 request.forceCitationEnabled()
         ));
@@ -232,6 +234,7 @@ public class AdminSettingsController {
             int perQuestionEvidenceCharLimit,
             int totalEvidenceCharLimit,
             double minRelevanceScore,
+            double answerConfidenceThreshold,
             int noEvidenceMinResults,
             boolean forceCitationEnabled
     ) {
@@ -256,6 +259,7 @@ public class AdminSettingsController {
             @Min(1) Integer perQuestionEvidenceCharLimit,
             @Min(1) Integer totalEvidenceCharLimit,
             @DecimalMin("0.0") Double minRelevanceScore,
+            @DecimalMin("0.0") Double answerConfidenceThreshold,
             @Min(1) Integer noEvidenceMinResults,
             Boolean forceCitationEnabled
     ) {

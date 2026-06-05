@@ -58,6 +58,7 @@ class QueryUnderstandingServiceTest {
                 2800,
                 8400,
                 0.35d,
+                0.55d,
                 4,
                 1,
                 true
@@ -137,6 +138,7 @@ class QueryUnderstandingServiceTest {
                 2800,
                 8400,
                 0.35d,
+                0.55d,
                 4,
                 1,
                 true

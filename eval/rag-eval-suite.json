@@ -45,6 +45,13 @@
       "tags": ["critical-e2e", "no-evidence", "grounding"]
     },
     {
+      "caseKey": "rag-confidence-threshold-fallback",
+      "description": "When evidence confidence stays below threshold, the answer path should degrade to no-evidence fallback.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldFallbackWhenAnswerConfidenceIsBelowConfiguredThreshold test",
+      "tags": ["critical-e2e", "no-evidence", "grounding"]
+    },
+    {
       "caseKey": "rag-trace-fields",
       "description": "Repository-level retrieval traces should expose structured query and evidence fields.",
       "cwd": "backend",

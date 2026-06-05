@@ -557,6 +557,9 @@ public class SuperAgentProperties {
         @Min(0)
         private double minRelevanceScore = 0.35d;
 
+        @Min(0)
+        private double answerConfidenceThreshold = 0.55d;
+
         @Min(1)
         private int noEvidenceMinResults = 1;
 
@@ -692,6 +695,14 @@ public class SuperAgentProperties {
 
         public void setMinRelevanceScore(double minRelevanceScore) {
             this.minRelevanceScore = minRelevanceScore;
+        }
+
+        public double getAnswerConfidenceThreshold() {
+            return answerConfidenceThreshold;
+        }
+
+        public void setAnswerConfidenceThreshold(double answerConfidenceThreshold) {
+            this.answerConfidenceThreshold = answerConfidenceThreshold;
         }
 
         public int getNoEvidenceMinResults() {

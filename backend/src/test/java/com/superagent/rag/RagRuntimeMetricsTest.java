@@ -41,6 +41,7 @@ class RagRuntimeMetricsTest {
                 2000,
                 6000,
                 0.35d,
+                0.55d,
                 true,
                 1,
                 true
@@ -53,7 +54,12 @@ class RagRuntimeMetricsTest {
                 List.of(),
                 7,
                 9,
-                3
+                3,
+                false,
+                0,
+                0,
+                0,
+                0
         );
         metrics.recordRetrievalStep(step);
 
@@ -90,7 +96,9 @@ class RagRuntimeMetricsTest {
                         "rag_prompt_with_evidence_1",
                         "provider=test-provider",
                         "rerank_timeout_used_filtered",
-                        true
+                        true,
+                        0.92d,
+                        0.55d
                 )
         );
         metrics.recordAnswer(grounded);
@@ -117,7 +125,9 @@ class RagRuntimeMetricsTest {
                         "no_evidence_fallback_prompt",
                         "provider=system",
                         "no_selected_evidence",
-                        false
+                        false,
+                        0.0d,
+                        0.55d
                 )
         );
         metrics.recordAnswer(noEvidence);

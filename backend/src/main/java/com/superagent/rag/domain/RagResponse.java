@@ -33,7 +33,9 @@ public record RagResponse(
                         planSummary,
                         "clarification_response",
                         "clarification_required",
-                        false
+                        false,
+                        0.0d,
+                        0.0d
                 )
         );
     }

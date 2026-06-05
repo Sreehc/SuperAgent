@@ -531,7 +531,7 @@ public class ConversationService {
                     step.query().subQuestionNo(),
                     "vector",
                     step.query().subQuestion(),
-                    buildRetrievalFilters(step.query()),
+                    buildRetrievalFilters(step),
                     step.vectorResults().size(),
                     countSelectedChunks(step.vectorResults(), step.selectedResults()),
                     step.vectorLatencyMs()
@@ -545,7 +545,7 @@ public class ConversationService {
                     step.query().subQuestionNo(),
                     "keyword",
                     step.query().subQuestion(),
-                    buildRetrievalFilters(step.query()),
+                    buildRetrievalFilters(step),
                     step.keywordResults().size(),
                     countSelectedChunks(step.keywordResults(), step.selectedResults()),
                     step.keywordLatencyMs()
@@ -559,7 +559,7 @@ public class ConversationService {
                     step.query().subQuestionNo(),
                     "rrf",
                     step.query().subQuestion(),
-                    buildRetrievalFilters(step.query()),
+                    buildRetrievalFilters(step),
                     step.fusedResults().size(),
                     step.selectedResults().size(),
                     step.fusedLatencyMs()
@@ -722,6 +722,7 @@ public class ConversationService {
         filters.put("perQuestionEvidenceCharLimit", query.perQuestionEvidenceCharLimit());
         filters.put("totalEvidenceCharLimit", query.totalEvidenceCharLimit());
         filters.put("minRelevanceScore", query.minRelevanceScore());
+        filters.put("answerConfidenceThreshold", query.answerConfidenceThreshold());
         filters.put("rerankEnabled", query.rerankEnabled());
         filters.put("noEvidenceMinResults", query.noEvidenceMinResults());
         filters.put("forceCitationEnabled", query.forceCitationEnabled());
@@ -735,6 +736,11 @@ public class ConversationService {
             filters.put("neighborExpanded", step.fusedResults().stream()
                     .anyMatch(item -> Boolean.TRUE.equals(item.metadata().get("neighborExpanded"))));
             filters.put("finalTopK", step.selectedResults().size());
+            filters.put("diversityLimited", step.diversityLimited());
+            filters.put("belowThresholdFilteredCount", step.belowThresholdFilteredCount());
+            filters.put("perDocumentTrimmedCount", step.perDocumentTrimmedCount());
+            filters.put("charBudgetTrimmedCount", step.charBudgetTrimmedCount());
+            filters.put("evidenceLimitTrimmedCount", step.evidenceLimitTrimmedCount());
         }
         return filters;
     }
@@ -746,6 +752,8 @@ public class ConversationService {
         metadata.put("modelSummary", diagnostics.modelSummary());
         metadata.put("fallbackReason", diagnostics.fallbackReason());
         metadata.put("citationAppended", diagnostics.citationAppended());
+        metadata.put("answerConfidenceScore", diagnostics.answerConfidenceScore());
+        metadata.put("answerConfidenceThreshold", diagnostics.answerConfidenceThreshold());
         metadata.put("retrievalStepCount", diagnostics.retrievalSteps().size());
         metadata.put("subQuestionCount", diagnostics.retrievalSteps().size());
         metadata.put("selectedEvidenceCount", diagnostics.retrievalSteps().stream()
