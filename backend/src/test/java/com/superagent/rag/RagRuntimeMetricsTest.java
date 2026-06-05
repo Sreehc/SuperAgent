@@ -148,7 +148,59 @@ class RagRuntimeMetricsTest {
         assertThat(meterRegistry.get("superagent.rag.fallback.total").tag("reason", "no_selected_evidence").counter().count()).isEqualTo(1.0d);
         assertThat(meterRegistry.get("superagent.rag.rerank.total").tag("status", "timeout").counter().count()).isEqualTo(1.0d);
         assertThat(meterRegistry.get("superagent.rag.rerank.fallback.total").tag("status", "timeout").counter().count()).isEqualTo(1.0d);
+        assertThat(meterRegistry.get("superagent.rag.rerank.latency").tag("status", "timeout").timer().count()).isEqualTo(1);
+        assertThat(meterRegistry.get("superagent.rag.no_evidence.total").counter().count()).isEqualTo(1.0d);
+        assertThat(meterRegistry.get("superagent.rag.citation.coverage.total").tag("result", "covered").counter().count()).isEqualTo(1.0d);
         assertThat(meterRegistry.get("superagent.rag.selected_evidence.total").tag("outcome", "grounded").counter().count()).isEqualTo(1.0d);
         assertThat(meterRegistry.get("superagent.rag.selected_evidence.total").tag("outcome", "no_evidence").counter().count()).isEqualTo(0.0d);
+    }
+
+    @Test
+    void shouldMarkGroundedAnswerWithoutValidCitationAsMissingCoverage() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        RagRuntimeMetrics metrics = new RagRuntimeMetrics(meterRegistry);
+
+        RagResponse response = new RagResponse(
+                "退款规则是什么？",
+                List.of("退款规则是什么？"),
+                List.of(new RagEvidence(
+                        "hybrid",
+                        1L,
+                        10L,
+                        100L,
+                        "退款规则文档",
+                        1,
+                        "退款需在7日内申请",
+                        "退款规则",
+                        0.92d,
+                        Map.of()
+                )),
+                new RagAnswer(
+                        "根据知识库，退款需在7日内申请。",
+                        List.of("根据知识库，退款需在7日内申请。"),
+                        List.of(),
+                        "test-provider",
+                        "test-model",
+                        10,
+                        12,
+                        "stop",
+                        false
+                ),
+                new RagResponseDiagnostics(
+                        "recent_messages=0",
+                        List.of(),
+                        new RagResponseDiagnostics.RerankStep(false, null, null, "skipped", "disabled_by_config", null, null, 0, 0),
+                        "rag_prompt_with_evidence_1",
+                        "provider=test-provider",
+                        null,
+                        false,
+                        0.92d,
+                        0.55d
+                )
+        );
+
+        metrics.recordAnswer(response);
+
+        assertThat(meterRegistry.get("superagent.rag.citation.coverage.total").tag("result", "missing").counter().count()).isEqualTo(1.0d);
     }
 }
