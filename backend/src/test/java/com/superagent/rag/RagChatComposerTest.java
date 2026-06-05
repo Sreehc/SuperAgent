@@ -47,6 +47,7 @@ class RagChatComposerTest {
         );
 
         assertThat(answer.fullText()).contains("参考依据：[1]");
+        assertThat(answer.citationAppended()).isTrue();
     }
 
     @Test
@@ -84,5 +85,6 @@ class RagChatComposerTest {
         );
 
         assertThat(answer.fullText()).isEqualTo("这是回答。[1]");
+        assertThat(answer.citationAppended()).isFalse();
     }
 }

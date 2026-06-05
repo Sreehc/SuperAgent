@@ -19,19 +19,22 @@ public class RagOrchestrationService {
     private final QueryUnderstandingService queryUnderstandingService;
     private final RerankClient rerankClient;
     private final RagChatComposer ragChatComposer;
+    private final RagRuntimeMetrics ragRuntimeMetrics;
 
     public RagOrchestrationService(
             RetrievalService retrievalService,
             RagSupportService ragSupportService,
             QueryUnderstandingService queryUnderstandingService,
             RerankClient rerankClient,
-            RagChatComposer ragChatComposer
+            RagChatComposer ragChatComposer,
+            RagRuntimeMetrics ragRuntimeMetrics
     ) {
         this.retrievalService = retrievalService;
         this.ragSupportService = ragSupportService;
         this.queryUnderstandingService = queryUnderstandingService;
         this.rerankClient = rerankClient;
         this.ragChatComposer = ragChatComposer;
+        this.ragRuntimeMetrics = ragRuntimeMetrics;
     }
 
     public RagResponse answer(
@@ -77,8 +80,15 @@ public class RagOrchestrationService {
                     understanding.confidence(),
                     effectiveSettings
             );
+            long vectorStartedAt = System.nanoTime();
             List<RetrievalResult> vectorResults = retrievalService.searchVector(query);
+            Integer vectorLatencyMs = elapsedMillis(vectorStartedAt);
+
+            long keywordStartedAt = System.nanoTime();
             List<RetrievalResult> keywordResults = retrievalService.searchKeyword(query);
+            Integer keywordLatencyMs = elapsedMillis(keywordStartedAt);
+
+            long fusedStartedAt = System.nanoTime();
             List<RagEvidence> fused = ragSupportService.fuseWithRrf(vectorResults, keywordResults, query.rrfK());
             List<RagEvidence> expanded = retrievalService.expandNeighbors(query, deduplicateByChunk(fused));
             List<RagEvidence> selected = ragSupportService.applyThresholdAndBudget(
@@ -89,14 +99,21 @@ public class RagOrchestrationService {
                     query.maxChunksPerDocument(),
                     query.perQuestionEvidenceCharLimit()
             );
-            fusedEvidences.addAll(selected);
-            retrievalSteps.add(new RagResponseDiagnostics.RetrievalStep(
+            Integer fusedLatencyMs = elapsedMillis(fusedStartedAt);
+
+            RagResponseDiagnostics.RetrievalStep retrievalStep = new RagResponseDiagnostics.RetrievalStep(
                     query,
                     vectorResults,
                     keywordResults,
                     expanded,
-                    selected
-            ));
+                    selected,
+                    vectorLatencyMs,
+                    keywordLatencyMs,
+                    fusedLatencyMs
+            );
+            fusedEvidences.addAll(selected);
+            retrievalSteps.add(retrievalStep);
+            ragRuntimeMetrics.recordRetrievalStep(retrievalStep);
         }
 
         List<RagEvidence> filtered = ragSupportService.applyTotalBudget(
@@ -158,7 +175,7 @@ public class RagOrchestrationService {
                         rootQuery.forceCitationEnabled()
                 );
 
-        return new RagResponse(
+        RagResponse response = new RagResponse(
                 rewrittenQuestion,
                 subQuestions,
                 finalEvidences,
@@ -169,9 +186,16 @@ public class RagOrchestrationService {
                         rerankStep,
                         noEvidence ? "no_evidence_fallback_prompt" : "rag_prompt_with_evidence_" + reranked.size(),
                         summarizeModelOutput(answer),
-                        fallbackReason
+                        fallbackReason,
+                        answer.citationAppended()
                 )
         );
+        ragRuntimeMetrics.recordAnswer(response);
+        return response;
+    }
+
+    private Integer elapsedMillis(long startedAtNanos) {
+        return (int) Math.max(0L, (System.nanoTime() - startedAtNanos) / 1_000_000L);
     }
 
     private List<RagEvidence> deduplicateByChunk(List<RagEvidence> evidences) {

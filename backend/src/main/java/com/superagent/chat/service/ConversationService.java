@@ -534,7 +534,7 @@ public class ConversationService {
                     buildRetrievalFilters(step.query()),
                     step.vectorResults().size(),
                     countSelectedChunks(step.vectorResults(), step.selectedResults()),
-                    null
+                    step.vectorLatencyMs()
             );
             persistRetrievalResultItems(tenantId, vectorTraceId, step.vectorResults(), step.selectedResults());
 
@@ -548,7 +548,7 @@ public class ConversationService {
                     buildRetrievalFilters(step.query()),
                     step.keywordResults().size(),
                     countSelectedChunks(step.keywordResults(), step.selectedResults()),
-                    null
+                    step.keywordLatencyMs()
             );
             persistRetrievalResultItems(tenantId, keywordTraceId, step.keywordResults(), step.selectedResults());
 
@@ -562,7 +562,7 @@ public class ConversationService {
                     buildRetrievalFilters(step.query()),
                     step.fusedResults().size(),
                     step.selectedResults().size(),
-                    null
+                    step.fusedLatencyMs()
             );
             persistFusedItems(tenantId, fusedTraceId, step.fusedResults(), step.selectedResults());
         }
@@ -745,6 +745,7 @@ public class ConversationService {
         metadata.put("promptSummary", diagnostics.promptSummary());
         metadata.put("modelSummary", diagnostics.modelSummary());
         metadata.put("fallbackReason", diagnostics.fallbackReason());
+        metadata.put("citationAppended", diagnostics.citationAppended());
         metadata.put("retrievalStepCount", diagnostics.retrievalSteps().size());
         metadata.put("subQuestionCount", diagnostics.retrievalSteps().size());
         metadata.put("selectedEvidenceCount", diagnostics.retrievalSteps().stream()

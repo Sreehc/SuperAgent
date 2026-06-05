@@ -23,7 +23,8 @@ public record RagResponse(
                         "clarification-fallback",
                         null,
                         null,
-                        "stop"
+                        "stop",
+                        false
                 ),
                 new RagResponseDiagnostics(
                         "recent_messages=0",
@@ -31,7 +32,8 @@ public record RagResponse(
                         new RagResponseDiagnostics.RerankStep(false, null, null, "skipped", "not_applicable", null, null, 0, 0),
                         planSummary,
                         "clarification_response",
-                        "clarification_required"
+                        "clarification_required",
+                        false
                 )
         );
     }

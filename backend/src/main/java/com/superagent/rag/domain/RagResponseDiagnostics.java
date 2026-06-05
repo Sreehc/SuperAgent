@@ -8,7 +8,8 @@ public record RagResponseDiagnostics(
         RerankStep rerankStep,
         String promptSummary,
         String modelSummary,
-        String fallbackReason
+        String fallbackReason,
+        boolean citationAppended
 ) {
 
     public record RetrievalStep(
@@ -16,7 +17,10 @@ public record RagResponseDiagnostics(
             List<RetrievalResult> vectorResults,
             List<RetrievalResult> keywordResults,
             List<RagEvidence> fusedResults,
-            List<RagEvidence> selectedResults
+            List<RagEvidence> selectedResults,
+            Integer vectorLatencyMs,
+            Integer keywordLatencyMs,
+            Integer fusedLatencyMs
     ) {
     }
 

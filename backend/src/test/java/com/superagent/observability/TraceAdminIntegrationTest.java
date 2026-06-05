@@ -131,10 +131,12 @@ class TraceAdminIntegrationTest {
         assertThat(detailJson.path("data").path("retrievals").isArray()).isTrue();
         assertThat(detailJson.path("data").path("modelCalls").get(0).path("provider").asText()).isEqualTo("test-provider");
         assertThat(detailJson.path("data").path("reranks").get(0).path("provider").asText()).isEqualTo("test-rerank-provider");
+        assertThat(detailJson.path("data").path("retrievals").get(0).path("latencyMs").isNumber()).isTrue();
         assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("perQuestionEvidenceCharLimit").asInt()).isEqualTo(2800);
         assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("totalEvidenceCharLimit").asInt()).isEqualTo(8400);
         assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("noEvidenceMinResults").asInt()).isEqualTo(1);
         assertThat(detailJson.path("data").path("retrievals").get(0).path("filters").path("forceCitationEnabled").asBoolean()).isTrue();
+        assertThat(detailJson.path("data").path("reranks").get(0).path("metadata").path("citationAppended").asBoolean()).isFalse();
         assertThat(detailJson.toString()).doesNotContain("sk-");
         assertThat(detailJson.toString()).doesNotContain("rk-");
         assertThat(detailJson.toString()).doesNotContain("Authorization");
@@ -149,6 +151,7 @@ class TraceAdminIntegrationTest {
                 .getContentAsString(StandardCharsets.UTF_8));
         assertThat(retrievalList.path("data").path("items").isArray()).isTrue();
         assertThat(retrievalList.path("data").path("items").get(0).path("items").isArray()).isTrue();
+        assertThat(retrievalList.path("data").path("items").get(0).path("latencyMs").isNumber()).isTrue();
 
         JsonNode rerankList = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/reranks")
                         .param("exchangeId", String.valueOf(exchangeId))

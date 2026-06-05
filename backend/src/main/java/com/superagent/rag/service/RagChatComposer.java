@@ -40,7 +40,8 @@ public class RagChatComposer {
                 response.model(),
                 response.inputTokens(),
                 response.outputTokens(),
-                response.finishReason()
+                response.finishReason(),
+                false
         );
         return ensureCitationSuffix(answer, evidences, forceCitationEnabled);
     }
@@ -74,7 +75,8 @@ public class RagChatComposer {
                 "no-evidence-fallback",
                 null,
                 null,
-                "stop"
+                "stop",
+                false
         );
     }
 
@@ -96,7 +98,8 @@ public class RagChatComposer {
                 answer.model(),
                 answer.inputTokens(),
                 answer.outputTokens() == null ? null : fullText.length(),
-                answer.finishReason()
+                answer.finishReason(),
+                true
         );
     }
 

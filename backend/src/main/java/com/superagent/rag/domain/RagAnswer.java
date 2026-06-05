@@ -10,6 +10,7 @@ public record RagAnswer(
         String model,
         Integer inputTokens,
         Integer outputTokens,
-        String finishReason
+        String finishReason,
+        boolean citationAppended
 ) {
 }

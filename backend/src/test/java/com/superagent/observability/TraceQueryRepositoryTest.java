@@ -157,6 +157,7 @@ class TraceQueryRepositoryTest {
         var retrievals = traceQueryRepository.listRetrievals(tenantId, exchangeId, null, 1, 20);
         assertThat(retrievals).isNotEmpty();
         assertThat(retrievals.getFirst().items()).isNotEmpty();
+        assertThat(retrievals.getFirst().latencyMs()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(retrievals.getFirst().filters())
                 .containsEntry("originalQuestion", "退款规则是什么？")
                 .containsEntry("rewrittenQuestion", "退款规则是什么？")
