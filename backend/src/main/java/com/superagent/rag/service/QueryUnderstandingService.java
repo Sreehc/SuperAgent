@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -116,7 +117,11 @@ public class QueryUnderstandingService {
     private ModelPayload callProvider(String question, List<String> recentMessages) throws Exception {
         ModelSettings settings = resolveSettings();
         validateSettings(settings);
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Math.toIntExact(properties.getAi().getHttpConnectTimeoutMillis()));
+        requestFactory.setReadTimeout(Math.toIntExact(properties.getAi().getHttpReadTimeoutMillis()));
         RestClient client = RestClient.builder()
+                .requestFactory(requestFactory)
                 .baseUrl(settings.baseUrl())
                 .defaultHeader("Authorization", "Bearer " + settings.apiKey())
                 .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)

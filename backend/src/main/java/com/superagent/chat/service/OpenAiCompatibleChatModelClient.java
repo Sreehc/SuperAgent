@@ -5,6 +5,7 @@ import com.superagent.auth.security.TenantContextHolder;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.settings.domain.ModelSettings;
 import com.superagent.settings.service.RuntimeSettingsService;
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -20,9 +22,14 @@ import org.springframework.web.client.RestClient;
 @ConditionalOnProperty(name = "super-agent.ai.chat-provider", havingValue = "openai-compatible")
 public class OpenAiCompatibleChatModelClient implements ChatModelClient {
 
+    private final SuperAgentProperties properties;
     private final RuntimeSettingsService runtimeSettingsService;
 
-    public OpenAiCompatibleChatModelClient(RuntimeSettingsService runtimeSettingsService) {
+    public OpenAiCompatibleChatModelClient(
+            SuperAgentProperties properties,
+            RuntimeSettingsService runtimeSettingsService
+    ) {
+        this.properties = properties;
         this.runtimeSettingsService = runtimeSettingsService;
     }
 
@@ -31,7 +38,11 @@ public class OpenAiCompatibleChatModelClient implements ChatModelClient {
         ModelSettings settings = resolveSettings();
         validateSettings(settings);
 
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Math.toIntExact(properties.getAi().getHttpConnectTimeoutMillis()));
+        requestFactory.setReadTimeout(Math.toIntExact(properties.getAi().getHttpReadTimeoutMillis()));
         RestClient client = RestClient.builder()
+                .requestFactory(requestFactory)
                 .baseUrl(settings.baseUrl())
                 .defaultHeader("Authorization", "Bearer " + settings.apiKey())
                 .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)

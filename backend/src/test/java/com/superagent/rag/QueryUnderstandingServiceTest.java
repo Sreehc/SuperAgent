@@ -12,14 +12,12 @@ import com.superagent.rag.service.RagSupportService;
 import com.superagent.settings.domain.ModelSettings;
 import com.superagent.settings.service.RuntimeSettingsService;
 import com.sun.net.httpserver.HttpServer;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 class QueryUnderstandingServiceTest {
 
@@ -35,41 +33,18 @@ class QueryUnderstandingServiceTest {
 
     @Test
     void shouldFallbackToRulePathWhenProviderIsUnavailable() {
-        SuperAgentProperties properties = new SuperAgentProperties();
-        properties.getAi().setChatProvider("local-fake");
-        RuntimeSettingsService runtimeSettingsService = Mockito.mock(RuntimeSettingsService.class);
-        QueryUnderstandingService service = new QueryUnderstandingService(properties, runtimeSettingsService, new ObjectMapper());
-        RagSupportService supportService = new RagSupportService(properties, null);
-        RagSupportService.EffectiveRagSettings settings = new RagSupportService.EffectiveRagSettings(
-                true,
-                true,
-                true,
-                true,
-                true,
-                true,
-                20,
-                20,
-                20,
-                60,
-                false,
-                1,
-                3,
-                8,
-                2800,
-                8400,
-                0.35d,
-                0.55d,
-                false,
-                30L,
-                4,
-                1,
-                true
+        SuperAgentProperties properties = properties("local-fake", 3_000L, 10_000L);
+        QueryUnderstandingService service = new QueryUnderstandingService(
+                properties,
+                runtimeSettings(null, null),
+                new ObjectMapper()
         );
+        RagSupportService supportService = new RagSupportService(properties, null);
 
         QueryUnderstandingService.QueryUnderstandingResult result = service.understand(
                 "退款规则是什么？",
                 List.of("上一个问题是售后范围", "请继续"),
-                settings,
+                settings(),
                 supportService
         );
 
@@ -108,21 +83,120 @@ class QueryUnderstandingServiceTest {
         });
         server.start();
 
-        SuperAgentProperties properties = new SuperAgentProperties();
-        properties.getAi().setChatProvider("openai-compatible");
-        RuntimeSettingsService runtimeSettingsService = Mockito.mock(RuntimeSettingsService.class);
-        Mockito.when(runtimeSettingsService.resolveModelSettings(10001L)).thenReturn(new ModelSettings(
-                "openai-compatible",
-                "http://127.0.0.1:" + server.getAddress().getPort(),
-                "gpt-4.1-mini",
-                "text-embedding-3-small",
-                "sk-test"
-        ));
+        SuperAgentProperties properties = properties("openai-compatible", 3_000L, 10_000L);
         TenantContextHolder.set(new TenantContext(10001L, TenantRole.OWNER));
-
-        QueryUnderstandingService service = new QueryUnderstandingService(properties, runtimeSettingsService, new ObjectMapper());
+        QueryUnderstandingService service = new QueryUnderstandingService(
+                properties,
+                runtimeSettings("http://127.0.0.1:" + server.getAddress().getPort(), "sk-test"),
+                new ObjectMapper()
+        );
         RagSupportService supportService = new RagSupportService(properties, null);
-        RagSupportService.EffectiveRagSettings settings = new RagSupportService.EffectiveRagSettings(
+
+        QueryUnderstandingService.QueryUnderstandingResult result = service.understand(
+                "退款规则和申请材料是什么？",
+                List.of("请按知识库回答"),
+                settings(),
+                supportService
+        );
+
+        assertThat(result.source()).isEqualTo("model");
+        assertThat(result.answerMode()).isEqualTo("decomposed_multi_question");
+        assertThat(result.confidence()).isEqualTo(0.91d);
+        assertThat(result.rewrittenQuestion()).isEqualTo("退款规则和申请材料分别是什么？");
+        assertThat(result.subQuestions()).containsExactly("退款规则是什么？", "申请材料需要什么？");
+    }
+
+    @Test
+    void shouldFallbackToRulePathWhenProviderReadTimeoutIsExceeded() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            try {
+                Thread.sleep(200L);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            String contentJson = "{\"rewrittenQuestion\":\"退款规则是什么？\",\"subQuestions\":[\"退款规则是什么？\"],\"answerMode\":\"single_question\",\"confidence\":0.91}";
+            String responseJson = """
+                    {
+                      "id": "chatcmpl_query_understanding",
+                      "model": "gpt-4.1-mini",
+                      "choices": [
+                        {
+                          "index": 0,
+                          "message": {
+                            "role": "assistant",
+                            "content": %s
+                          }
+                        }
+                      ]
+                    }
+                    """.formatted(new ObjectMapper().writeValueAsString(contentJson));
+            byte[] body = responseJson.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(body);
+            }
+        });
+        server.start();
+
+        SuperAgentProperties properties = properties("openai-compatible", 50L, 50L);
+        TenantContextHolder.set(new TenantContext(10001L, TenantRole.OWNER));
+        QueryUnderstandingService service = new QueryUnderstandingService(
+                properties,
+                runtimeSettings("http://127.0.0.1:" + server.getAddress().getPort(), "sk-test"),
+                new ObjectMapper()
+        );
+        RagSupportService supportService = new RagSupportService(properties, null);
+
+        QueryUnderstandingService.QueryUnderstandingResult result = service.understand(
+                "退款规则是什么？",
+                List.of("请按知识库回答"),
+                settings(),
+                supportService
+        );
+
+        assertThat(result.source()).isEqualTo("rule_fallback");
+        assertThat(result.answerMode()).isEqualTo("single_question");
+        assertThat(result.rewrittenQuestion()).contains("退款规则是什么？");
+        assertThat(result.subQuestions()).singleElement().satisfies(item -> assertThat(item).contains("退款规则是什么"));
+    }
+
+    private SuperAgentProperties properties(String chatProvider, long connectTimeoutMillis, long readTimeoutMillis) {
+        SuperAgentProperties properties = new SuperAgentProperties();
+        properties.getAi().setChatProvider(chatProvider);
+        properties.getAi().setOpenaiCompatibleBaseUrl("https://api.example.com/v1");
+        properties.getAi().setApiKey("sk-test");
+        properties.getAi().setChatModel("gpt-4.1-mini");
+        properties.getAi().setEmbeddingModel("text-embedding-3-small");
+        properties.getAi().setRerankEnabled(false);
+        properties.getAi().setHttpConnectTimeoutMillis(connectTimeoutMillis);
+        properties.getAi().setHttpReadTimeoutMillis(readTimeoutMillis);
+        return properties;
+    }
+
+    private RuntimeSettingsService runtimeSettings(String baseUrl, String apiKey) {
+        return new RuntimeSettingsService(
+                null,
+                null,
+                null,
+                properties("openai-compatible", 3_000L, 10_000L)
+        ) {
+            @Override
+            public ModelSettings resolveModelSettings(long tenantId) {
+                return new ModelSettings(
+                        "openai-compatible",
+                        baseUrl,
+                        "gpt-4.1-mini",
+                        "text-embedding-3-small",
+                        apiKey
+                );
+            }
+        };
+    }
+
+    private RagSupportService.EffectiveRagSettings settings() {
+        return new RagSupportService.EffectiveRagSettings(
                 true,
                 true,
                 true,
@@ -147,18 +221,5 @@ class QueryUnderstandingServiceTest {
                 1,
                 true
         );
-
-        QueryUnderstandingService.QueryUnderstandingResult result = service.understand(
-                "退款规则和申请材料是什么？",
-                List.of("请按知识库回答"),
-                settings,
-                supportService
-        );
-
-        assertThat(result.source()).isEqualTo("model");
-        assertThat(result.answerMode()).isEqualTo("decomposed_multi_question");
-        assertThat(result.confidence()).isEqualTo(0.91d);
-        assertThat(result.rewrittenQuestion()).isEqualTo("退款规则和申请材料分别是什么？");
-        assertThat(result.subQuestions()).containsExactly("退款规则是什么？", "申请材料需要什么？");
     }
 }
