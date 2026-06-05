@@ -607,7 +607,7 @@ public class ConversationService {
                 rerankStep.latencyMs(),
                 rerankStep.status(),
                 rerankStep.errorMessage(),
-                Map.of()
+                buildRerankMetadata(diagnostics)
         );
         completeTraceStage(
                 stage.id(),
@@ -631,7 +631,7 @@ public class ConversationService {
                     BigDecimal.valueOf(result.score()),
                     null,
                     containsChunk(selectedResults, result.chunkId()),
-                    buildTraceMetadata(result.documentTitle(), result.sectionTitle(), null)
+                    buildTraceMetadata(result.documentTitle(), result.sectionTitle(), result.channel(), result.metadata())
             );
         }
     }
@@ -648,7 +648,7 @@ public class ConversationService {
                     BigDecimal.valueOf(result.score()),
                     BigDecimal.valueOf(result.score()),
                     containsChunk(selectedResults, result.chunkId()),
-                    buildTraceMetadata(result.documentTitle(), result.sectionTitle(), result.channel())
+                    buildTraceMetadata(result.documentTitle(), result.sectionTitle(), result.channel(), result.metadata())
             );
         }
     }
@@ -667,8 +667,16 @@ public class ConversationService {
         return selectedResults.stream().anyMatch(evidence -> evidence.chunkId() == chunkId);
     }
 
-    private Map<String, Object> buildTraceMetadata(String documentTitle, String sectionTitle, String channel) {
+    private Map<String, Object> buildTraceMetadata(
+            String documentTitle,
+            String sectionTitle,
+            String channel,
+            Map<String, Object> additionalMetadata
+    ) {
         Map<String, Object> metadata = new LinkedHashMap<>();
+        if (additionalMetadata != null && !additionalMetadata.isEmpty()) {
+            metadata.putAll(additionalMetadata);
+        }
         if (documentTitle != null && !documentTitle.isBlank()) {
             metadata.put("documentTitle", documentTitle);
         }
@@ -682,18 +690,57 @@ public class ConversationService {
     }
 
     private Map<String, Object> buildRetrievalFilters(RagResponseDiagnostics.RetrievalStep step) {
-        return buildRetrievalFilters(step.query());
+        return buildRetrievalFilters(step.query(), step);
     }
 
     private Map<String, Object> buildRetrievalFilters(com.superagent.rag.domain.RagSearchQuery query) {
+        return buildRetrievalFilters(query, null);
+    }
+
+    private Map<String, Object> buildRetrievalFilters(
+            com.superagent.rag.domain.RagSearchQuery query,
+            RagResponseDiagnostics.RetrievalStep step
+    ) {
         Map<String, Object> filters = new LinkedHashMap<>();
+        filters.put("originalQuestion", query.originalQuestion());
+        filters.put("rewrittenQuestion", query.rewrittenQuestion());
+        filters.put("subQuestion", query.subQuestion());
+        filters.put("subQuestionNo", query.subQuestionNo());
         filters.put("knowledgeBaseId", query.knowledgeBaseId());
         filters.put("vectorTopK", query.vectorTopK());
         filters.put("keywordTopK", query.keywordTopK());
         filters.put("rrfK", query.rrfK());
         filters.put("evidenceLimit", query.evidenceLimit());
         filters.put("minRelevanceScore", query.minRelevanceScore());
+        filters.put("rerankEnabled", query.rerankEnabled());
+        filters.put("queryRewriteApplied", !query.originalQuestion().equals(query.rewrittenQuestion()));
+        filters.put("hybridRetrievalEnabled", true);
+        if (step != null) {
+            filters.put("vectorResultCount", step.vectorResults().size());
+            filters.put("keywordResultCount", step.keywordResults().size());
+            filters.put("fusedResultCount", step.fusedResults().size());
+            filters.put("selectedResultCount", step.selectedResults().size());
+        }
         return filters;
+    }
+
+    private Map<String, Object> buildRerankMetadata(RagResponseDiagnostics diagnostics) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("memorySummary", diagnostics.memorySummary());
+        metadata.put("promptSummary", diagnostics.promptSummary());
+        metadata.put("modelSummary", diagnostics.modelSummary());
+        metadata.put("retrievalStepCount", diagnostics.retrievalSteps().size());
+        metadata.put("subQuestionCount", diagnostics.retrievalSteps().size());
+        metadata.put("selectedEvidenceCount", diagnostics.retrievalSteps().stream()
+                .mapToInt(step -> step.selectedResults().size())
+                .sum());
+        if (!diagnostics.retrievalSteps().isEmpty()) {
+            com.superagent.rag.domain.RagSearchQuery firstQuery = diagnostics.retrievalSteps().getFirst().query();
+            metadata.put("originalQuestion", firstQuery.originalQuestion());
+            metadata.put("rewrittenQuestion", firstQuery.rewrittenQuestion());
+            metadata.put("knowledgeBaseId", firstQuery.knowledgeBaseId());
+        }
+        return metadata;
     }
 
     private void handleStreamError(long tenantId, long sessionId, long exchangeId, SseEmitter emitter, ErrorCode code, String message) {

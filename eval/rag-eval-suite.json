@@ -1,0 +1,48 @@
+{
+  "suiteKey": "rag-production-upgrade-baseline",
+  "description": "RAG regression and release gate suite for retrieval quality, grounded answering, no-evidence refusal and trace completeness.",
+  "thresholds": {
+    "minPassRate": 0.85,
+    "minRetrievalPassRate": 1.0,
+    "minGroundingPassRate": 1.0,
+    "minNoEvidencePrecision": 1.0,
+    "traceFieldCompleteness": 1.0
+  },
+  "cases": [
+    {
+      "caseKey": "retrieval-tenant-scope",
+      "description": "Retrieval should respect tenant and published knowledge base boundaries.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=RetrievalIntegrationTest#shouldReturnVectorRetrievalResultsWithTenantAndKnowledgeBaseFiltering test",
+      "tags": ["critical-e2e", "retrieval"]
+    },
+    {
+      "caseKey": "rag-grounded-stream",
+      "description": "Classic RAG stream should return grounded evidence-backed output.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldStreamMessageAndPersistAssistantReply test",
+      "tags": ["critical-e2e", "grounding"]
+    },
+    {
+      "caseKey": "rag-no-evidence-refusal",
+      "description": "No-evidence path should refuse unsupported answers cleanly.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldReturnNoEvidenceResponseWhenKnowledgeBaseHasNoRelevantEvidence test",
+      "tags": ["critical-e2e", "no-evidence"]
+    },
+    {
+      "caseKey": "rag-trace-fields",
+      "description": "Repository-level retrieval traces should expose structured query and evidence fields.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=TraceQueryRepositoryTest#shouldListRetrievalsDirectlyFromRepository test",
+      "tags": ["trace-fields"]
+    },
+    {
+      "caseKey": "rag-admin-trace-detail",
+      "description": "Trace admin detail should expose retrieval and rerank structures without leaking secrets.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=TraceAdminIntegrationTest#shouldAllowAdminToListAndInspectTraces test",
+      "tags": ["critical-e2e", "trace-fields", "grounding"]
+    }
+  ]
+}
