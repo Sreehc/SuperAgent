@@ -11,6 +11,7 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -89,7 +90,11 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
     }
 
     private RestClient buildRestClient(ModelSettings settings) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Math.toIntExact(Math.max(1L, properties.getAi().getHttpConnectTimeoutMillis())));
+        requestFactory.setReadTimeout(Math.toIntExact(Math.max(1L, properties.getAi().getHttpReadTimeoutMillis())));
         return RestClient.builder()
+                .requestFactory(requestFactory)
                 .baseUrl(settings.baseUrl())
                 .defaultHeader("Authorization", "Bearer " + settings.apiKey())
                 .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)

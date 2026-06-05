@@ -2,6 +2,7 @@ package com.superagent.rag.service;
 
 import com.superagent.auth.security.TenantContext;
 import com.superagent.auth.security.TenantContextHolder;
+import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.rag.domain.RagEvidence;
 import com.superagent.settings.domain.RerankSettings;
 import com.superagent.settings.service.RuntimeSettingsService;
@@ -13,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -22,9 +24,11 @@ import org.springframework.web.client.RestClient;
 public class OpenAiCompatibleRerankClient implements RerankClient {
 
     private final RuntimeSettingsService runtimeSettingsService;
+    private final SuperAgentProperties properties;
 
-    public OpenAiCompatibleRerankClient(RuntimeSettingsService runtimeSettingsService) {
+    public OpenAiCompatibleRerankClient(RuntimeSettingsService runtimeSettingsService, SuperAgentProperties properties) {
         this.runtimeSettingsService = runtimeSettingsService;
+        this.properties = properties;
     }
 
     @Override
@@ -39,7 +43,11 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
             return new RerankResult(evidences, settings.provider(), settings.model(), "skipped", "incomplete_config", null, null);
         }
 
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Math.toIntExact(Math.max(1L, properties.getAi().getHttpConnectTimeoutMillis())));
+        requestFactory.setReadTimeout(Math.toIntExact(Math.max(1L, properties.getAi().getHttpReadTimeoutMillis())));
         RestClient client = RestClient.builder()
+                .requestFactory(requestFactory)
                 .baseUrl(settings.baseUrl())
                 .defaultHeader("Authorization", "Bearer " + settings.apiKey())
                 .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)

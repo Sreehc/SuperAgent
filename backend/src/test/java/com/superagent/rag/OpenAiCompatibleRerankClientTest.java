@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.superagent.auth.domain.TenantRole;
 import com.superagent.auth.security.TenantContext;
 import com.superagent.auth.security.TenantContextHolder;
+import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.rag.domain.RagEvidence;
 import com.superagent.rag.service.OpenAiCompatibleRerankClient;
 import com.superagent.rag.service.RerankClient;
 import com.superagent.settings.domain.RerankSettings;
+import com.superagent.settings.domain.ModelSettings;
 import com.superagent.settings.service.RuntimeSettingsService;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -19,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 class OpenAiCompatibleRerankClientTest {
 
@@ -54,17 +55,15 @@ class OpenAiCompatibleRerankClientTest {
         });
         server.start();
 
-        RuntimeSettingsService runtimeSettingsService = Mockito.mock(RuntimeSettingsService.class);
-        Mockito.when(runtimeSettingsService.resolveRerankSettings(10001L)).thenReturn(new RerankSettings(
-                true,
-                "openai-compatible",
+        RuntimeSettingsService runtimeSettingsService = runtimeSettings(
                 "http://127.0.0.1:" + server.getAddress().getPort(),
                 "bge-reranker-large",
-                "rk-test"
-        ));
+                "rk-test",
+                true
+        );
         TenantContextHolder.set(new TenantContext(10001L, TenantRole.OWNER));
 
-        OpenAiCompatibleRerankClient client = new OpenAiCompatibleRerankClient(runtimeSettingsService);
+        OpenAiCompatibleRerankClient client = new OpenAiCompatibleRerankClient(runtimeSettingsService, properties(3_000L, 10_000L));
         RerankClient.RerankResult result = client.rerank("退款规则", List.of(
                 evidence(10L, 100L, "文档A", "原始结果A"),
                 evidence(11L, 101L, "文档B", "更相关结果B")
@@ -79,17 +78,10 @@ class OpenAiCompatibleRerankClientTest {
 
     @Test
     void shouldSkipWhenRerankDisabledOrConfigIncomplete() {
-        RuntimeSettingsService runtimeSettingsService = Mockito.mock(RuntimeSettingsService.class);
-        Mockito.when(runtimeSettingsService.resolveRerankSettings(10001L)).thenReturn(new RerankSettings(
-                false,
-                "openai-compatible",
-                null,
-                null,
-                null
-        ));
+        RuntimeSettingsService runtimeSettingsService = runtimeSettings(null, null, null, false);
         TenantContextHolder.set(new TenantContext(10001L, TenantRole.OWNER));
 
-        OpenAiCompatibleRerankClient client = new OpenAiCompatibleRerankClient(runtimeSettingsService);
+        OpenAiCompatibleRerankClient client = new OpenAiCompatibleRerankClient(runtimeSettingsService, properties(3_000L, 10_000L));
         RerankClient.RerankResult result = client.rerank("退款规则", List.of(evidence(10L, 100L, "文档A", "原始结果A")));
 
         assertThat(result.status()).isEqualTo("skipped");
@@ -108,21 +100,64 @@ class OpenAiCompatibleRerankClientTest {
         });
         server.start();
 
-        RuntimeSettingsService runtimeSettingsService = Mockito.mock(RuntimeSettingsService.class);
-        Mockito.when(runtimeSettingsService.resolveRerankSettings(10001L)).thenReturn(new RerankSettings(
-                true,
-                "openai-compatible",
+        RuntimeSettingsService runtimeSettingsService = runtimeSettings(
                 "http://127.0.0.1:" + server.getAddress().getPort(),
                 "bge-reranker-large",
-                "rk-test"
-        ));
+                "rk-test",
+                true
+        );
         TenantContextHolder.set(new TenantContext(10001L, TenantRole.OWNER));
 
         List<RagEvidence> original = List.of(
                 evidence(10L, 100L, "文档A", "原始结果A"),
                 evidence(11L, 101L, "文档B", "原始结果B")
         );
-        OpenAiCompatibleRerankClient client = new OpenAiCompatibleRerankClient(runtimeSettingsService);
+        OpenAiCompatibleRerankClient client = new OpenAiCompatibleRerankClient(runtimeSettingsService, properties(3_000L, 10_000L));
+        RerankClient.RerankResult result = client.rerank("退款规则", original);
+
+        assertThat(result.status()).isEqualTo("failed");
+        assertThat(result.errorMessage()).isEqualTo("provider_error");
+        assertThat(result.evidences()).containsExactlyElementsOf(original);
+    }
+
+    @Test
+    void shouldFallbackToOriginalOrderWhenProviderReadTimeoutIsExceeded() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/rerank", exchange -> {
+            try {
+                Thread.sleep(200L);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            byte[] body = """
+                    {
+                      "model": "bge-reranker-large",
+                      "data": [
+                        { "index": 1, "rank": 0, "score": 0.95 }
+                      ]
+                    }
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(body);
+            }
+        });
+        server.start();
+
+        RuntimeSettingsService runtimeSettingsService = runtimeSettings(
+                "http://127.0.0.1:" + server.getAddress().getPort(),
+                "bge-reranker-large",
+                "rk-test",
+                true
+        );
+        TenantContextHolder.set(new TenantContext(10001L, TenantRole.OWNER));
+
+        List<RagEvidence> original = List.of(
+                evidence(10L, 100L, "文档A", "原始结果A"),
+                evidence(11L, 101L, "文档B", "原始结果B")
+        );
+        OpenAiCompatibleRerankClient client = new OpenAiCompatibleRerankClient(runtimeSettingsService, properties(50L, 50L));
         RerankClient.RerankResult result = client.rerank("退款规则", original);
 
         assertThat(result.status()).isEqualTo("failed");
@@ -143,5 +178,36 @@ class OpenAiCompatibleRerankClientTest {
                 0.8d,
                 Map.of()
         );
+    }
+
+    private SuperAgentProperties properties(long connectTimeoutMillis, long readTimeoutMillis) {
+        SuperAgentProperties properties = new SuperAgentProperties();
+        properties.getAi().setOpenaiCompatibleBaseUrl("https://api.example.com/v1");
+        properties.getAi().setApiKey("rk-test");
+        properties.getAi().setChatModel("gpt-4.1-mini");
+        properties.getAi().setEmbeddingModel("text-embedding-3-small");
+        properties.getAi().setRerankEnabled(true);
+        properties.getAi().setHttpConnectTimeoutMillis(connectTimeoutMillis);
+        properties.getAi().setHttpReadTimeoutMillis(readTimeoutMillis);
+        return properties;
+    }
+
+    private RuntimeSettingsService runtimeSettings(String baseUrl, String model, String apiKey, boolean enabled) {
+        return new RuntimeSettingsService(
+                null,
+                null,
+                null,
+                properties(3_000L, 10_000L)
+        ) {
+            @Override
+            public RerankSettings resolveRerankSettings(long tenantId) {
+                return new RerankSettings(enabled, "openai-compatible", baseUrl, model, apiKey);
+            }
+
+            @Override
+            public ModelSettings resolveModelSettings(long tenantId) {
+                return new ModelSettings("openai-compatible", baseUrl, "gpt-4.1-mini", "text-embedding-3-small", apiKey);
+            }
+        };
     }
 }

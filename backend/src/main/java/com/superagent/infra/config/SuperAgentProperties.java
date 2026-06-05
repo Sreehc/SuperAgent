@@ -285,6 +285,12 @@ public class SuperAgentProperties {
         @Min(0)
         private long embeddingRetryBackoffMillis = 200L;
 
+        @Min(1)
+        private long httpConnectTimeoutMillis = 3_000L;
+
+        @Min(1)
+        private long httpReadTimeoutMillis = 10_000L;
+
         public String getOpenaiCompatibleBaseUrl() {
             return openaiCompatibleBaseUrl;
         }
@@ -371,6 +377,22 @@ public class SuperAgentProperties {
 
         public void setEmbeddingRetryBackoffMillis(long embeddingRetryBackoffMillis) {
             this.embeddingRetryBackoffMillis = embeddingRetryBackoffMillis;
+        }
+
+        public long getHttpConnectTimeoutMillis() {
+            return httpConnectTimeoutMillis;
+        }
+
+        public void setHttpConnectTimeoutMillis(long httpConnectTimeoutMillis) {
+            this.httpConnectTimeoutMillis = httpConnectTimeoutMillis;
+        }
+
+        public long getHttpReadTimeoutMillis() {
+            return httpReadTimeoutMillis;
+        }
+
+        public void setHttpReadTimeoutMillis(long httpReadTimeoutMillis) {
+            this.httpReadTimeoutMillis = httpReadTimeoutMillis;
         }
     }
 

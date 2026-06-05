@@ -129,13 +129,57 @@ class OpenAiCompatibleEmbeddingClientTest {
         assertThat(requests.get()).isEqualTo(1);
     }
 
+    @Test
+    void shouldFailWhenEmbeddingProviderReadTimeoutIsExceeded() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/embeddings", exchange -> {
+            requests.incrementAndGet();
+            try {
+                Thread.sleep(200L);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            byte[] body = """
+                    {
+                      "model": "text-embedding-3-small",
+                      "data": [
+                        { "index": 0, "embedding": [0.1, 0.2, 0.3] }
+                      ]
+                    }
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(body);
+            }
+        });
+        server.start();
+
+        OpenAiCompatibleEmbeddingClient client = new OpenAiCompatibleEmbeddingClient(
+                properties(2, 0L, 3, 50L, 50L),
+                runtimeSettings("http://127.0.0.1:" + server.getAddress().getPort(), "text-embedding-3-small", "sk-test")
+        );
+
+        assertThatThrownBy(() -> client.embed(10001L, List.of("refund rule")))
+                .isInstanceOf(AppException.class)
+                .hasMessageContaining("after retries");
+        assertThat(requests.get()).isGreaterThanOrEqualTo(1);
+    }
+
     private SuperAgentProperties properties(int attempts, long backoffMillis, int dimension) {
+        return properties(attempts, backoffMillis, dimension, 3_000L, 10_000L);
+    }
+
+    private SuperAgentProperties properties(int attempts, long backoffMillis, int dimension, long connectTimeoutMillis, long readTimeoutMillis) {
         SuperAgentProperties properties = new SuperAgentProperties();
         properties.getAi().setEmbeddingProvider("openai-compatible");
         properties.getAi().setEmbeddingModel("text-embedding-3-small");
         properties.getAi().setEmbeddingDimension(dimension);
         properties.getAi().setEmbeddingMaxAttempts(attempts);
         properties.getAi().setEmbeddingRetryBackoffMillis(backoffMillis);
+        properties.getAi().setHttpConnectTimeoutMillis(connectTimeoutMillis);
+        properties.getAi().setHttpReadTimeoutMillis(readTimeoutMillis);
         properties.getAi().setOpenaiCompatibleBaseUrl("https://api.example.com/v1");
         properties.getAi().setApiKey("sk-test");
         properties.getAi().setChatModel("gpt-4.1-mini");
