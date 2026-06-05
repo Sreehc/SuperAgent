@@ -522,6 +522,45 @@ class ConversationIntegrationTest {
         )).isEqualTo("refund-guide.txt");
     }
 
+    @Test
+    void shouldNormalizeOutOfRangeCitationWhileKeepingRealReferences() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "引用归一化知识库", "published");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "refund-guide.txt", "退款需在7日内提交申请，并提供订单截图。");
+        long sessionId = createConversation(token, tenantId, "引用归一化测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "message", "请回答这个越界引用退款规则问题",
+                                "knowledgeBaseId", knowledgeBaseId
+                        ))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("event:delta");
+        assertThat(body).doesNotContain("[9]");
+        assertThat(body).contains("event:reference");
+
+        Integer latestOrdinal = jdbcTemplate.queryForObject(
+                "SELECT ordinal FROM conversation_reference ORDER BY id DESC LIMIT 1",
+                Integer.class
+        );
+        assertThat(latestOrdinal).isEqualTo(1);
+        String assistantContent = jdbcTemplate.queryForObject(
+                "SELECT content FROM conversation_message WHERE role = 'assistant' ORDER BY id DESC LIMIT 1",
+                String.class
+        );
+        assertThat(assistantContent).contains("参考依据：[1]");
+        assertThat(assistantContent).doesNotContain("[9]");
+    }
+
     private JsonNode login(String username, String password) throws Exception {
         MvcResult response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

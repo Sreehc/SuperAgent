@@ -4,11 +4,16 @@ import com.superagent.chat.service.ChatModelClient;
 import com.superagent.rag.domain.RagAnswer;
 import com.superagent.rag.domain.RagEvidence;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RagChatComposer {
+
+    private static final Pattern CITATION_PATTERN = Pattern.compile("\\[(\\d+)]");
 
     private final ChatModelClient chatModelClient;
 
@@ -43,7 +48,7 @@ public class RagChatComposer {
                 response.finishReason(),
                 false
         );
-        return ensureCitationSuffix(answer, evidences, forceCitationEnabled);
+        return normalizeCitations(answer, evidences, forceCitationEnabled);
     }
 
     private String buildPrompt(String rewrittenQuestion, String memoryContext, List<RagEvidence> evidences) {
@@ -80,16 +85,79 @@ public class RagChatComposer {
         );
     }
 
-    private RagAnswer ensureCitationSuffix(RagAnswer answer, List<RagEvidence> evidences, boolean forceCitationEnabled) {
-        if (!forceCitationEnabled || evidences == null || evidences.isEmpty() || containsCitation(answer.fullText())) {
+    private RagAnswer normalizeCitations(RagAnswer answer, List<RagEvidence> evidences, boolean forceCitationEnabled) {
+        if (answer == null || evidences == null || evidences.isEmpty()) {
             return answer;
         }
-        StringBuilder suffix = new StringBuilder("\n\n参考依据：");
-        int citationCount = Math.min(3, evidences.size());
-        for (int index = 0; index < citationCount; index++) {
-            suffix.append("[").append(index + 1).append("]");
+        CitationState citationState = inspectCitations(answer.fullText(), evidences.size());
+        if (citationState.hasAnyCitation() && citationState.allValid()) {
+            return answer;
         }
-        String fullText = answer.fullText() + suffix;
+        if (!citationState.hasAnyCitation() && !forceCitationEnabled) {
+            return answer;
+        }
+
+        List<Integer> citationOrdinals = citationState.validOrdinals();
+        if (citationOrdinals.isEmpty() && forceCitationEnabled) {
+            citationOrdinals = defaultCitationOrdinals(evidences.size());
+        }
+
+        String normalized = stripCitationMarkers(answer.fullText());
+        if (!citationOrdinals.isEmpty()) {
+            normalized = appendCitationSuffix(normalized, citationOrdinals);
+        }
+        boolean citationAppended = !normalized.equals(answer.fullText());
+        return rebuildAnswer(answer, normalized, citationAppended);
+    }
+
+    private CitationState inspectCitations(String text, int evidenceCount) {
+        Matcher matcher = CITATION_PATTERN.matcher(text == null ? "" : text);
+        LinkedHashSet<Integer> validOrdinals = new LinkedHashSet<>();
+        boolean hasAnyCitation = false;
+        boolean invalidCitation = false;
+        while (matcher.find()) {
+            hasAnyCitation = true;
+            int ordinal = Integer.parseInt(matcher.group(1));
+            if (ordinal >= 1 && ordinal <= evidenceCount) {
+                validOrdinals.add(ordinal);
+            } else {
+                invalidCitation = true;
+            }
+        }
+        return new CitationState(hasAnyCitation, !invalidCitation && !validOrdinals.isEmpty(), List.copyOf(validOrdinals));
+    }
+
+    private List<Integer> defaultCitationOrdinals(int evidenceCount) {
+        List<Integer> ordinals = new ArrayList<>();
+        for (int index = 1; index <= Math.min(3, evidenceCount); index++) {
+            ordinals.add(index);
+        }
+        return ordinals;
+    }
+
+    private String stripCitationMarkers(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String stripped = CITATION_PATTERN.matcher(text).replaceAll("");
+        stripped = stripped.replaceAll("[ \\t]+\\n", "\n");
+        stripped = stripped.replaceAll("\\n{3,}", "\n\n");
+        return stripped.trim();
+    }
+
+    private String appendCitationSuffix(String text, List<Integer> ordinals) {
+        StringBuilder builder = new StringBuilder(text == null ? "" : text);
+        if (!builder.isEmpty()) {
+            builder.append("\n\n");
+        }
+        builder.append("参考依据：");
+        for (Integer ordinal : ordinals) {
+            builder.append("[").append(ordinal).append("]");
+        }
+        return builder.toString();
+    }
+
+    private RagAnswer rebuildAnswer(RagAnswer answer, String fullText, boolean citationAppended) {
         return new RagAnswer(
                 fullText,
                 slice(fullText, 18),
@@ -99,12 +167,8 @@ public class RagChatComposer {
                 answer.inputTokens(),
                 answer.outputTokens() == null ? null : fullText.length(),
                 answer.finishReason(),
-                true
+                citationAppended
         );
-    }
-
-    private boolean containsCitation(String text) {
-        return text != null && text.matches("(?s).*\\[\\d+].*");
     }
 
     private List<String> slice(String text, int chunkSize) {
@@ -113,5 +177,12 @@ public class RagChatComposer {
             chunks.add(text.substring(index, Math.min(text.length(), index + chunkSize)));
         }
         return chunks;
+    }
+
+    private record CitationState(
+            boolean hasAnyCitation,
+            boolean allValid,
+            List<Integer> validOrdinals
+    ) {
     }
 }

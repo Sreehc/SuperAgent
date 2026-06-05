@@ -29,6 +29,9 @@ public class TestChatModelClientConfiguration {
     }
 
     private String buildAnswer(String input) {
+        if (input != null && input.contains("越界引用")) {
+            return "根据知识库证据，退款规则包括在 7 日内提交申请并提供订单截图。[9]";
+        }
         if (input != null && input.contains("退款")) {
             return "根据知识库证据，退款规则包括在 7 日内提交申请并提供订单截图。[1]";
         }
