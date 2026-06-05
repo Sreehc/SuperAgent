@@ -6,7 +6,10 @@
     "minRetrievalPassRate": 1.0,
     "minGroundingPassRate": 1.0,
     "minNoEvidencePrecision": 1.0,
-    "traceFieldCompleteness": 1.0
+    "traceFieldCompleteness": 1.0,
+    "versionConsistencyRate": 1.0,
+    "guardrailPassRate": 1.0,
+    "neighborExpansionRate": 1.0
   },
   "cases": [
     {
@@ -57,6 +60,41 @@
       "cwd": "backend",
       "command": "./mvnw -Dtest=TraceQueryRepositoryTest#shouldListRetrievalsDirectlyFromRepository test",
       "tags": ["trace-fields"]
+    },
+    {
+      "caseKey": "rag-version-consistency",
+      "description": "Retrieval should exclude stale chunk versions after document version switches.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=RetrievalIntegrationTest#shouldExcludeChunksWhenChunkVersionDoesNotMatchActiveVersion test",
+      "tags": ["retrieval", "version-consistency"]
+    },
+    {
+      "caseKey": "rag-neighbor-expansion-trace",
+      "description": "Trace detail should expose neighbor-expanded evidence when adjacent chunks are packed into context.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=TraceAdminIntegrationTest#shouldExposeNeighborExpandedEvidenceInTrace test",
+      "tags": ["retrieval", "neighbor-expansion", "trace-fields"]
+    },
+    {
+      "caseKey": "rag-high-risk-grounding",
+      "description": "High-risk questions should trigger stricter evidence and grounded fallback behavior.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldFallbackForHighRiskQuestionWhenEvidenceIsTooThin test",
+      "tags": ["critical-e2e", "grounding", "guardrails", "no-evidence"]
+    },
+    {
+      "caseKey": "rag-evidence-trim-trace",
+      "description": "Trace detail should expose evidence content trimming metadata for long chunks.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=TraceAdminIntegrationTest#shouldExposeEvidenceContentTrimWhenLongChunkIsCapped test",
+      "tags": ["trace-fields", "guardrails"]
+    },
+    {
+      "caseKey": "rag-citation-normalization",
+      "description": "Out-of-range model citations should be normalized while keeping valid references.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldNormalizeOutOfRangeCitationWhileKeepingRealReferences test",
+      "tags": ["grounding", "guardrails"]
     },
     {
       "caseKey": "rag-admin-trace-detail",

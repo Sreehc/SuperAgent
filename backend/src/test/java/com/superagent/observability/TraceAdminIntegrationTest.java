@@ -372,6 +372,61 @@ class TraceAdminIntegrationTest {
     }
 
     @Test
+    void shouldExposeNeighborExpandedEvidenceInTrace() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "rerankEnabled", true,
+                                "forceCitationEnabled", true,
+                                "noEvidenceMinResults", 1,
+                                "vectorTopK", 1,
+                                "keywordTopK", 1,
+                                "candidateTopK", 1,
+                                "neighborExpansionEnabled", true,
+                                "neighborWindow", 1,
+                                "evidenceLimit", 4,
+                                "maxChunksPerDocument", 4
+                        ))))
+                .andExpect(status().isOk());
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "Neighbor Trace 知识库");
+        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, "neighbor-trace.txt", buildNeighborExpansionDocument());
+        long sessionId = createConversation(token, tenantId, "Neighbor Trace 对话", knowledgeBaseId);
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "退款规则是什么？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        long exchangeId = extractExchangeId(awaitStreamBody(streamResult, "event:done"));
+        JsonNode detailJson = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/traces/{exchangeId}", exchangeId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+
+        JsonNode rrfRetrieval = findRetrievalByChannel(detailJson.path("data").path("retrievals"), "rrf");
+        assertThat(rrfRetrieval.isMissingNode()).isFalse();
+        assertThat(rrfRetrieval.path("filters").path("neighborExpansionEnabled").asBoolean()).isTrue();
+        assertThat(rrfRetrieval.path("filters").path("neighborExpanded").asBoolean()).isTrue();
+        assertThat(rrfRetrieval.path("items").isArray()).isTrue();
+        assertThat(rrfRetrieval.path("items"))
+                .anyMatch(item -> item.path("metadata").path("neighborExpanded").asBoolean());
+        assertThat(rrfRetrieval.path("items"))
+                .anyMatch(item -> "neighbor".equals(item.path("metadata").path("channel").asText()));
+    }
+
+    @Test
     void shouldFallbackToFilteredEvidenceWhenRerankThrowsException() throws Exception {
         JsonNode login = login("admin", "password123");
         String token = login.path("data").path("accessToken").asText();
@@ -524,6 +579,33 @@ class TraceAdminIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(response.getResponse().getContentAsString()).path("data").path("id").asLong();
+    }
+
+    private long extractExchangeId(String body) {
+        int exchangeIdStart = body.indexOf("\"exchangeId\":") + 13;
+        return Long.parseLong(body.substring(exchangeIdStart, body.indexOf(",", exchangeIdStart)).trim());
+    }
+
+    private JsonNode findRetrievalByChannel(JsonNode retrievals, String channel) {
+        for (JsonNode retrieval : retrievals) {
+            if (channel.equals(retrieval.path("channel").asText())) {
+                return retrieval;
+            }
+        }
+        return objectMapper.getNodeFactory().missingNode();
+    }
+
+    private String buildNeighborExpansionDocument() {
+        return String.join(
+                "\n\n",
+                repeatSentence("第一部分介绍售后受理背景、工单流转、客服登记、用户身份核验、订单状态校验和历史工单归档说明。", 42),
+                repeatSentence("第二部分详细说明唯一退款规则锚点：退款规则锚点ZXQ-2026要求申请需在7日内提交，并提供订单截图、支付流水和售后工单编号。", 42),
+                repeatSentence("第三部分补充退款审核材料、客服回访、到账时效、补充说明要求、异常单升级路径和财务复核说明。", 42)
+        );
+    }
+
+    private String repeatSentence(String sentence, int times) {
+        return (sentence + "\n").repeat(times);
     }
 
     private String awaitStreamBody(MvcResult result, String marker) throws Exception {

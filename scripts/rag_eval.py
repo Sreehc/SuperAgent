@@ -77,6 +77,18 @@ def evaluate_thresholds(summary: dict, thresholds: dict) -> list[str]:
         )
     if summary["traceFieldCompleteness"] < thresholds["traceFieldCompleteness"]:
         failures.append("trace field completeness gate failed")
+    if summary["versionConsistencyRate"] < thresholds["versionConsistencyRate"]:
+        failures.append(
+            f"version consistency rate {summary['versionConsistencyRate']:.2%} < required {thresholds['versionConsistencyRate']:.2%}"
+        )
+    if summary["guardrailPassRate"] < thresholds["guardrailPassRate"]:
+        failures.append(
+            f"guardrail pass rate {summary['guardrailPassRate']:.2%} < required {thresholds['guardrailPassRate']:.2%}"
+        )
+    if summary["neighborExpansionRate"] < thresholds["neighborExpansionRate"]:
+        failures.append(
+            f"neighbor expansion rate {summary['neighborExpansionRate']:.2%} < required {thresholds['neighborExpansionRate']:.2%}"
+        )
     if not summary["criticalE2EPassed"]:
         failures.append("one or more critical E2E cases failed")
     return failures
@@ -96,6 +108,9 @@ def build_summary(suite: dict, results: list[dict]) -> dict:
         "groundingPassRate": ratio(results, "grounding"),
         "noEvidencePrecision": ratio(results, "no-evidence"),
         "traceFieldCompleteness": ratio(results, "trace-fields"),
+        "versionConsistencyRate": ratio(results, "version-consistency"),
+        "guardrailPassRate": ratio(results, "guardrails"),
+        "neighborExpansionRate": ratio(results, "neighbor-expansion"),
         "criticalE2EPassed": critical_e2e_passed(results),
         "thresholds": thresholds,
         "cases": results,
@@ -108,12 +123,15 @@ def build_summary(suite: dict, results: list[dict]) -> dict:
 def print_summary(summary: dict) -> None:
     print(f"[rag-eval] suite={summary['suiteKey']}")
     print(
-        "[rag-eval] passRate={:.2%} retrievalPassRate={:.2%} groundingPassRate={:.2%} noEvidencePrecision={:.2%} traceFieldCompleteness={:.2%}".format(
+        "[rag-eval] passRate={:.2%} retrievalPassRate={:.2%} groundingPassRate={:.2%} noEvidencePrecision={:.2%} traceFieldCompleteness={:.2%} versionConsistencyRate={:.2%} guardrailPassRate={:.2%} neighborExpansionRate={:.2%}".format(
             summary["passRate"],
             summary["retrievalPassRate"],
             summary["groundingPassRate"],
             summary["noEvidencePrecision"],
             summary["traceFieldCompleteness"],
+            summary["versionConsistencyRate"],
+            summary["guardrailPassRate"],
+            summary["neighborExpansionRate"],
         )
     )
     for item in summary["cases"]:
