@@ -486,6 +486,145 @@ class ConversationIntegrationTest {
     }
 
     @Test
+    void shouldUseMultiTurnContextForFollowUpRagQuestion() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "多轮知识库", "published");
+        uploadAndProcessKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                "refund-guide.txt",
+                "退款规则：需在7日内提交申请。申请材料：需提供订单截图和退款原因说明。"
+        );
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "queryUnderstandingEnabled", false,
+                                "rewriteEnabled", true,
+                                "subQuestionEnabled", true
+                        ))))
+                .andExpect(status().isOk());
+        long sessionId = createConversation(token, tenantId, "多轮指代测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult firstTurn = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "退款规则是什么？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        String firstBody = awaitStreamBody(firstTurn, "event:done");
+        assertThat(firstBody).contains("event:delta");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT content FROM conversation_message WHERE session_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1",
+                String.class,
+                sessionId
+        )).contains("退款规则包括在 7 日内提交申请");
+
+        MvcResult secondTurn = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "那申请材料呢？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(secondTurn, "event:done");
+        assertThat(body).contains("event:delta");
+        assertThat(body).contains("event:reference");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT execution_mode FROM conversation_exchange WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                String.class,
+                sessionId
+        )).isEqualTo("RAG_QA");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT content FROM conversation_message WHERE session_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1",
+                String.class,
+                sessionId
+        )).contains("申请材料包括订单截图和退款原因说明");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT output_summary FROM exchange_trace_stage WHERE exchange_id = (SELECT id FROM conversation_exchange WHERE session_id = ? ORDER BY id DESC LIMIT 1) AND stage_code = 'query_rewrite' ORDER BY id DESC LIMIT 1",
+                String.class,
+                sessionId
+        )).contains("申请材料");
+    }
+
+    @Test
+    void shouldSplitCompositeQuestionIntoMultipleRetrievalSteps() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "复合问题知识库", "published");
+        uploadAndProcessKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                "refund-policy.txt",
+                "退款规则：需在7日内提交申请。"
+        );
+        uploadAndProcessKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                "refund-materials.txt",
+                "申请材料：需提供订单截图和退款原因说明。"
+        );
+        mockMvc.perform(patch("/api/v1/admin/settings/rag")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "queryUnderstandingEnabled", false,
+                                "rewriteEnabled", false,
+                                "decompositionEnabled", true,
+                                "subQuestionEnabled", true
+                        ))))
+                .andExpect(status().isOk());
+        long sessionId = createConversation(token, tenantId, "复合问题测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "message", "退款规则是什么？申请材料需要什么？"
+                        ))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("event:trace_stage");
+        assertThat(body).contains("sub_question_split");
+        assertThat(body).contains("event:delta");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT content FROM conversation_message WHERE session_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1",
+                String.class,
+                sessionId
+        )).contains("退款规则需要在 7 日内提交申请")
+                .contains("申请材料包括订单截图和退款原因说明");
+
+        Long latestExchangeId = jdbcTemplate.queryForObject(
+                "SELECT id FROM conversation_exchange WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                Long.class,
+                sessionId
+        );
+        assertThat(latestExchangeId).isNotNull();
+        List<Integer> subQuestionNos = jdbcTemplate.queryForList(
+                "SELECT DISTINCT sub_question_no FROM retrieval_trace WHERE exchange_id = ? ORDER BY sub_question_no ASC",
+                Integer.class,
+                latestExchangeId
+        );
+        assertThat(subQuestionNos).contains(1, 2);
+    }
+
+    @Test
     void shouldApplyMetadataFiltersToRagConversationFlow() throws Exception {
         JsonNode login = login("admin", "password123");
         String token = login.path("data").path("accessToken").asText();
@@ -659,6 +798,40 @@ class ConversationIntegrationTest {
         assertThat(topReferenceDocumentCount).isEqualTo(1);
     }
 
+    @Test
+    void shouldAnswerRagQuestionFromPdfDocument() throws Exception {
+        JsonNode login = login("admin", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+        long knowledgeBaseId = createKnowledgeBase(token, tenantId, "PDF 场景知识库", "published");
+        uploadAndProcessBinaryKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                "sample.pdf",
+                "application/pdf",
+                getClass().getResourceAsStream("/documents/sample.pdf").readAllBytes()
+        );
+        long sessionId = createConversation(token, tenantId, "PDF 场景测试", knowledgeBaseId).path("data").path("id").asLong();
+
+        MvcResult streamResult = mockMvc.perform(post("/api/v1/conversations/{sessionId}/messages/stream", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId)
+                        .accept(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("message", "pdf sample guide 中提到什么？"))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = awaitStreamBody(streamResult, "event:done");
+        assertThat(body).contains("pdf sample guide");
+        assertThat(body).contains("event:reference");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT title FROM conversation_reference ORDER BY id DESC LIMIT 1",
+                String.class
+        )).isEqualTo("sample.pdf");
+    }
+
     private JsonNode login(String username, String password) throws Exception {
         MvcResult response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -722,7 +895,18 @@ class ConversationIntegrationTest {
             String fileName,
             String content
     ) throws Exception {
-        uploadAndProcessKnowledgeDocument(token, tenantId, knowledgeBaseId, fileName, content, null, List.of(), null, null);
+        uploadAndProcessBinaryKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                fileName,
+                "text/plain",
+                content.getBytes(StandardCharsets.UTF_8),
+                null,
+                List.of(),
+                null,
+                null
+        );
     }
 
     private void uploadAndProcessKnowledgeDocument(
@@ -736,11 +920,48 @@ class ConversationIntegrationTest {
             Long knowledgeDomainId,
             Long chunkingProfileId
     ) throws Exception {
+        uploadAndProcessBinaryKnowledgeDocument(
+                token,
+                tenantId,
+                knowledgeBaseId,
+                fileName,
+                "text/plain",
+                content.getBytes(StandardCharsets.UTF_8),
+                category,
+                tags,
+                knowledgeDomainId,
+                chunkingProfileId
+        );
+    }
+
+    private void uploadAndProcessBinaryKnowledgeDocument(
+            String token,
+            long tenantId,
+            long knowledgeBaseId,
+            String fileName,
+            String contentType,
+            byte[] content
+    ) throws Exception {
+        uploadAndProcessBinaryKnowledgeDocument(token, tenantId, knowledgeBaseId, fileName, contentType, content, null, List.of(), null, null);
+    }
+
+    private void uploadAndProcessBinaryKnowledgeDocument(
+            String token,
+            long tenantId,
+            long knowledgeBaseId,
+            String fileName,
+            String contentType,
+            byte[] content,
+            String category,
+            List<String> tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId
+    ) throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 fileName,
-                "text/plain",
-                content.getBytes(StandardCharsets.UTF_8)
+                contentType,
+                content
         );
         var request = multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
                 .file(file)

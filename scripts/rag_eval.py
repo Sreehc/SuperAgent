@@ -89,6 +89,22 @@ def evaluate_thresholds(summary: dict, thresholds: dict) -> list[str]:
         failures.append(
             f"neighbor expansion rate {summary['neighborExpansionRate']:.2%} < required {thresholds['neighborExpansionRate']:.2%}"
         )
+    if summary["topChunkHitRate"] < thresholds["topChunkHitRate"]:
+        failures.append(
+            f"top chunk hit rate {summary['topChunkHitRate']:.2%} < required {thresholds['topChunkHitRate']:.2%}"
+        )
+    if summary["multiTurnPassRate"] < thresholds["multiTurnPassRate"]:
+        failures.append(
+            f"multi-turn pass rate {summary['multiTurnPassRate']:.2%} < required {thresholds['multiTurnPassRate']:.2%}"
+        )
+    if summary["decompositionPassRate"] < thresholds["decompositionPassRate"]:
+        failures.append(
+            f"decomposition pass rate {summary['decompositionPassRate']:.2%} < required {thresholds['decompositionPassRate']:.2%}"
+        )
+    if summary["formatScenarioPassRate"] < thresholds["formatScenarioPassRate"]:
+        failures.append(
+            f"format scenario pass rate {summary['formatScenarioPassRate']:.2%} < required {thresholds['formatScenarioPassRate']:.2%}"
+        )
     if not summary["criticalE2EPassed"]:
         failures.append("one or more critical E2E cases failed")
     return failures
@@ -111,6 +127,10 @@ def build_summary(suite: dict, results: list[dict]) -> dict:
         "versionConsistencyRate": ratio(results, "version-consistency"),
         "guardrailPassRate": ratio(results, "guardrails"),
         "neighborExpansionRate": ratio(results, "neighbor-expansion"),
+        "topChunkHitRate": ratio(results, "top-chunk"),
+        "multiTurnPassRate": ratio(results, "multi-turn"),
+        "decompositionPassRate": ratio(results, "decomposition"),
+        "formatScenarioPassRate": ratio(results, "format-scenario"),
         "criticalE2EPassed": critical_e2e_passed(results),
         "thresholds": thresholds,
         "cases": results,
@@ -123,7 +143,7 @@ def build_summary(suite: dict, results: list[dict]) -> dict:
 def print_summary(summary: dict) -> None:
     print(f"[rag-eval] suite={summary['suiteKey']}")
     print(
-        "[rag-eval] passRate={:.2%} retrievalPassRate={:.2%} groundingPassRate={:.2%} noEvidencePrecision={:.2%} traceFieldCompleteness={:.2%} versionConsistencyRate={:.2%} guardrailPassRate={:.2%} neighborExpansionRate={:.2%}".format(
+        "[rag-eval] passRate={:.2%} retrievalPassRate={:.2%} groundingPassRate={:.2%} noEvidencePrecision={:.2%} traceFieldCompleteness={:.2%} versionConsistencyRate={:.2%} guardrailPassRate={:.2%} neighborExpansionRate={:.2%} topChunkHitRate={:.2%} multiTurnPassRate={:.2%} decompositionPassRate={:.2%} formatScenarioPassRate={:.2%}".format(
             summary["passRate"],
             summary["retrievalPassRate"],
             summary["groundingPassRate"],
@@ -132,6 +152,10 @@ def print_summary(summary: dict) -> None:
             summary["versionConsistencyRate"],
             summary["guardrailPassRate"],
             summary["neighborExpansionRate"],
+            summary["topChunkHitRate"],
+            summary["multiTurnPassRate"],
+            summary["decompositionPassRate"],
+            summary["formatScenarioPassRate"],
         )
     )
     for item in summary["cases"]:

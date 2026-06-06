@@ -9,7 +9,11 @@
     "traceFieldCompleteness": 1.0,
     "versionConsistencyRate": 1.0,
     "guardrailPassRate": 1.0,
-    "neighborExpansionRate": 1.0
+    "neighborExpansionRate": 1.0,
+    "topChunkHitRate": 1.0,
+    "multiTurnPassRate": 1.0,
+    "decompositionPassRate": 1.0,
+    "formatScenarioPassRate": 1.0
   },
   "cases": [
     {
@@ -80,7 +84,35 @@
       "description": "Structured document signals should influence ranking when title and section match the question.",
       "cwd": "backend",
       "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldPreferStructuredDocumentWhenQuestionMatchesTitleAndSection test",
-      "tags": ["retrieval", "grounding", "trace-fields", "guardrails"]
+      "tags": ["retrieval", "grounding", "trace-fields", "guardrails", "format-scenario", "top-chunk"]
+    },
+    {
+      "caseKey": "rag-multi-turn-coreference",
+      "description": "Follow-up RAG turns should reuse prior turn context for coreference-style questions.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldUseMultiTurnContextForFollowUpRagQuestion test",
+      "tags": ["critical-e2e", "grounding", "retrieval", "multi-turn"]
+    },
+    {
+      "caseKey": "rag-decomposition-split",
+      "description": "Composite questions should split into multiple retrieval steps and preserve grounded output.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldSplitCompositeQuestionIntoMultipleRetrievalSteps test",
+      "tags": ["critical-e2e", "grounding", "retrieval", "decomposition", "trace-fields"]
+    },
+    {
+      "caseKey": "rag-pdf-format-answering",
+      "description": "PDF-backed documents should remain answerable through the normal RAG conversation flow.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=ConversationIntegrationTest#shouldAnswerRagQuestionFromPdfDocument test",
+      "tags": ["critical-e2e", "grounding", "retrieval", "format-scenario"]
+    },
+    {
+      "caseKey": "rag-parser-format-coverage",
+      "description": "Document parsing gate should continue covering markdown, PDF, PPT and PPTX payloads.",
+      "cwd": "backend",
+      "command": "./mvnw -Dtest=DocumentParserServiceTest#shouldParseSupportedFormats test",
+      "tags": ["format-scenario"]
     },
     {
       "caseKey": "rag-high-risk-grounding",

@@ -29,6 +29,12 @@ public class TestChatModelClientConfiguration {
     }
 
     private String buildAnswer(String input) {
+        if (input != null && (input.contains("那申请材料呢") || input.contains("申请材料呢"))) {
+            return "根据知识库证据，申请材料包括订单截图和退款原因说明。[1]";
+        }
+        if (input != null && input.contains("申请材料需要什么")) {
+            return "根据知识库证据，退款规则需要在 7 日内提交申请，申请材料包括订单截图和退款原因说明。[1][2]";
+        }
         if (input != null && input.contains("越界引用")) {
             return "根据知识库证据，退款规则包括在 7 日内提交申请并提供订单截图。[9]";
         }
