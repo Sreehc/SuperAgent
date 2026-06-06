@@ -323,9 +323,7 @@ function fileTypeLabel(type?: string) {
 }
 
 .filters input,
-.filters select,
-.upload-form__grid input,
-.upload-form__grid select {
+.upload-form__grid input {
   padding: 0.8rem 0.95rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);

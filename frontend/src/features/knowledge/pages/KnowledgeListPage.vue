@@ -136,7 +136,6 @@ function statusLabel(status: string) {
 }
 
 .knowledge-page__filters input,
-.knowledge-page__filters select,
 .create-form input {
   padding: 0.8rem 0.95rem;
   border-radius: var(--radius-sm);

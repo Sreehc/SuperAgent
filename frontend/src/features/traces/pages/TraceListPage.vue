@@ -152,8 +152,7 @@ function modeLabel(mode: string) {
   flex-wrap: wrap;
 }
 
-.filters input,
-.filters select {
+.filters input {
   padding: 0.8rem 0.95rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);

@@ -471,8 +471,7 @@ function fileTypeLabel(type?: string) {
 }
 
 .ghost-button,
-.danger-button,
-.header-actions select {
+.danger-button {
   border-radius: var(--radius-sm);
   padding: 0.75rem 0.95rem;
   border: 1px solid var(--line-soft);

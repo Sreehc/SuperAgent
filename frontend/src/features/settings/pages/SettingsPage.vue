@@ -596,8 +596,7 @@ async function saveTools() {
 
 .field input,
 .field select,
-.field textarea,
-.toggle-field input {
+.field textarea {
   padding: 0.85rem 0.95rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);

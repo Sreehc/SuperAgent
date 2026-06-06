@@ -361,7 +361,6 @@ function formatTime(value: string) {
 }
 
 input,
-select,
 textarea {
   padding: 0.8rem 0.95rem;
   border-radius: var(--radius-sm);
