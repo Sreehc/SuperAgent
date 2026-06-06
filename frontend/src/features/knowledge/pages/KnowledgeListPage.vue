@@ -137,7 +137,7 @@ function statusLabel(status: string) {
 
 .knowledge-page__filters input,
 .create-form input {
-  padding: 0.8rem 0.95rem;
+  padding: 0.6rem 0.85rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.84);
@@ -171,10 +171,9 @@ function statusLabel(status: string) {
 }
 
 .pill-button,
-.ghost-button,
-.table-link {
+.ghost-button {
   border-radius: 999px;
-  padding: 0.75rem 1rem;
+  padding: 0.55rem 0.85rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.78);
 }
@@ -186,7 +185,7 @@ function statusLabel(status: string) {
 }
 
 .table-link {
-  padding: 0.4rem 0.8rem;
+  padding: 0.35rem 0.7rem;
 }
 
 .error-banner {

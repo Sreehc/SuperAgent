@@ -190,7 +190,7 @@ function statusLabel(status: string) {
 .filter-row {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
   align-items: center;
 }
 
@@ -203,7 +203,7 @@ function statusLabel(status: string) {
 .tab-button,
 .ghost-button {
   border-radius: 999px;
-  padding: 0.75rem 1rem;
+  padding: 0.55rem 0.85rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.78);
 }

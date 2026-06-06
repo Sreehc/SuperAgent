@@ -402,7 +402,11 @@ function fileTypeLabel(type?: string) {
 }
 
 .header-actions select {
-  min-width: 13rem;
+  min-width: 10rem;
+}
+
+.header-actions {
+  gap: 0.6rem;
 }
 
 .header-meta,
@@ -473,7 +477,7 @@ function fileTypeLabel(type?: string) {
 .ghost-button,
 .danger-button {
   border-radius: var(--radius-sm);
-  padding: 0.75rem 0.95rem;
+  padding: 0.55rem 0.85rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.84);
 }

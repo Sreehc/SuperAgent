@@ -552,7 +552,7 @@ async function saveTools() {
 .ghost-button,
 .pill-button {
   border-radius: 999px;
-  padding: 0.75rem 1rem;
+  padding: 0.55rem 0.85rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.78);
 }
@@ -576,13 +576,13 @@ async function saveTools() {
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem;
+  gap: 0.75rem;
 }
 
 .field,
 .toggle-field {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.35rem;
 }
 
 .field-error {
@@ -597,7 +597,7 @@ async function saveTools() {
 .field input,
 .field select,
 .field textarea {
-  padding: 0.85rem 0.95rem;
+  padding: 0.65rem 0.85rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.84);
@@ -610,6 +610,13 @@ async function saveTools() {
 .toggle-field {
   grid-template-columns: 1fr auto;
   align-items: center;
+}
+
+.toggle-field label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
 }
 
 .status-chip {

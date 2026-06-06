@@ -153,7 +153,7 @@ function modeLabel(mode: string) {
 }
 
 .filters input {
-  padding: 0.8rem 0.95rem;
+  padding: 0.6rem 0.85rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.84);
@@ -211,7 +211,7 @@ function modeLabel(mode: string) {
 
 .ghost-button {
   border-radius: 999px;
-  padding: 0.75rem 1rem;
+  padding: 0.55rem 0.85rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.78);
 }

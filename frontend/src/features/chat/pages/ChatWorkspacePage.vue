@@ -615,11 +615,10 @@ async function openTrace(exchangeId: number) {
 
 .reference-chip,
 .recommendation-chip,
-.table-link,
 .ghost-button,
 .pill-button {
   border-radius: 999px;
-  padding: 0.75rem 1rem;
+  padding: 0.55rem 0.85rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.75);
 }
@@ -635,7 +634,7 @@ async function openTrace(exchangeId: number) {
 }
 
 .table-link {
-  padding: 0.45rem 0.8rem;
+  padding: 0.35rem 0.7rem;
 }
 
 .table-link--danger {
@@ -648,19 +647,28 @@ async function openTrace(exchangeId: number) {
 
 .composer-card__controls {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 0.8rem;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  align-items: center;
 }
 
 .composer-card__controls select {
-  margin-left: 0.5rem;
+  margin-left: 0.25rem;
+}
+
+.composer-card__controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
 }
 
 .composer-card__input {
   width: 100%;
   resize: vertical;
-  min-height: 120px;
-  padding: 1rem;
+  min-height: 100px;
+  padding: 0.85rem 1rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.85);
