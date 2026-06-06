@@ -47,8 +47,7 @@
             <td>{{ item.documentCount }}</td>
             <td>{{ formatTime(item.updatedAt) }}</td>
             <td>
-              <button class="table-link" type="button" @click="goDetail(item.id)">查看</button>
-              <button v-if="isAdmin" class="table-link" type="button" @click="goDetail(item.id)">管理</button>
+              <button class="table-link" type="button" @click="goDetail(item.id)">详情</button>
             </td>
           </tr>
         </tbody>

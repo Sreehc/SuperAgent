@@ -112,7 +112,7 @@
 
       <section v-if="chatStore.streamState.timeline.length" class="agent-timeline">
         <div class="agent-timeline__header">
-          <p class="eyebrow">Agent Timeline</p>
+          <p class="eyebrow">智能体时间线</p>
           <small>run #{{ chatStore.streamState.runId }}</small>
         </div>
         <article
@@ -130,10 +130,10 @@
           <label>
             记忆
             <select v-model="chatStore.memoryStrategy">
-              <option value="NONE">NONE</option>
-              <option value="SLIDING_WINDOW">SLIDING_WINDOW</option>
-              <option value="SUMMARY_WINDOW">SUMMARY_WINDOW</option>
-              <option value="SUMMARY_PLUS_WINDOW">SUMMARY_PLUS_WINDOW</option>
+              <option value="NONE">不启用记忆</option>
+              <option value="SLIDING_WINDOW">滑动窗口</option>
+              <option value="SUMMARY_WINDOW">摘要窗口</option>
+              <option value="SUMMARY_PLUS_WINDOW">摘要 + 最近消息</option>
             </select>
           </label>
           <label>
@@ -190,15 +190,17 @@
 
         <div v-if="chatStore.streamState.recommendations.length" class="composer-card__recommendations">
           <span>推荐追问：</span>
-          <button
-            v-for="question in chatStore.streamState.recommendations"
-            :key="question"
-            class="recommendation-chip"
-            type="button"
-            @click="chatStore.composerMessage = question"
-          >
-            {{ question }}
-          </button>
+          <div class="recommendations-list">
+            <button
+              v-for="question in chatStore.streamState.recommendations"
+              :key="question"
+              class="recommendation-chip"
+              type="button"
+              @click="chatStore.composerMessage = question"
+            >
+              {{ question }}
+            </button>
+          </div>
         </div>
       </footer>
     </main>
@@ -340,7 +342,7 @@ function roleLabel(role: MessageRole) {
     return 'AI'
   }
   if (role === 'system') {
-    return 'System'
+    return '系统'
   }
   return '用户'
 }
@@ -595,6 +597,20 @@ async function openTrace(exchangeId: number) {
   flex-wrap: wrap;
   gap: 0.6rem;
   margin-top: 0.8rem;
+  align-items: flex-start;
+}
+
+.composer-card__recommendations {
+  flex-direction: column;
+}
+
+.recommendations-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0.5rem 0;
 }
 
 .reference-chip,

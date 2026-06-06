@@ -10,7 +10,7 @@
       </div>
       <div v-if="traceStore.selectedTrace?.agentRunId" class="header-meta">
         <span class="status-chip">Agent run #{{ traceStore.selectedTrace.agentRunId }}</span>
-        <span class="status-chip">{{ traceStore.selectedTrace.agentRunStatus || 'unknown' }}</span>
+        <span class="status-chip">{{ agentRunStatusLabel(traceStore.selectedTrace.agentRunStatus) }}</span>
       </div>
     </header>
 
@@ -42,7 +42,7 @@
           >
             <div>
               <strong>{{ stage.stageCode }}</strong>
-              <p>{{ stage.status }}</p>
+              <p>{{ stageStatusLabel(stage.status) }}</p>
             </div>
             <span>{{ formatDuration(stage.durationMs) }}</span>
           </div>
@@ -69,7 +69,7 @@
             <div v-if="traceStore.selectedTrace.modelCalls.length === 0" class="empty-line">暂无模型调用。</div>
             <div v-for="call in traceStore.selectedTrace.modelCalls" :key="call.id" class="detail-block">
               <strong>{{ call.provider }} / {{ call.model }}</strong>
-              <p>状态：{{ call.status }} · 延迟：{{ call.latencyMs ?? 0 }}ms</p>
+              <p>状态：{{ callStatusLabel(call.status) }} · 延迟：{{ call.latencyMs ?? 0 }}ms</p>
               <p>Prompt 摘要：{{ call.promptSummary || '-' }}</p>
               <p>输出摘要：{{ call.outputSummary || '-' }}</p>
             </div>
@@ -84,15 +84,15 @@
               <p>结果数：{{ retrieval.resultCount }} · 选中：{{ retrieval.selectedCount }}</p>
               <ul class="retrieval-items">
                 <li v-for="item in retrieval.items.slice(0, 5)" :key="item.id">
-                  chunk {{ item.chunkId }} · rank {{ item.rankNo }} · selected {{ item.selected ? 'yes' : 'no' }}
+                  块 {{ item.chunkId }} · 排名 {{ item.rankNo }} · {{ item.selected ? '已选中' : '未选中' }}
                 </li>
               </ul>
             </div>
           </article>
 
           <article class="card-shell">
-            <h3>Rerank / 错误</h3>
-            <div v-if="traceStore.selectedTrace.reranks.length === 0" class="empty-line">暂无 Rerank 记录。</div>
+            <h3>重排序 / 错误</h3>
+            <div v-if="traceStore.selectedTrace.reranks.length === 0" class="empty-line">暂无重排序记录。</div>
             <div v-for="rerank in traceStore.selectedTrace.reranks" :key="rerank.id" class="detail-block">
               <strong>{{ rerank.status }}</strong>
               <p>enabled={{ rerank.enabled }} · input={{ rerank.inputCount }} · output={{ rerank.outputCount }}</p>
@@ -104,8 +104,11 @@
       </section>
 
       <section v-else-if="activeTab === 'agent'" class="card-shell stack">
-        <div v-if="loadingAgentDetail" class="empty-line">正在加载 Agent Run...</div>
-        <div v-else-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定 Agent Run。</div>
+        <div v-if="loadingAgentDetail" class="loading-indicator">
+          <div class="loading-spinner"></div>
+          <span>正在加载智能体运行详情...</span>
+        </div>
+        <div v-else-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定智能体运行。</div>
         <template v-else>
           <article class="summary-card">
             <strong>run #{{ agentRunDetail.summary.runId }}</strong>
@@ -116,7 +119,7 @@
           <article v-for="step in agentRunDetail.steps" :key="step.id" class="detail-block">
             <div class="item-head">
               <strong>#{{ step.stepNo }} {{ step.phase }}</strong>
-              <span class="status-chip">{{ step.status }}</span>
+              <span class="status-chip">{{ stepStatusLabel(step.status) }}</span>
             </div>
             <p>决策：{{ step.decisionSummary || '-' }}</p>
             <p>观察：{{ step.observationSummary || '-' }}</p>
@@ -127,7 +130,7 @@
       </section>
 
       <section v-else-if="activeTab === 'tools'" class="card-shell stack">
-        <div v-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定 Agent Run。</div>
+        <div v-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定智能体运行。</div>
         <article v-for="call in agentRunDetail?.toolCalls ?? []" :key="call.id" class="detail-block">
           <div class="item-head">
             <strong>{{ call.toolId }}</strong>
@@ -147,7 +150,7 @@
               </ul>
             </div>
             <div v-if="graphEvidence(call.metadata).length">
-              <strong>Graph Evidence</strong>
+              <strong>图谱证据</strong>
               <ul class="retrieval-items">
                 <li v-for="item in graphEvidence(call.metadata).slice(0, 3)" :key="item.entity || item.path || JSON.stringify(item)">
                   {{ item.entity || item.path || JSON.stringify(item) }}
@@ -155,7 +158,7 @@
               </ul>
             </div>
             <div v-if="sandboxExecution(call.metadata)">
-              <strong>Sandbox</strong>
+              <strong>沙箱执行</strong>
               <pre class="metadata">{{ JSON.stringify(sandboxExecution(call.metadata), null, 2) }}</pre>
             </div>
           </div>
@@ -164,16 +167,16 @@
       </section>
 
       <section v-else-if="activeTab === 'checkpoints'" class="card-shell stack">
-        <div v-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定 Agent Run。</div>
+        <div v-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定智能体运行。</div>
         <article v-for="checkpoint in agentRunDetail?.checkpoints ?? []" :key="checkpoint.id" class="detail-block">
           <div class="item-head">
             <strong>#{{ checkpoint.checkpointNo }} {{ checkpoint.checkpointType }}</strong>
-            <span class="status-chip">{{ checkpoint.stable ? 'stable' : 'pending' }}</span>
+            <span class="status-chip">{{ checkpoint.stable ? '稳定' : '待定' }}</span>
           </div>
           <p>step #{{ checkpoint.stepId ?? '-' }} · {{ formatTime(checkpoint.createdAt) }}</p>
           <pre class="metadata">{{ JSON.stringify(checkpoint.payload, null, 2) }}</pre>
         </article>
-        <div v-if="agentRunDetail && agentRunDetail.checkpoints.length === 0" class="empty-line">暂无 checkpoint。</div>
+        <div v-if="agentRunDetail && agentRunDetail.checkpoints.length === 0" class="empty-line">暂无检查点。</div>
       </section>
 
       <section v-else class="card-shell stack">
@@ -204,14 +207,14 @@ const activeTab = ref<'exchange' | 'agent' | 'tools' | 'checkpoints' | 'resume'>
 
 const visibleTabs = computed(() => {
   const items: Array<{ id: 'exchange' | 'agent' | 'tools' | 'checkpoints' | 'resume'; label: string }> = [
-    { id: 'exchange', label: 'Exchange Trace' },
+    { id: 'exchange', label: 'Exchange追踪' },
   ]
   if (traceStore.selectedTrace?.agentRunId) {
     items.push(
-      { id: 'agent', label: 'Agent Run' },
-      { id: 'tools', label: 'Tool Calls' },
-      { id: 'checkpoints', label: 'Checkpoints' },
-      { id: 'resume', label: 'Resume Chain' },
+      { id: 'agent', label: '智能体运行' },
+      { id: 'tools', label: '工具调用' },
+      { id: 'checkpoints', label: '检查点' },
+      { id: 'resume', label: '恢复链路' },
     )
   }
   return items
@@ -304,6 +307,45 @@ function formatTime(value: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function stageStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    success: '成功',
+    failed: '失败',
+    running: '运行中',
+    pending: '待处理',
+  }
+  return map[status] ?? status
+}
+
+function callStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    success: '成功',
+    failed: '失败',
+  }
+  return map[status] ?? status
+}
+
+function agentRunStatusLabel(status: string | null | undefined) {
+  const map: Record<string, string> = {
+    success: '成功',
+    failed: '失败',
+    running: '运行中',
+    pending: '待处理',
+    completed: '已完成',
+  }
+  return status ? (map[status] ?? status) : '未知'
+}
+
+function stepStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    success: '成功',
+    failed: '失败',
+    running: '运行中',
+    pending: '待处理',
+  }
+  return map[status] ?? status
 }
 </script>
 
@@ -433,6 +475,30 @@ function formatTime(value: string | null) {
   display: grid;
   gap: 0.8rem;
   margin-top: 0.8rem;
+}
+
+.loading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(199, 109, 63, 0.2);
+  border-top-color: var(--bg-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 960px) {

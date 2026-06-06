@@ -108,7 +108,7 @@
             @click="openDocument(document.id)"
           >
             <td>{{ document.title }}</td>
-            <td>{{ document.fileType }}</td>
+            <td>{{ fileTypeLabel(document.fileType) }}</td>
             <td><span class="status-chip">{{ statusLabel(document.status) }}</span></td>
             <td>{{ formatFileSize(document.fileSize) }}</td>
             <td>{{ document.chunkCount }}</td>
@@ -258,6 +258,20 @@ function statusLabel(status?: string) {
     failed: '失败',
   }
   return status ? (map[status] ?? status) : '-'
+}
+
+function fileTypeLabel(type?: string) {
+  const map: Record<string, string> = {
+    pdf: 'PDF',
+    md: 'Markdown',
+    docx: 'Word',
+    doc: 'Word',
+    pptx: 'PPT',
+    ppt: 'PPT',
+    txt: '纯文本',
+    html: 'HTML',
+  }
+  return type ? (map[type] ?? type.toUpperCase()) : '-'
 }
 </script>
 

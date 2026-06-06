@@ -26,7 +26,7 @@
 
     <section v-if="activeTab === '知识域'" class="card-shell stack">
       <form class="form-grid" @submit.prevent="submitDomain">
-        <input v-model="domainForm.code" placeholder="code" />
+        <input v-model="domainForm.code" placeholder="编码" />
         <input v-model="domainForm.name" placeholder="名称" />
         <input v-model="domainForm.description" class="span-2" placeholder="描述" />
         <button class="pill-button" type="submit">{{ editingDomainId ? '更新知识域' : '新增知识域' }}</button>
@@ -45,9 +45,9 @@
 
     <section v-else-if="activeTab === '切块策略'" class="card-shell stack">
       <form class="form-grid" @submit.prevent="submitProfile">
-        <input v-model="profileForm.code" placeholder="code" />
+        <input v-model="profileForm.code" placeholder="编码" />
         <input v-model="profileForm.name" placeholder="名称" />
-        <input v-model="profileForm.strategy" placeholder="strategy" />
+        <input v-model="profileForm.strategy" placeholder="策略" />
         <label class="toggle-inline">
           <span>默认</span>
           <input v-model="profileForm.isDefault" type="checkbox" />

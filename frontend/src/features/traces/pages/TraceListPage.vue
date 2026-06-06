@@ -11,16 +11,16 @@
     <section class="filters card-shell">
       <select v-model="traceStore.statusFilter" @change="traceStore.fetchTraces">
         <option value="">全部状态</option>
-        <option value="success">success</option>
-        <option value="failed">failed</option>
-        <option value="stopped">stopped</option>
-        <option value="running">running</option>
+        <option value="success">成功</option>
+        <option value="failed">失败</option>
+        <option value="stopped">已停止</option>
+        <option value="running">运行中</option>
       </select>
       <select v-model="traceStore.modeFilter" @change="traceStore.fetchTraces">
         <option value="">全部模式</option>
-        <option value="RAG_QA">RAG_QA</option>
-        <option value="CLARIFICATION">CLARIFICATION</option>
-        <option value="REACT_AGENT">REACT_AGENT</option>
+        <option value="RAG_QA">RAG问答</option>
+        <option value="CLARIFICATION">澄清</option>
+        <option value="REACT_AGENT">智能体</option>
       </select>
       <input v-model="traceStore.userIdFilter" type="search" placeholder="按用户 ID 筛选" @keyup.enter="traceStore.fetchTraces" />
       <button class="ghost-button" data-testid="trace-refresh" type="button" @click="traceStore.fetchTraces">刷新</button>
@@ -54,8 +54,8 @@
             @click="openTrace(trace.exchangeId)"
           >
             <td>#{{ trace.exchangeId }}</td>
-            <td>{{ trace.executionMode }}</td>
-            <td><span class="status-chip" :class="`status-chip--${trace.status}`">{{ trace.status }}</span></td>
+            <td>{{ modeLabel(trace.executionMode) }}</td>
+            <td><span class="status-chip" :class="`status-chip--${trace.status}`">{{ statusLabel(trace.status) }}</span></td>
             <td :class="{ 'duration-hot': trace.durationMs > 4000 }">{{ formatDuration(trace.durationMs) }}</td>
             <td>{{ trace.sessionId }}</td>
             <td>{{ trace.userId }}</td>
@@ -109,6 +109,25 @@ function formatDuration(durationMs: number) {
     return `${durationMs}ms`
   }
   return `${(durationMs / 1000).toFixed(1)}s`
+}
+
+function statusLabel(status: string) {
+  const map: Record<string, string> = {
+    success: '成功',
+    failed: '失败',
+    stopped: '已停止',
+    running: '运行中',
+  }
+  return map[status] ?? status
+}
+
+function modeLabel(mode: string) {
+  const map: Record<string, string> = {
+    RAG_QA: 'RAG问答',
+    CLARIFICATION: '澄清',
+    REACT_AGENT: '智能体',
+  }
+  return map[mode] ?? mode
 }
 </script>
 

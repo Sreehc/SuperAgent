@@ -3,7 +3,7 @@
     <header class="card-shell page-header">
       <div>
         <p class="eyebrow">/tools</p>
-        <h2>Tools / Plugins</h2>
+        <h2>工具控制台</h2>
         <p>查看最近工具调用、插件版本和租户启停状态。</p>
       </div>
       <button class="ghost-button" type="button" @click="loadAll">刷新</button>
@@ -12,21 +12,21 @@
     <section class="card-shell tabs">
       <button
         v-for="tab in tabs"
-        :key="tab"
+        :key="tab.id"
         class="tab-button"
-        :class="{ 'tab-button--active': activeTab === tab }"
+        :class="{ 'tab-button--active': activeTab === tab.id }"
         type="button"
-        @click="activeTab = tab"
+        @click="activeTab = tab.id"
       >
-        {{ tab }}
+        {{ tab.label }}
       </button>
     </section>
 
     <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
 
-    <section v-if="activeTab === 'Tools'" class="card-shell">
+    <section v-if="activeTab === 'toolCalls'" class="card-shell">
       <div class="filter-row">
-        <input v-model="toolIdFilter" type="search" placeholder="按 toolId 筛选" @keyup.enter="loadToolCalls" />
+        <input v-model="toolIdFilter" type="search" placeholder="按工具 ID 筛选" @keyup.enter="loadToolCalls" />
         <button class="ghost-button" type="button" @click="loadToolCalls">查询</button>
       </div>
       <div v-if="loadingToolCalls" class="empty-line">正在加载工具调用...</div>
@@ -35,7 +35,7 @@
         <article v-for="call in toolCalls" :key="call.id" class="item-card">
           <div class="item-head">
             <strong>{{ call.toolId }}</strong>
-            <span class="status-chip">{{ call.status }}</span>
+            <span class="status-chip">{{ statusLabel(call.status) }}</span>
           </div>
           <p>run #{{ call.agentRunId }} · plugin {{ call.pluginVersion || '-' }} · latency {{ call.latencyMs ?? '-' }}ms</p>
           <p>请求：{{ call.requestSummary || '-' }}</p>
@@ -78,8 +78,11 @@ import { onMounted, ref } from 'vue'
 import { listPlugins, listToolCalls, updatePlugin } from '../api'
 import type { PluginItem, ToolCallDetail } from '../types'
 
-const tabs = ['Tools', 'Plugins'] as const
-const activeTab = ref<(typeof tabs)[number]>('Tools')
+const tabs = [
+  { id: 'toolCalls' as const, label: '工具调用' },
+  { id: 'plugins' as const, label: '插件管理' },
+]
+const activeTab = ref<'toolCalls' | 'plugins'>('toolCalls')
 const toolCalls = ref<ToolCallDetail[]>([])
 const plugins = ref<PluginItem[]>([])
 const loadingToolCalls = ref(false)
@@ -155,6 +158,16 @@ function formatTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function statusLabel(status: string) {
+  const map: Record<string, string> = {
+    success: '成功',
+    failed: '失败',
+    running: '运行中',
+    pending: '待处理',
+  }
+  return map[status] ?? status
 }
 </script>
 
