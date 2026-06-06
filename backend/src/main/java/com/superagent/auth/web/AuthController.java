@@ -3,9 +3,14 @@ package com.superagent.auth.web;
 import com.superagent.auth.domain.TenantMembership;
 import com.superagent.auth.service.AuthService;
 import com.superagent.common.api.ApiResponse;
+import com.superagent.common.api.ErrorCode;
+import com.superagent.common.exception.AppException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,17 +22,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final RefreshTokenCookieManager refreshTokenCookieManager;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, RefreshTokenCookieManager refreshTokenCookieManager) {
         this.authService = authService;
+        this.refreshTokenCookieManager = refreshTokenCookieManager;
     }
 
     @PostMapping("/login")
-    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
         AuthService.LoginResult result = authService.login(request.username(), request.password());
+        refreshTokenCookieManager.setRefreshToken(response, result.refreshToken());
         return ApiResponse.success(new LoginResponse(
                 result.accessToken(),
-                result.refreshToken(),
                 result.expiresIn(),
                 new UserSummary(result.user().id(), result.user().username(), result.user().displayName()),
                 new TenantSummary(result.defaultTenant().tenantId(), result.defaultTenant().tenantName(), result.defaultTenant().role().name())
@@ -35,14 +42,25 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ApiResponse<RefreshResponse> refresh(@Valid @RequestBody RefreshRequest request) {
-        AuthService.RefreshResult result = authService.refresh(request.refreshToken());
-        return ApiResponse.success(new RefreshResponse(result.accessToken(), result.refreshToken(), result.expiresIn()));
+    public ApiResponse<RefreshResponse> refresh(HttpServletRequest request, HttpServletResponse response) {
+        AuthService.RefreshResult result = authService.refresh(requireRefreshToken(request));
+        refreshTokenCookieManager.setRefreshToken(response, result.refreshToken());
+        return ApiResponse.success(new RefreshResponse(result.accessToken(), result.expiresIn()));
     }
 
     @PostMapping("/logout")
-    public ApiResponse<LogoutResponse> logout(@Valid @RequestBody LogoutRequest request) {
-        return ApiResponse.success(new LogoutResponse(authService.logout(request.refreshToken())));
+    public ApiResponse<LogoutResponse> logout(HttpServletRequest request, HttpServletResponse response) {
+        boolean revoked = authService.logout(requireRefreshToken(request));
+        refreshTokenCookieManager.clearRefreshToken(response);
+        return ApiResponse.success(new LogoutResponse(revoked));
+    }
+
+    private String requireRefreshToken(HttpServletRequest request) {
+        String refreshToken = refreshTokenCookieManager.requireRefreshToken(request);
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new AppException(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED, "Refresh token is required");
+        }
+        return refreshToken;
     }
 
     @GetMapping("/me")
@@ -66,22 +84,15 @@ public class AuthController {
     ) {
     }
 
-    public record RefreshRequest(@NotBlank(message = "refreshToken is required") String refreshToken) {
-    }
-
-    public record LogoutRequest(@NotBlank(message = "refreshToken is required") String refreshToken) {
-    }
-
     public record LoginResponse(
             String accessToken,
-            String refreshToken,
             long expiresIn,
             UserSummary user,
             TenantSummary defaultTenant
     ) {
     }
 
-    public record RefreshResponse(String accessToken, String refreshToken, long expiresIn) {
+    public record RefreshResponse(String accessToken, long expiresIn) {
     }
 
     public record LogoutResponse(boolean revoked) {

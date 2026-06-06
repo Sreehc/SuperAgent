@@ -2,7 +2,7 @@ import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import { createRouter } from './app/router'
 import App from './app/App.vue'
-import { setUnauthorizedHandler } from './api/http'
+import { setRefreshHandler, setUnauthorizedHandler } from './api/http'
 import { useAuthStore } from './features/auth/store/auth'
 import './styles.css'
 
@@ -21,5 +21,7 @@ authStore.hydrate()
 setUnauthorizedHandler(() => {
   authStore.handleUnauthorized(router.currentRoute.value.fullPath)
 })
+
+setRefreshHandler(() => authStore.refresh())
 
 app.mount('#app')

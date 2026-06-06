@@ -2,6 +2,7 @@ package com.superagent.observability.web;
 
 import com.superagent.chat.service.ConversationService;
 import com.superagent.common.api.ApiResponse;
+import com.superagent.observability.domain.ModelCallTraceDetail;
 import com.superagent.observability.domain.RerankTraceDetail;
 import com.superagent.observability.domain.RetrievalTraceDetail;
 import com.superagent.observability.service.TraceAdminService;
@@ -39,6 +40,28 @@ public class TraceQueryAdminController {
             @RequestParam(required = false) String status
     ) {
         ConversationService.PagedResult<RerankTraceDetail> result = traceAdminService.listReranks(page, pageSize, exchangeId, status);
+        return ApiResponse.success(new TraceAdminController.PagedResponse<>(result.items(), result.page(), result.pageSize(), result.total()));
+    }
+
+    @GetMapping("/model-calls")
+    public ApiResponse<TraceAdminController.PagedResponse<ModelCallTraceDetail>> listModelCalls(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer pageSize,
+            @RequestParam(required = false) Long exchangeId,
+            @RequestParam(required = false) String provider,
+            @RequestParam(required = false) String model,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String callType
+    ) {
+        ConversationService.PagedResult<ModelCallTraceDetail> result = traceAdminService.listModelCalls(
+                page,
+                pageSize,
+                exchangeId,
+                provider,
+                model,
+                status,
+                callType
+        );
         return ApiResponse.success(new TraceAdminController.PagedResponse<>(result.items(), result.page(), result.pageSize(), result.total()));
     }
 }

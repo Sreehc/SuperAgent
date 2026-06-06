@@ -7,10 +7,13 @@
 - `/login`
 - `/chat`
 - `/knowledge`
+- `/knowledge/:knowledgeBaseId`
 - `/documents/:documentId`
 - `/traces`
 - `/traces/:exchangeId`
 - `/settings`
+- `/tools`
+- `/governance`
 
 ## 本地开发
 
@@ -34,7 +37,7 @@ npm run e2e
 - 先手动启动后端 `18080` 和前端 `4173`。
 - 后端本地验证建议加上 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true EMBEDDING_PROVIDER=local-deterministic`，这样上传文档后能直接完成解析、切块和本地 deterministic embedding。
 - Playwright 使用本机已安装的 `Google Chrome`。
-- 当前 E2E 覆盖登录守卫、文档上传、发起 RAG 对话、停止生成和 Trace 查看，并在桌面/平板宽度下运行。
+- 当前 E2E 覆盖登录守卫、文档上传、发起 RAG 对话、停止生成、Trace 查看、文档详情、引用来源跳转、设置页保存，以及登录后 refresh token 不落入 `localStorage`，并在桌面/平板宽度下运行。
 
 ## 已知问题
 

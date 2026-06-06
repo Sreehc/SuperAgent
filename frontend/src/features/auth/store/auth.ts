@@ -1,11 +1,10 @@
 import { defineStore } from 'pinia'
 import { apiGet, apiPost } from '../../../api/http'
-import { readAccessToken, readCurrentTenantId, readRefreshToken, writeAccessToken, writeCurrentTenantId, writeRefreshToken } from '../../../api/storage'
+import { clearLegacyRefreshToken, readAccessToken, readCurrentTenantId, writeAccessToken, writeCurrentTenantId } from '../../../api/storage'
 import type { LoginRequest, LoginResponse, LogoutResponse, MeResponse, RefreshResponse, TenantListItem, TenantRole, UserSummary } from '../types'
 
 interface AuthState {
   accessToken: string | null
-  refreshToken: string | null
   user: UserSummary | null
   tenants: TenantListItem[]
   currentTenantId: number | null
@@ -17,7 +16,6 @@ interface AuthState {
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     accessToken: null,
-    refreshToken: null,
     user: null,
     tenants: [],
     currentTenantId: null,
@@ -35,8 +33,8 @@ export const useAuthStore = defineStore('auth', {
   },
   actions: {
     hydrate() {
+      clearLegacyRefreshToken()
       this.accessToken = readAccessToken()
-      this.refreshToken = readRefreshToken()
       this.currentTenantId = readCurrentTenantId()
       this.initialized = true
     },
@@ -50,12 +48,10 @@ export const useAuthStore = defineStore('auth', {
     },
     clearSession() {
       this.accessToken = null
-      this.refreshToken = null
       this.user = null
       this.tenants = []
       this.currentTenantId = null
       writeAccessToken(null)
-      writeRefreshToken(null)
       writeCurrentTenantId(null)
     },
     handleUnauthorized(path = '/login') {
@@ -67,11 +63,9 @@ export const useAuthStore = defineStore('auth', {
     async login(payload: LoginRequest) {
       const response = await apiPost<LoginResponse, LoginRequest>('/auth/login', payload)
       this.accessToken = response.data.accessToken
-      this.refreshToken = response.data.refreshToken
       this.user = response.data.user
       this.currentTenantId = response.data.defaultTenant.id
       writeAccessToken(response.data.accessToken)
-      writeRefreshToken(response.data.refreshToken)
       writeCurrentTenantId(response.data.defaultTenant.id)
       await this.loadProfile()
     },
@@ -103,7 +97,10 @@ export const useAuthStore = defineStore('auth', {
     },
     async ensureSession() {
       if (!this.accessToken) {
-        return false
+        const refreshed = await this.refresh()
+        if (!refreshed) {
+          return false
+        }
       }
 
       if (this.user && this.tenants.length > 0) {
@@ -125,32 +122,19 @@ export const useAuthStore = defineStore('auth', {
       await this.loadProfile()
     },
     async logout() {
-      if (this.refreshToken) {
-        try {
-          await apiPost<LogoutResponse, { refreshToken: string }>('/auth/logout', {
-            refreshToken: this.refreshToken,
-          })
-        } catch {
-          // Keep logout idempotent on the client.
-        }
+      try {
+        await apiPost<LogoutResponse, null>('/auth/logout')
+      } catch {
+        // Keep logout idempotent on the client.
       }
 
       this.clearSession()
     },
     async refresh() {
-      if (!this.refreshToken) {
-        this.clearSession()
-        return false
-      }
-
       try {
-        const response = await apiPost<RefreshResponse, { refreshToken: string }>('/auth/refresh', {
-          refreshToken: this.refreshToken,
-        })
+        const response = await apiPost<RefreshResponse, null>('/auth/refresh')
         this.accessToken = response.data.accessToken
-        this.refreshToken = response.data.refreshToken
         writeAccessToken(response.data.accessToken)
-        writeRefreshToken(response.data.refreshToken)
         return true
       } catch {
         this.clearSession()

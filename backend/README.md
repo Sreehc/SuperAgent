@@ -7,8 +7,11 @@
 - 认证与租户：`/api/v1/auth/*`、`/api/v1/tenants`
 - 知识库与文档：`/api/v1/knowledge-bases/*`、`/api/v1/documents/*`
 - 会话与流式回答：`/api/v1/conversations/*`
-- Trace 管理：`/api/v1/admin/traces/*`
-- 运行时设置：`/api/v1/admin/settings/model|rag|rerank`
+- Trace 管理：`/api/v1/admin/traces/*`、`/api/v1/admin/model-calls`、`/api/v1/admin/retrievals`、`/api/v1/admin/reranks`
+- 运行时设置：`/api/v1/admin/settings/model|rag|rerank|agent|tools`
+- Agent 管理：`/api/v1/admin/agent-runs*`、`/api/v1/admin/tool-calls`、`/api/v1/admin/plugins`
+- 知识治理：`/api/v1/admin/knowledge-domains*`、`/api/v1/admin/chunking-profiles*`
+- 文档图谱：`/api/v1/documents/{documentId}/graph`、`/api/v1/documents/{documentId}/graph/rebuild`
 - 健康检查与 Swagger：`/actuator/health`、`/swagger-ui.html`
 
 ## 启动前提
@@ -36,6 +39,12 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 ```
 
 默认端口：`8080`
+
+## 认证说明
+
+- 登录接口返回 Access Token，并通过 HttpOnly Cookie 下发 Refresh Token。
+- `/api/v1/auth/refresh` 和 `/api/v1/auth/logout` 依赖该 Refresh Cookie，不再要求前端在请求体中传递 `refreshToken`。
+- 前端必须开启 credentials，确保 Cookie 能随认证相关请求发送。
 
 ## 种子账号
 

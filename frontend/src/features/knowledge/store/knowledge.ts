@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
+  deleteKnowledgeDocument,
   getDocumentGraph,
   getKnowledgeDocument,
   getKnowledgeBase,
@@ -53,6 +54,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const uploadingDocument = ref(false)
   const reprocessingDocument = ref(false)
   const rebuildingDocumentGraph = ref(false)
+  const deletingDocument = ref(false)
   const deletingKnowledgeBase = ref(false)
   const savingKnowledgeBase = ref(false)
   const errorMessage = ref('')
@@ -181,6 +183,32 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       errorMessage.value = '文档重处理触发失败，请稍后重试。'
     } finally {
       reprocessingDocument.value = false
+    }
+  }
+
+  async function removeCurrentDocument() {
+    if (!selectedDocument.value) {
+      return false
+    }
+    deletingDocument.value = true
+    errorMessage.value = ''
+    try {
+      const knowledgeBaseId = selectedDocument.value.knowledgeBaseId
+      await deleteKnowledgeDocument(selectedDocument.value.id)
+      selectedDocument.value = null
+      documentChunks.value = []
+      documentTasks.value = []
+      documentVersions.value = []
+      documentGraph.value = null
+      if (selectedKnowledgeBase.value?.id === knowledgeBaseId) {
+        await refreshDocuments()
+      }
+      return true
+    } catch {
+      errorMessage.value = '文档删除失败，请稍后重试。'
+      return false
+    } finally {
+      deletingDocument.value = false
     }
   }
 
@@ -334,6 +362,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     uploadingDocument,
     reprocessingDocument,
     rebuildingDocumentGraph,
+    deletingDocument,
     deletingKnowledgeBase,
     savingKnowledgeBase,
     errorMessage,
@@ -354,6 +383,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     removeKnowledgeBase,
     uploadDocument,
     reprocessDocument,
+    removeCurrentDocument,
     fetchGovernanceOptions,
     rebuildCurrentDocumentGraph,
   }

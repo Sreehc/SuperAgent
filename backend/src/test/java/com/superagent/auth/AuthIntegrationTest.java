@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockCookie;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -45,47 +46,48 @@ class AuthIntegrationTest {
         assertThat(json.path("success").asBoolean()).isTrue();
         assertThat(json.path("code").asText()).isEqualTo("OK");
         assertThat(json.path("data").path("accessToken").asText()).isNotBlank();
-        assertThat(json.path("data").path("refreshToken").asText()).startsWith("rt_");
+        assertThat(json.path("data").has("refreshToken")).isFalse();
         assertThat(json.path("data").path("defaultTenant").path("role").asText()).isEqualTo("OWNER");
     }
 
     @Test
     void shouldRefreshRotatingToken() throws Exception {
-        JsonNode login = login("admin", "password123");
+        MvcResult loginResponse = loginResponse("admin", "password123");
+        String refreshCookie = loginResponse.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+        assertThat(refreshCookie).contains("superagent.refreshToken=").contains("HttpOnly");
+        MockCookie cookie = MockCookie.parse(refreshCookie);
 
         MvcResult response = mockMvc.perform(post("/api/v1/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "refreshToken", login.path("data").path("refreshToken").asText()
-                        ))))
+                        .cookie(cookie))
                 .andExpect(status().isOk())
                 .andReturn();
 
         JsonNode json = objectMapper.readTree(response.getResponse().getContentAsString());
         assertThat(json.path("data").path("accessToken").asText()).isNotBlank();
-        assertThat(json.path("data").path("refreshToken").asText()).isNotEqualTo(login.path("data").path("refreshToken").asText());
+        assertThat(json.path("data").has("refreshToken")).isFalse();
+        assertThat(response.getResponse().getHeader(HttpHeaders.SET_COOKIE)).contains("superagent.refreshToken=").contains("HttpOnly");
     }
 
     @Test
     void shouldLogoutAndRejectRevokedRefreshToken() throws Exception {
-        JsonNode login = login("admin", "password123");
+        MvcResult loginResponse = loginResponse("admin", "password123");
+        JsonNode login = objectMapper.readTree(loginResponse.getResponse().getContentAsString());
         String accessToken = login.path("data").path("accessToken").asText();
-        String refreshToken = login.path("data").path("refreshToken").asText();
+        MockCookie cookie = MockCookie.parse(loginResponse.getResponse().getHeader(HttpHeaders.SET_COOKIE));
 
         MvcResult logoutResponse = mockMvc.perform(post("/api/v1/auth/logout")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+                        .cookie(cookie))
                 .andExpect(status().isOk())
                 .andReturn();
 
         MvcResult refreshResponse = mockMvc.perform(post("/api/v1/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+                        .cookie(cookie))
                 .andExpect(status().isUnauthorized())
                 .andReturn();
 
         assertThat(objectMapper.readTree(logoutResponse.getResponse().getContentAsString()).path("data").path("revoked").asBoolean()).isTrue();
+        assertThat(logoutResponse.getResponse().getHeader(HttpHeaders.SET_COOKIE)).contains("Max-Age=0");
         assertThat(objectMapper.readTree(refreshResponse.getResponse().getContentAsString()).path("code").asText()).isEqualTo("UNAUTHORIZED");
     }
 
@@ -143,7 +145,11 @@ class AuthIntegrationTest {
     }
 
     private JsonNode login(String username, String password) throws Exception {
-        MvcResult response = mockMvc.perform(post("/api/v1/auth/login")
+        return objectMapper.readTree(loginResponse(username, password).getResponse().getContentAsString());
+    }
+
+    private MvcResult loginResponse(String username, String password) throws Exception {
+        return mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "username", username,
@@ -151,6 +157,5 @@ class AuthIntegrationTest {
                         ))))
                 .andExpect(status().isOk())
                 .andReturn();
-        return objectMapper.readTree(response.getResponse().getContentAsString());
     }
 }

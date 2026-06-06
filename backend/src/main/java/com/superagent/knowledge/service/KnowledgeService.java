@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.apache.tika.Tika;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,7 @@ public class KnowledgeService {
     private final ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider;
     private final ObjectProvider<DocumentProcessingService> documentProcessingServiceProvider;
     private final DocumentGraphService documentGraphService;
+    private final Tika tika = new Tika();
 
     public KnowledgeService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
@@ -132,6 +134,13 @@ public class KnowledgeService {
         return knowledgeRepository.softDeleteKnowledgeBase(tenantContext.tenantId(), knowledgeBase.id());
     }
 
+    public boolean deleteDocument(long documentId) {
+        requireAdminRole();
+        KnowledgeDocument document = requireKnowledgeDocument(documentId);
+        TenantContext tenantContext = requireTenantContext();
+        return knowledgeRepository.softDeleteDocument(tenantContext.tenantId(), document.id());
+    }
+
     public UploadedDocumentResult uploadDocument(
             long knowledgeBaseId,
             MultipartFile file,
@@ -143,7 +152,7 @@ public class KnowledgeService {
     ) {
         requireAdminRole();
         KnowledgeBase knowledgeBase = requireKnowledgeBase(knowledgeBaseId);
-        validateUploadFile(file);
+        String detectedContentType = validateUploadFile(file);
 
         TenantContext tenantContext = requireTenantContext();
         AuthenticatedUserPrincipal principal = currentAuthenticatedUser.get();
@@ -160,7 +169,7 @@ public class KnowledgeService {
         String contentHash = calculateHash(file);
 
         try (InputStream inputStream = file.getInputStream()) {
-            objectStorageService.store(objectKey, inputStream, file.getSize(), normalizeContentType(file.getContentType()));
+            objectStorageService.store(objectKey, inputStream, file.getSize(), detectedContentType);
         } catch (Exception exception) {
             throw new AppException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload document");
         }
@@ -501,7 +510,7 @@ public class KnowledgeService {
         return Math.min(pageSize, maxValue);
     }
 
-    private void validateUploadFile(MultipartFile file) {
+    private String validateUploadFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.UNPROCESSABLE_ENTITY, "Document file is required");
         }
@@ -515,6 +524,12 @@ public class KnowledgeService {
         if (!allowed) {
             throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.UNPROCESSABLE_ENTITY, "Document file type is not allowed");
         }
+        String detectedContentType = detectContentType(file);
+        boolean contentTypeAllowed = isContentTypeAllowedForExtension(extension, detectedContentType);
+        if (!contentTypeAllowed) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.UNPROCESSABLE_ENTITY, "Document content type is not allowed");
+        }
+        return detectedContentType;
     }
 
     private String extractExtension(String fileName) {
@@ -522,6 +537,29 @@ public class KnowledgeService {
             return "txt";
         }
         return fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private boolean isContentTypeAllowedForExtension(String extension, String detectedContentType) {
+        String normalized = detectedContentType.toLowerCase(Locale.ROOT);
+        if (properties.getStorage().getUploadAllowedContentTypes().stream()
+                .map(item -> item.toLowerCase(Locale.ROOT))
+                .noneMatch(item -> item.equals(normalized))) {
+            return false;
+        }
+        return switch (extension) {
+            case "pdf" -> normalized.equals("application/pdf");
+            case "doc" -> normalized.equals("application/msword") || normalized.equals("application/x-tika-msoffice");
+            case "docx" -> normalized.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            case "ppt" -> normalized.equals("application/vnd.ms-powerpoint") || normalized.equals("application/x-tika-msoffice");
+            case "pptx" -> normalized.equals("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+            case "md" -> normalized.equals("text/plain")
+                    || normalized.equals("text/markdown")
+                    || normalized.equals("text/x-web-markdown")
+                    || normalized.equals("application/octet-stream");
+            case "txt" -> normalized.equals("text/plain") || normalized.equals("text/markdown") || normalized.equals("application/octet-stream");
+            case "html" -> normalized.equals("text/html") || normalized.equals("application/xhtml+xml");
+            default -> false;
+        };
     }
 
     private String buildObjectKey(long tenantId, long knowledgeBaseId, String extension) {
@@ -555,11 +593,16 @@ public class KnowledgeService {
         }
     }
 
-    private String normalizeContentType(String contentType) {
-        if (contentType == null || contentType.isBlank()) {
-            return "application/octet-stream";
+    private String detectContentType(MultipartFile file) {
+        try (InputStream inputStream = file.getInputStream()) {
+            String detected = tika.detect(inputStream, file.getOriginalFilename());
+            if (detected == null || detected.isBlank()) {
+                return "application/octet-stream";
+            }
+            return detected;
+        } catch (Exception exception) {
+            throw new AppException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, "Failed to detect document content type");
         }
-        return contentType;
     }
 
     private void publishTaskIfEnabled(DocumentTaskMessage message) {

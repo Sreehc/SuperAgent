@@ -39,6 +39,14 @@
         >
           {{ knowledgeStore.rebuildingDocumentGraph ? '重建中...' : '重建图谱' }}
         </button>
+        <button
+          class="danger-button"
+          type="button"
+          :disabled="knowledgeStore.deletingDocument"
+          @click="deleteDocument"
+        >
+          {{ knowledgeStore.deletingDocument ? '删除中...' : '删除文档' }}
+        </button>
       </div>
     </header>
 
@@ -182,11 +190,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../auth/store/auth'
 import { useKnowledgeStore } from '../store/knowledge'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const knowledgeStore = useKnowledgeStore()
 const isAdmin = computed(() => ['OWNER', 'ADMIN'].includes(authStore.currentRole ?? ''))
@@ -237,6 +246,17 @@ async function triggerReprocess() {
     reason: 'Manual reprocess from document detail',
     chunkingProfileId: parseSelectedId(reprocessChunkingProfileId.value),
   })
+}
+
+async function deleteDocument() {
+  const knowledgeBaseId = knowledgeStore.selectedDocument?.knowledgeBaseId
+  if (!knowledgeBaseId || !window.confirm('确认删除该文档？删除后该文档不会继续参与检索。')) {
+    return
+  }
+  const deleted = await knowledgeStore.removeCurrentDocument()
+  if (deleted) {
+    await router.push(`/knowledge/${knowledgeBaseId}`)
+  }
 }
 
 function profileName(profileId: number | null) {
@@ -426,11 +446,17 @@ function formatFileSize(value: number) {
 }
 
 .ghost-button,
+.danger-button,
 .header-actions select {
   border-radius: var(--radius-sm);
   padding: 0.75rem 0.95rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.84);
+}
+
+.danger-button {
+  border-color: rgba(178, 63, 63, 0.35);
+  color: #9f2f2f;
 }
 
 .status-chip {

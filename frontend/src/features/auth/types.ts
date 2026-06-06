@@ -19,7 +19,6 @@ export interface LoginTenantSummary {
 
 export interface LoginResponse {
   accessToken: string
-  refreshToken: string
   expiresIn: number
   user: UserSummary
   defaultTenant: LoginTenantSummary
@@ -52,6 +51,5 @@ export interface LogoutResponse {
 
 export interface RefreshResponse {
   accessToken: string
-  refreshToken: string
   expiresIn: number
 }

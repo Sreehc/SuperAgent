@@ -65,8 +65,15 @@ class RetrievalServiceTest {
         );
         TenantContextHolder.set(new TenantContext(10001L, TenantRole.OWNER));
 
-        AuthenticatedUserPrincipal principal = mock(AuthenticatedUserPrincipal.class);
-        when(principal.currentRole()).thenReturn(TenantRole.OWNER);
+        AuthenticatedUserPrincipal principal = new AuthenticatedUserPrincipal(
+                1L,
+                "admin",
+                "管理员",
+                10001L,
+                List.of(),
+                10001L,
+                TenantRole.OWNER
+        );
         when(currentAuthenticatedUser.get()).thenReturn(principal);
 
         when(knowledgeRepository.findNeighborChunks(10001L, 10L, List.of(2), 1, true)).thenReturn(List.of(

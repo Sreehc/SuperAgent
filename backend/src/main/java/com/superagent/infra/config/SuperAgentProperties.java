@@ -146,6 +146,9 @@ public class SuperAgentProperties {
         @NotNull
         private List<@NotBlank String> uploadAllowedExtensions = new ArrayList<>();
 
+        @NotNull
+        private List<@NotBlank String> uploadAllowedContentTypes = new ArrayList<>();
+
         public String getMinioEndpoint() {
             return minioEndpoint;
         }
@@ -200,6 +203,14 @@ public class SuperAgentProperties {
 
         public void setUploadAllowedExtensions(List<String> uploadAllowedExtensions) {
             this.uploadAllowedExtensions = uploadAllowedExtensions;
+        }
+
+        public List<String> getUploadAllowedContentTypes() {
+            return uploadAllowedContentTypes;
+        }
+
+        public void setUploadAllowedContentTypes(List<String> uploadAllowedContentTypes) {
+            this.uploadAllowedContentTypes = uploadAllowedContentTypes;
         }
     }
 
@@ -454,6 +465,20 @@ public class SuperAgentProperties {
         @Min(1)
         private long refreshTokenTtlSeconds;
 
+        @NotBlank
+        private String refreshCookieName = "superagent.refreshToken";
+
+        @NotBlank
+        private String refreshCookiePath = "/api/v1/auth";
+
+        private String refreshCookieDomain;
+
+        @NotNull
+        private Boolean refreshCookieSecure = false;
+
+        @NotBlank
+        private String refreshCookieSameSite = "Lax";
+
         public String getJwtSecret() {
             return jwtSecret;
         }
@@ -476,6 +501,46 @@ public class SuperAgentProperties {
 
         public void setRefreshTokenTtlSeconds(long refreshTokenTtlSeconds) {
             this.refreshTokenTtlSeconds = refreshTokenTtlSeconds;
+        }
+
+        public String getRefreshCookieName() {
+            return refreshCookieName;
+        }
+
+        public void setRefreshCookieName(String refreshCookieName) {
+            this.refreshCookieName = refreshCookieName;
+        }
+
+        public String getRefreshCookiePath() {
+            return refreshCookiePath;
+        }
+
+        public void setRefreshCookiePath(String refreshCookiePath) {
+            this.refreshCookiePath = refreshCookiePath;
+        }
+
+        public String getRefreshCookieDomain() {
+            return refreshCookieDomain;
+        }
+
+        public void setRefreshCookieDomain(String refreshCookieDomain) {
+            this.refreshCookieDomain = refreshCookieDomain;
+        }
+
+        public Boolean getRefreshCookieSecure() {
+            return refreshCookieSecure;
+        }
+
+        public void setRefreshCookieSecure(Boolean refreshCookieSecure) {
+            this.refreshCookieSecure = refreshCookieSecure;
+        }
+
+        public String getRefreshCookieSameSite() {
+            return refreshCookieSameSite;
+        }
+
+        public void setRefreshCookieSameSite(String refreshCookieSameSite) {
+            this.refreshCookieSameSite = refreshCookieSameSite;
         }
     }
 
@@ -857,7 +922,7 @@ public class SuperAgentProperties {
     public static class Tools {
 
         @NotNull
-        private Boolean webSearchEnabled = true;
+        private Boolean webSearchEnabled = false;
 
         @NotNull
         private Boolean httpToolEnabled = false;

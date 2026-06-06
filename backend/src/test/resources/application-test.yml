@@ -2,7 +2,7 @@ spring:
   datasource:
     url: ${TEST_POSTGRES_URL:${POSTGRES_URL:jdbc:postgresql://localhost:5432/superagent_test}}
     username: ${TEST_POSTGRES_USER:${POSTGRES_USER:postgres}}
-    password: ${TEST_POSTGRES_PASSWORD:${POSTGRES_PASSWORD:root}}
+    password: ${TEST_POSTGRES_PASSWORD:${POSTGRES_PASSWORD:postgres}}
   kafka:
     consumer:
       auto-offset-reset: earliest

@@ -159,22 +159,15 @@ export function createRouter(pinia: Pinia) {
     const authStore = useAuthStore(pinia)
 
     if (to.meta.guestOnly) {
-      if (authStore.hasToken) {
-        await authStore.ensureSession()
-        if (authStore.isAuthenticated) {
-          return authStore.pendingRedirect || '/chat'
-        }
+      await authStore.ensureSession()
+      if (authStore.isAuthenticated) {
+        return authStore.pendingRedirect || '/chat'
       }
       return true
     }
 
     if (!to.meta.requiresAuth) {
       return true
-    }
-
-    if (!authStore.hasToken) {
-      authStore.rememberRedirect(to.fullPath)
-      return { name: 'login' }
     }
 
     const sessionReady = await authStore.ensureSession()

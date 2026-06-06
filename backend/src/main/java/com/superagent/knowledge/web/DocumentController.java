@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,6 +61,11 @@ public class DocumentController {
                 document.createdAt(),
                 document.updatedAt()
         ));
+    }
+
+    @DeleteMapping("/{documentId}")
+    public ApiResponse<DeleteDocumentResponse> deleteDocument(@PathVariable long documentId) {
+        return ApiResponse.success(new DeleteDocumentResponse(knowledgeService.deleteDocument(documentId)));
     }
 
     @PostMapping("/{documentId}/reprocess")
@@ -151,6 +157,9 @@ public class DocumentController {
     }
 
     public record ReprocessResponse(long documentId, long taskId, String status) {
+    }
+
+    public record DeleteDocumentResponse(boolean deleted) {
     }
 
     public record ReprocessRequest(@Size(max = 500) String reason, Long chunkingProfileId) {

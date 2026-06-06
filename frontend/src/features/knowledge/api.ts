@@ -81,6 +81,10 @@ export function getKnowledgeDocument(documentId: number) {
   return apiGet<KnowledgeDocumentDetail>(`/documents/${documentId}`)
 }
 
+export function deleteKnowledgeDocument(documentId: number) {
+  return http.delete(`/documents/${documentId}`)
+}
+
 export function listKnowledgeDocumentChunks(documentId: number, params?: Record<string, string | number | undefined>) {
   return apiGet<PagedResult<DocumentChunkItem>>(`/documents/${documentId}/chunks${buildQuery(params)}`)
 }

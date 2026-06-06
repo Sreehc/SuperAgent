@@ -462,6 +462,21 @@ public class KnowledgeRepository {
         ) > 0;
     }
 
+    public boolean softDeleteDocument(long tenantId, long documentId) {
+        return jdbcTemplate.update("""
+                        UPDATE knowledge_document
+                        SET deleted_at = NOW(),
+                            status = 'deleted',
+                            updated_at = NOW()
+                        WHERE tenant_id = ?
+                          AND id = ?
+                          AND deleted_at IS NULL
+                        """,
+                tenantId,
+                documentId
+        ) > 0;
+    }
+
     public KnowledgeDocument createKnowledgeDocument(
             long tenantId,
             long knowledgeBaseId,

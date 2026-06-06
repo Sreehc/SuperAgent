@@ -65,6 +65,20 @@ super-agent:
       - md
       - html
       - txt
+    upload-allowed-content-types:
+      - application/pdf
+      - application/msword
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - application/vnd.ms-powerpoint
+      - application/vnd.openxmlformats-officedocument.presentationml.presentation
+      - application/x-tika-msoffice
+      - text/markdown
+      - text/x-web-markdown
+      - text/html
+      - text/plain
+      - application/xhtml+xml
+      - application/xml
+      - text/xml
   messaging:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     document-task-topic: ${DOCUMENT_TASK_TOPIC:superagent.document.task}
@@ -72,7 +86,7 @@ super-agent:
     inline-processing-when-kafka-disabled: ${INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED:false}
   ai:
     openai-compatible-base-url: ${OPENAI_COMPATIBLE_BASE_URL:https://api.example.com/v1}
-    api-key: ${OPENAI_API_KEY:local-dev-openai-key}
+    api-key: ${OPENAI_COMPATIBLE_API_KEY:local-dev-openai-key}
     chat-model: ${CHAT_MODEL:gpt-4.1-mini}
     chat-provider: ${CHAT_PROVIDER:local-fake}
     embedding-model: ${EMBEDDING_MODEL:text-embedding-3-small}
@@ -91,6 +105,11 @@ super-agent:
     jwt-secret: ${JWT_SECRET:replace-with-local-dev-secret-1234567890}
     access-token-ttl-seconds: ${ACCESS_TOKEN_TTL_SECONDS:7200}
     refresh-token-ttl-seconds: ${REFRESH_TOKEN_TTL_SECONDS:1209600}
+    refresh-cookie-name: ${REFRESH_COOKIE_NAME:superagent.refreshToken}
+    refresh-cookie-path: ${REFRESH_COOKIE_PATH:/api/v1/auth}
+    refresh-cookie-domain: ${REFRESH_COOKIE_DOMAIN:}
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:false}
+    refresh-cookie-same-site: ${REFRESH_COOKIE_SAME_SITE:Lax}
   web:
     allowed-origins:
       - ${FRONTEND_ORIGIN_PRIMARY:http://localhost:5173}
@@ -132,7 +151,7 @@ super-agent:
     checkpoint-enabled: ${AGENT_CHECKPOINT_ENABLED:true}
     code-execution-enabled: ${CODE_EXECUTION_ENABLED:false}
   tools:
-    web-search-enabled: ${WEB_SEARCH_ENABLED:true}
+    web-search-enabled: ${WEB_SEARCH_ENABLED:false}
     http-tool-enabled: ${HTTP_TOOL_ENABLED:false}
     graph-tool-enabled: ${GRAPH_TOOL_ENABLED:false}
     code-execution-enabled: ${CODE_EXECUTION_ENABLED:false}

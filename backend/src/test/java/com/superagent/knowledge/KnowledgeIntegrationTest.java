@@ -209,6 +209,77 @@ class KnowledgeIntegrationTest {
     }
 
     @Test
+    void shouldDeleteDocumentAndHideItFromApis() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        LoginSession member = login("member", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "文档删除测试", "published");
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "delete-me.txt",
+                "text/plain",
+                "delete me".getBytes(StandardCharsets.UTF_8)
+        );
+
+        MvcResult uploadResponse = mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                        .file(file)
+                        .param("title", "待删除文档")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn();
+        long documentId = objectMapper.readTree(uploadResponse.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("id").asLong();
+
+        mockMvc.perform(delete("/api/v1/documents/{documentId}", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + member.accessToken())
+                        .header("X-Tenant-Id", member.tenantId()))
+                .andExpect(status().isForbidden());
+
+        JsonNode deleteResponse = objectMapper.readTree(mockMvc.perform(delete("/api/v1/documents/{documentId}", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(deleteResponse.path("data").path("deleted").asBoolean()).isTrue();
+
+        mockMvc.perform(get("/api/v1/documents/{documentId}", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isNotFound());
+
+        JsonNode listResponse = objectMapper.readTree(mockMvc.perform(get("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(listResponse.path("data").path("items").toString()).doesNotContain("待删除文档");
+    }
+
+    @Test
+    void shouldRejectMismatchedUploadContentType() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "上传类型校验", "published");
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "fake.pdf",
+                "application/pdf",
+                "not a pdf".getBytes(StandardCharsets.UTF_8)
+        );
+
+        mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
+                        .file(file)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
     void shouldRejectMemberUploadDocument() throws Exception {
         LoginSession owner = login("admin", "password123");
         LoginSession member = login("member", "password123");

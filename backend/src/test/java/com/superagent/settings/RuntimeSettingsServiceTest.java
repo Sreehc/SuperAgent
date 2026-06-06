@@ -29,6 +29,34 @@ class RuntimeSettingsServiceTest {
     private AuditLogRepository auditLogRepository;
 
     @Test
+    void shouldDefaultToolsToDisabled() {
+        SuperAgentProperties properties = new SuperAgentProperties();
+        properties.getTools().setWebSearchEnabled(false);
+        properties.getTools().setHttpToolEnabled(false);
+        properties.getTools().setGraphToolEnabled(false);
+        properties.getTools().setCodeExecutionEnabled(false);
+        properties.getTools().setToolTimeoutMs(10_000);
+        properties.getTools().setSearchProvider("tavily");
+        properties.getTools().setAllowedHttpDomains(List.of());
+
+        when(runtimeSettingsRepository.findSection(10001L, "tools")).thenReturn(Optional.empty());
+
+        RuntimeSettingsService service = new RuntimeSettingsService(
+                currentAuthenticatedUser,
+                runtimeSettingsRepository,
+                auditLogRepository,
+                properties
+        );
+
+        var settings = service.resolveToolSettings(10001L);
+
+        assertThat(settings.webSearchEnabled()).isFalse();
+        assertThat(settings.httpToolEnabled()).isFalse();
+        assertThat(settings.graphToolEnabled()).isFalse();
+        assertThat(settings.codeExecutionEnabled()).isFalse();
+    }
+
+    @Test
     void shouldDefaultAgentMemoryStrategyToSummaryPlusWindow() {
         SuperAgentProperties properties = new SuperAgentProperties();
         properties.getAgent().setEnabledDefault(true);
@@ -36,7 +64,7 @@ class RuntimeSettingsServiceTest {
         properties.getAgent().setMaxToolCalls(6);
         properties.getAgent().setCheckpointEnabled(true);
         properties.getAgent().setCodeExecutionEnabled(false);
-        properties.getTools().setWebSearchEnabled(true);
+        properties.getTools().setWebSearchEnabled(false);
         properties.getTools().setHttpToolEnabled(false);
         properties.getTools().setGraphToolEnabled(false);
         properties.getTools().setCodeExecutionEnabled(false);
@@ -65,7 +93,7 @@ class RuntimeSettingsServiceTest {
         properties.getAgent().setMaxToolCalls(6);
         properties.getAgent().setCheckpointEnabled(true);
         properties.getAgent().setCodeExecutionEnabled(false);
-        properties.getTools().setWebSearchEnabled(true);
+        properties.getTools().setWebSearchEnabled(false);
         properties.getTools().setHttpToolEnabled(false);
         properties.getTools().setGraphToolEnabled(false);
         properties.getTools().setCodeExecutionEnabled(false);

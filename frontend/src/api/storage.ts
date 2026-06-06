@@ -1,5 +1,5 @@
 const ACCESS_TOKEN_KEY = 'superagent.accessToken'
-const REFRESH_TOKEN_KEY = 'superagent.refreshToken'
+const LEGACY_REFRESH_TOKEN_KEY = 'superagent.refreshToken'
 const CURRENT_TENANT_ID_KEY = 'superagent.currentTenantId'
 
 export function readAccessToken() {
@@ -10,12 +10,8 @@ export function writeAccessToken(value: string | null) {
   syncItem(ACCESS_TOKEN_KEY, value)
 }
 
-export function readRefreshToken() {
-  return localStorage.getItem(REFRESH_TOKEN_KEY)
-}
-
-export function writeRefreshToken(value: string | null) {
-  syncItem(REFRESH_TOKEN_KEY, value)
+export function clearLegacyRefreshToken() {
+  localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY)
 }
 
 export function readCurrentTenantId() {

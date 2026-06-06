@@ -30,6 +30,8 @@ public class TraceQueryRepository {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
+    private static final ObjectMapper STATIC_OBJECT_MAPPER = new ObjectMapper();
+
     private static final RowMapper<AdminTraceSummary> SUMMARY_ROW_MAPPER = (rs, rowNum) -> new AdminTraceSummary(
             rs.getLong("exchange_id"),
             rs.getLong("session_id"),
@@ -59,6 +61,23 @@ public class TraceQueryRepository {
                 getDurationMs(startedAt, finishedAt)
         );
     };
+
+    private static final RowMapper<ModelCallTraceDetail> MODEL_CALL_ROW_MAPPER = (rs, rowNum) -> new ModelCallTraceDetail(
+            rs.getLong("id"),
+            getNullableLong(rs, "stage_id"),
+            rs.getString("provider"),
+            rs.getString("model"),
+            rs.getString("call_type"),
+            rs.getString("prompt_summary"),
+            rs.getString("output_summary"),
+            (Integer) rs.getObject("input_tokens"),
+            (Integer) rs.getObject("output_tokens"),
+            (Integer) rs.getObject("latency_ms"),
+            rs.getString("status"),
+            rs.getString("error_message"),
+            parseJsonMapStatic(rs.getObject("metadata")),
+            rs.getObject("created_at", OffsetDateTime.class)
+    );
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -167,22 +186,7 @@ public class TraceQueryRepository {
                         ORDER BY created_at ASC, id ASC
                         """,
                 params,
-                (rs, rowNum) -> new ModelCallTraceDetail(
-                        rs.getLong("id"),
-                        getNullableLong(rs, "stage_id"),
-                        rs.getString("provider"),
-                        rs.getString("model"),
-                        rs.getString("call_type"),
-                        rs.getString("prompt_summary"),
-                        rs.getString("output_summary"),
-                        (Integer) rs.getObject("input_tokens"),
-                        (Integer) rs.getObject("output_tokens"),
-                        (Integer) rs.getObject("latency_ms"),
-                        rs.getString("status"),
-                        rs.getString("error_message"),
-                        parseJsonMap(rs.getObject("metadata")),
-                        rs.getObject("created_at", OffsetDateTime.class)
-                )
+                MODEL_CALL_ROW_MAPPER
         );
 
         List<RetrievalTraceDetail> retrievals = jdbcTemplate.query("""
@@ -425,6 +429,42 @@ public class TraceQueryRepository {
         ));
     }
 
+    public long countModelCalls(long tenantId, Long exchangeId, String provider, String model, String status, String callType) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT COUNT(*)
+                FROM model_call_trace
+                WHERE tenant_id = :tenantId
+                """);
+        MapSqlParameterSource params = buildModelCallFilters(sql, tenantId, exchangeId, provider, model, status, callType);
+        return jdbcTemplate.queryForObject(sql.toString(), params, Long.class);
+    }
+
+    public List<ModelCallTraceDetail> listModelCalls(
+            long tenantId,
+            Long exchangeId,
+            String provider,
+            String model,
+            String status,
+            String callType,
+            int page,
+            int pageSize
+    ) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT id, stage_id, provider, model, call_type, prompt_summary, output_summary,
+                       input_tokens, output_tokens, latency_ms, status, error_message, metadata, created_at
+                FROM model_call_trace
+                WHERE tenant_id = :tenantId
+                """);
+        MapSqlParameterSource params = buildModelCallFilters(sql, tenantId, exchangeId, provider, model, status, callType)
+                .addValue("limit", pageSize)
+                .addValue("offset", Math.max(page - 1, 0) * pageSize);
+        sql.append("""
+                ORDER BY created_at DESC, id DESC
+                LIMIT :limit OFFSET :offset
+                """);
+        return jdbcTemplate.query(sql.toString(), params, MODEL_CALL_ROW_MAPPER);
+    }
+
     private MapSqlParameterSource buildTraceFilters(
             StringBuilder sql,
             long tenantId,
@@ -484,6 +524,39 @@ public class TraceQueryRepository {
         return params;
     }
 
+    private MapSqlParameterSource buildModelCallFilters(
+            StringBuilder sql,
+            long tenantId,
+            Long exchangeId,
+            String provider,
+            String model,
+            String status,
+            String callType
+    ) {
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("tenantId", tenantId);
+        if (exchangeId != null) {
+            sql.append(" AND exchange_id = :exchangeId ");
+            params.addValue("exchangeId", exchangeId);
+        }
+        if (provider != null && !provider.isBlank()) {
+            sql.append(" AND provider = :provider ");
+            params.addValue("provider", provider.trim());
+        }
+        if (model != null && !model.isBlank()) {
+            sql.append(" AND model = :model ");
+            params.addValue("model", model.trim());
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" AND status = :status ");
+            params.addValue("status", status.trim());
+        }
+        if (callType != null && !callType.isBlank()) {
+            sql.append(" AND call_type = :callType ");
+            params.addValue("callType", callType.trim());
+        }
+        return params;
+    }
+
     private List<RetrievalTraceItemDetail> loadRetrievalItemsForTraceId(long tenantId, long retrievalTraceId) {
         return jdbcTemplate.query("""
                         SELECT id, document_id, chunk_id, rank_no, raw_score, fused_score, selected, metadata, created_at
@@ -519,6 +592,21 @@ public class TraceQueryRepository {
         }
         try {
             return objectMapper.readValue(json, MAP_TYPE);
+        } catch (JsonProcessingException exception) {
+            return Map.of("raw", json);
+        }
+    }
+
+    private static Map<String, Object> parseJsonMapStatic(Object value) {
+        if (value == null) {
+            return Map.of();
+        }
+        String json = value.toString();
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return STATIC_OBJECT_MAPPER.readValue(json, MAP_TYPE);
         } catch (JsonProcessingException exception) {
             return Map.of("raw", json);
         }

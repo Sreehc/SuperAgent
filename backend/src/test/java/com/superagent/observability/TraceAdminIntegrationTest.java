@@ -160,6 +160,22 @@ class TraceAdminIntegrationTest {
         assertThat(retrievalList.path("data").path("items").get(0).path("items").isArray()).isTrue();
         assertThat(retrievalList.path("data").path("items").get(0).path("latencyMs").isNumber()).isTrue();
 
+        JsonNode modelCallList = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/model-calls")
+                        .param("exchangeId", String.valueOf(exchangeId))
+                        .param("provider", "test-provider")
+                        .param("model", "test-chat-model")
+                        .param("status", "success")
+                        .param("callType", "chat")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(modelCallList.path("data").path("items").isArray()).isTrue();
+        assertThat(modelCallList.path("data").path("items").get(0).path("provider").asText()).isEqualTo("test-provider");
+        assertThat(modelCallList.path("data").path("items").get(0).path("callType").asText()).isEqualTo("chat");
+
         JsonNode rerankList = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/reranks")
                         .param("exchangeId", String.valueOf(exchangeId))
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)

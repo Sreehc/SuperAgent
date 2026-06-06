@@ -10,6 +10,7 @@ import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
 import com.superagent.observability.domain.AdminTraceDetail;
 import com.superagent.observability.domain.AdminTraceSummary;
+import com.superagent.observability.domain.ModelCallTraceDetail;
 import com.superagent.observability.domain.RerankTraceDetail;
 import com.superagent.observability.domain.RetrievalTraceDetail;
 import com.superagent.observability.repository.TraceQueryRepository;
@@ -98,6 +99,28 @@ public class TraceAdminService {
         long total = traceQueryRepository.countReranks(tenantContext.tenantId(), exchangeId, status);
         return new ConversationService.PagedResult<>(
                 traceQueryRepository.listReranks(tenantContext.tenantId(), exchangeId, status, resolvedPage, resolvedPageSize),
+                resolvedPage,
+                resolvedPageSize,
+                total
+        );
+    }
+
+    public ConversationService.PagedResult<ModelCallTraceDetail> listModelCalls(
+            Integer page,
+            Integer pageSize,
+            Long exchangeId,
+            String provider,
+            String model,
+            String status,
+            String callType
+    ) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        int resolvedPage = normalizePage(page);
+        int resolvedPageSize = normalizePageSize(pageSize, 20, 100);
+        long total = traceQueryRepository.countModelCalls(tenantContext.tenantId(), exchangeId, provider, model, status, callType);
+        return new ConversationService.PagedResult<>(
+                traceQueryRepository.listModelCalls(tenantContext.tenantId(), exchangeId, provider, model, status, callType, resolvedPage, resolvedPageSize),
                 resolvedPage,
                 resolvedPageSize,
                 total
