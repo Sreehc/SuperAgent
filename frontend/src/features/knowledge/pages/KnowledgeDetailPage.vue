@@ -6,7 +6,7 @@
         <h2>{{ knowledgeStore.selectedKnowledgeBase?.name ?? '知识库详情' }}</h2>
         <p>{{ knowledgeStore.selectedKnowledgeBase?.description || '暂无描述' }}</p>
         <div class="header-meta">
-          <span class="status-chip">{{ knowledgeStore.selectedKnowledgeBase?.status }}</span>
+          <span class="status-chip">{{ statusLabel(knowledgeStore.selectedKnowledgeBase?.status) }}</span>
           <span>文档数：{{ knowledgeStore.selectedKnowledgeBase?.documentCount ?? 0 }}</span>
         </div>
       </div>
@@ -66,16 +66,16 @@
     <section class="card-shell filters">
       <select v-model="knowledgeStore.documentStatusFilter" @change="knowledgeStore.refreshDocuments">
         <option value="">全部状态</option>
-        <option value="uploaded">uploaded</option>
-        <option value="ready">ready</option>
-        <option value="failed">failed</option>
+        <option value="uploaded">已上传</option>
+        <option value="ready">就绪</option>
+        <option value="failed">失败</option>
       </select>
       <select v-model="knowledgeStore.documentTypeFilter" @change="knowledgeStore.refreshDocuments">
         <option value="">全部类型</option>
-        <option value="pdf">pdf</option>
-        <option value="md">md</option>
-        <option value="docx">docx</option>
-        <option value="txt">txt</option>
+        <option value="pdf">PDF</option>
+        <option value="md">Markdown</option>
+        <option value="docx">Word</option>
+        <option value="txt">纯文本</option>
       </select>
       <input v-model="knowledgeStore.tagFilter" type="search" placeholder="按标签筛选" @keyup.enter="knowledgeStore.refreshDocuments" />
       <button class="ghost-button" type="button" @click="knowledgeStore.refreshDocuments">刷新</button>
@@ -109,7 +109,7 @@
           >
             <td>{{ document.title }}</td>
             <td>{{ document.fileType }}</td>
-            <td><span class="status-chip">{{ document.status }}</span></td>
+            <td><span class="status-chip">{{ statusLabel(document.status) }}</span></td>
             <td>{{ formatFileSize(document.fileSize) }}</td>
             <td>{{ document.chunkCount }}</td>
             <td>{{ formatTime(document.updatedAt) }}</td>
@@ -246,6 +246,18 @@ function formatFileSize(value: number) {
     return `${(value / 1024).toFixed(1)} KB`
   }
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function statusLabel(status?: string) {
+  const map: Record<string, string> = {
+    draft: '草稿',
+    published: '已发布',
+    archived: '已归档',
+    uploaded: '已上传',
+    ready: '就绪',
+    failed: '失败',
+  }
+  return status ? (map[status] ?? status) : '-'
 }
 </script>
 

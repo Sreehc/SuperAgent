@@ -5,8 +5,8 @@
         <p class="eyebrow">/documents/{{ route.params.documentId }}</p>
         <h2>{{ knowledgeStore.selectedDocument?.title ?? '文档详情' }}</h2>
         <p>
-          状态：{{ knowledgeStore.selectedDocument?.status ?? '-' }}
-          · 类型：{{ knowledgeStore.selectedDocument?.fileType ?? '-' }}
+          状态：{{ docStatusLabel(knowledgeStore.selectedDocument?.status) }}
+          · 类型：{{ fileTypeLabel(knowledgeStore.selectedDocument?.fileType) }}
           · 大小：{{ formatFileSize(knowledgeStore.selectedDocument?.fileSize ?? 0) }}
           · 切块：{{ knowledgeStore.selectedDocument?.chunkCount ?? 0 }}
         </p>
@@ -99,7 +99,7 @@
           <div v-for="version in knowledgeStore.documentVersions" :key="version.id" class="version-card">
             <div class="version-card__head">
               <strong>v{{ version.versionNo }}</strong>
-              <span class="status-chip">{{ version.status }}</span>
+              <span class="status-chip">{{ docStatusLabel(version.status) }}</span>
             </div>
             <p>切块策略：{{ profileName(version.chunkingProfileId) }}</p>
             <p>切块数：{{ version.chunkCount }}</p>
@@ -120,7 +120,7 @@
           <div v-for="chunk in knowledgeStore.documentChunks" :key="chunk.id" class="chunk-card">
             <strong>#{{ chunk.chunkNo }} {{ chunk.sectionTitle || '未命名章节' }}</strong>
             <p>{{ chunk.content }}</p>
-            <small>{{ chunk.charCount }} chars</small>
+            <small>{{ chunk.charCount }} 字</small>
           </div>
         </article>
 
@@ -128,7 +128,7 @@
           <h3>任务日志</h3>
           <div v-if="knowledgeStore.documentTasks.length === 0" class="empty-line">当前无任务日志。</div>
           <div v-for="task in knowledgeStore.documentTasks" :key="task.id" class="task-card">
-            <strong>{{ task.taskType }} · {{ task.status }}</strong>
+            <strong>{{ taskLabel(task.taskType, task.status) }}</strong>
             <p>attempt={{ task.attemptCount }}</p>
             <p>输入：{{ task.inputSummary || '-' }}</p>
             <p>输出：{{ task.outputSummary || '-' }}</p>
@@ -332,6 +332,31 @@ function formatFileSize(value: number) {
     return `${(value / 1024).toFixed(1)} KB`
   }
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function docStatusLabel(status?: string) {
+  const map: Record<string, string> = {
+    uploaded: '已上传',
+    ready: '就绪',
+    failed: '失败',
+    processing: '处理中',
+    pending: '待处理',
+  }
+  return status ? (map[status] ?? status) : '-'
+}
+
+function fileTypeLabel(type?: string) {
+  const map: Record<string, string> = {
+    pdf: 'PDF',
+    md: 'Markdown',
+    docx: 'Word',
+    doc: 'Word',
+    pptx: 'PPT',
+    ppt: 'PPT',
+    txt: '纯文本',
+    html: 'HTML',
+  }
+  return type ? (map[type] ?? type.toUpperCase()) : '-'
 }
 </script>
 

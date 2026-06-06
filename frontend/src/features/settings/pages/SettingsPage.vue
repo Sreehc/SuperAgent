@@ -30,19 +30,19 @@
     <section v-else-if="activeTab === 'model'" class="card-shell panel">
       <div class="panel__header">
         <div>
-          <h3>模型设置</h3>
-          <p>OWNER 可修改模型与 embedding 入口，ADMIN 仅查看。</p>
+          <h3>模型配置</h3>
+          <p>配置对话模型和向量模型，提供方与密钥由 OWNER 维护，ADMIN 仅可查看。</p>
         </div>
-        <span class="status-chip">{{ settingsStore.modelForm.apiKeySet ? 'API Key 已设置' : 'API Key 未设置' }}</span>
+        <span class="status-chip">{{ settingsStore.modelForm.apiKeySet ? '密钥已设置' : '密钥未设置' }}</span>
       </div>
 
       <div class="field-grid">
         <label class="field">
-          <span>Provider</span>
+          <span>模型提供方</span>
           <input v-model="settingsStore.modelForm.provider" disabled />
         </label>
         <label class="field">
-          <span>Base URL</span>
+          <span>接口地址</span>
           <input
             v-model="settingsStore.modelForm.baseUrl"
             data-testid="settings-model-base-url"
@@ -52,7 +52,7 @@
           <small v-if="settingsStore.fieldErrors.baseUrl" class="field-error" data-testid="settings-error-base-url">{{ settingsStore.fieldErrors.baseUrl }}</small>
         </label>
         <label class="field">
-          <span>Chat Model</span>
+          <span>对话模型</span>
           <input
             v-model="settingsStore.modelForm.chatModel"
             data-testid="settings-model-chat-model"
@@ -62,7 +62,7 @@
           <small v-if="settingsStore.fieldErrors.chatModel" class="field-error">{{ settingsStore.fieldErrors.chatModel }}</small>
         </label>
         <label class="field">
-          <span>Embedding Model</span>
+          <span>向量模型</span>
           <input
             v-model="settingsStore.modelForm.embeddingModel"
             data-testid="settings-model-embedding-model"
@@ -72,7 +72,7 @@
           <small v-if="settingsStore.fieldErrors.embeddingModel" class="field-error">{{ settingsStore.fieldErrors.embeddingModel }}</small>
         </label>
         <label class="field field--full">
-          <span>API Key</span>
+          <span>密钥</span>
           <input
             v-model="settingsStore.modelForm.apiKey"
             type="password"
@@ -102,26 +102,26 @@
     <section v-else-if="activeTab === 'rag'" class="card-shell panel">
       <div class="panel__header">
         <div>
-          <h3>RAG 设置</h3>
-          <p>OWNER 和 ADMIN 都可以调整检索、预算和 rerank 开关。</p>
+          <h3>检索策略</h3>
+          <p>配置检索优先级、证据预算和重排序开关，影响回答质量和召回效果。</p>
         </div>
       </div>
 
       <div class="field-grid">
         <label class="toggle-field">
-          <span>Rewrite</span>
+          <span>问题改写</span>
           <input v-model="settingsStore.ragForm.rewriteEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>Sub Questions</span>
+          <span>子问题拆分</span>
           <input v-model="settingsStore.ragForm.subQuestionEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>Rerank</span>
+          <span>重排序</span>
           <input v-model="settingsStore.ragForm.rerankEnabled" type="checkbox" />
         </label>
         <label class="field">
-          <span>Max Sub Questions</span>
+          <span>最大子问题数</span>
           <input
             v-model.number="settingsStore.ragForm.maxSubQuestions"
             data-testid="settings-rag-max-sub-questions"
@@ -132,7 +132,7 @@
           <small v-if="settingsStore.fieldErrors.maxSubQuestions" class="field-error">{{ settingsStore.fieldErrors.maxSubQuestions }}</small>
         </label>
         <label class="field">
-          <span>Vector Top K</span>
+          <span>向量检索条数</span>
           <input
             v-model.number="settingsStore.ragForm.vectorTopK"
             type="number"
@@ -143,7 +143,7 @@
           <small v-if="settingsStore.fieldErrors.vectorTopK" class="field-error" data-testid="settings-error-vector-top-k">{{ settingsStore.fieldErrors.vectorTopK }}</small>
         </label>
         <label class="field">
-          <span>Keyword Top K</span>
+          <span>关键词检索条数</span>
           <input
             v-model.number="settingsStore.ragForm.keywordTopK"
             type="number"
@@ -153,7 +153,7 @@
           <small v-if="settingsStore.fieldErrors.keywordTopK" class="field-error">{{ settingsStore.fieldErrors.keywordTopK }}</small>
         </label>
         <label class="field">
-          <span>RRF K</span>
+          <span>RRF 融合系数</span>
           <input
             v-model.number="settingsStore.ragForm.rrfK"
             type="number"
@@ -163,7 +163,7 @@
           <small v-if="settingsStore.fieldErrors.rrfK" class="field-error">{{ settingsStore.fieldErrors.rrfK }}</small>
         </label>
         <label class="field">
-          <span>Evidence Limit</span>
+          <span>证据条数上限</span>
           <input
             v-model.number="settingsStore.ragForm.evidenceLimit"
             type="number"
@@ -173,7 +173,7 @@
           <small v-if="settingsStore.fieldErrors.evidenceLimit" class="field-error">{{ settingsStore.fieldErrors.evidenceLimit }}</small>
         </label>
         <label class="field">
-          <span>Per-question Char Limit</span>
+          <span>单问题字符上限</span>
           <input
             v-model.number="settingsStore.ragForm.perQuestionEvidenceCharLimit"
             type="number"
@@ -183,7 +183,7 @@
           <small v-if="settingsStore.fieldErrors.perQuestionEvidenceCharLimit" class="field-error">{{ settingsStore.fieldErrors.perQuestionEvidenceCharLimit }}</small>
         </label>
         <label class="field">
-          <span>Total Char Limit</span>
+          <span>总字符上限</span>
           <input
             v-model.number="settingsStore.ragForm.totalEvidenceCharLimit"
             type="number"
@@ -193,7 +193,7 @@
           <small v-if="settingsStore.fieldErrors.totalEvidenceCharLimit" class="field-error">{{ settingsStore.fieldErrors.totalEvidenceCharLimit }}</small>
         </label>
         <label class="field">
-          <span>Min Relevance Score</span>
+          <span>最低相关度分数</span>
           <input
             v-model.number="settingsStore.ragForm.minRelevanceScore"
             type="number"
@@ -213,7 +213,7 @@
           :disabled="settingsStore.savingTab === 'rag'"
           @click="saveRag"
         >
-          {{ settingsStore.savingTab === 'rag' ? '保存中...' : '保存 RAG 设置' }}
+          {{ settingsStore.savingTab === 'rag' ? '保存中...' : '保存检索策略' }}
         </button>
       </div>
     </section>
@@ -221,19 +221,19 @@
     <section v-else-if="activeTab === 'rerank'" class="card-shell panel">
       <div class="panel__header">
         <div>
-          <h3>Rerank 设置</h3>
-          <p>高风险配置，仅 OWNER 可更新；保存前会二次确认。</p>
+          <h3>重排序配置</h3>
+          <p>配置重排序模型的提供方、接口地址和密钥，仅 OWNER 可更新。</p>
         </div>
-        <span class="status-chip">{{ settingsStore.rerankForm.apiKeySet ? 'API Key 已设置' : 'API Key 未设置' }}</span>
+        <span class="status-chip">{{ settingsStore.rerankForm.apiKeySet ? '密钥已设置' : '密钥未设置' }}</span>
       </div>
 
       <div class="field-grid">
         <label class="toggle-field">
-          <span>Enabled</span>
+          <span>启用</span>
           <input v-model="settingsStore.rerankForm.enabled" type="checkbox" :disabled="!isOwner" />
         </label>
         <label class="field">
-          <span>Provider</span>
+          <span>模型提供方</span>
           <input
             v-model="settingsStore.rerankForm.provider"
             data-testid="settings-rerank-provider"
@@ -243,7 +243,7 @@
           <small v-if="settingsStore.fieldErrors.provider" class="field-error">{{ settingsStore.fieldErrors.provider }}</small>
         </label>
         <label class="field">
-          <span>Base URL</span>
+          <span>接口地址</span>
           <input
             v-model="settingsStore.rerankForm.baseUrl"
             data-testid="settings-rerank-base-url"
@@ -253,7 +253,7 @@
           <small v-if="settingsStore.fieldErrors.baseUrl" class="field-error">{{ settingsStore.fieldErrors.baseUrl }}</small>
         </label>
         <label class="field">
-          <span>Model</span>
+          <span>模型名称</span>
           <input
             v-model="settingsStore.rerankForm.model"
             data-testid="settings-rerank-model"
@@ -263,7 +263,7 @@
           <small v-if="settingsStore.fieldErrors.model" class="field-error">{{ settingsStore.fieldErrors.model }}</small>
         </label>
         <label class="field field--full">
-          <span>API Key</span>
+          <span>密钥</span>
           <input
             v-model="settingsStore.rerankForm.apiKey"
             type="password"
@@ -277,7 +277,7 @@
       </div>
 
       <div class="panel__footer">
-        <p v-if="!isOwner" class="caption">当前角色只能查看 rerank 配置。</p>
+        <p v-if="!isOwner" class="caption">当前角色只能查看重排序配置。</p>
         <button
           class="pill-button"
           type="button"
@@ -285,7 +285,7 @@
           :disabled="!isOwner || settingsStore.savingTab === 'rerank'"
           @click="saveRerank"
         >
-          {{ settingsStore.savingTab === 'rerank' ? '保存中...' : '保存 Rerank 设置' }}
+          {{ settingsStore.savingTab === 'rerank' ? '保存中...' : '保存重排序配置' }}
         </button>
       </div>
     </section>
@@ -293,59 +293,59 @@
     <section v-else-if="activeTab === 'agent'" class="card-shell panel">
       <div class="panel__header">
         <div>
-          <h3>Agent 设置</h3>
-          <p>控制 Agent 是否启用、步数上限、Checkpoint 和默认记忆策略。</p>
+          <h3>智能体配置</h3>
+          <p>控制智能体是否启用、步数上限、检查点和工具权限。</p>
         </div>
       </div>
 
       <div class="field-grid">
         <label class="toggle-field">
-          <span>Enabled</span>
+          <span>启用智能体</span>
           <input v-model="settingsStore.agentForm.enabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>Checkpoint</span>
+          <span>检查点</span>
           <input v-model="settingsStore.agentForm.checkpointEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>Web Search</span>
+          <span>联网搜索</span>
           <input v-model="settingsStore.agentForm.webSearchEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>HTTP Tool</span>
+          <span>HTTP 工具</span>
           <input v-model="settingsStore.agentForm.httpToolEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>Graph Tool</span>
+          <span>图谱工具</span>
           <input v-model="settingsStore.agentForm.graphToolEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>Code Execution</span>
+          <span>代码执行</span>
           <input v-model="settingsStore.agentForm.codeExecutionEnabled" type="checkbox" />
         </label>
         <label class="field">
-          <span>Max Model Steps</span>
+          <span>最大模型步数</span>
           <input v-model.number="settingsStore.agentForm.maxModelSteps" type="number" min="1" />
         </label>
         <label class="field">
-          <span>Max Tool Calls</span>
+          <span>最大工具调用次数</span>
           <input v-model.number="settingsStore.agentForm.maxToolCalls" type="number" min="1" />
         </label>
         <label class="field">
-          <span>Tool Timeout (ms)</span>
+          <span>工具超时时间（毫秒）</span>
           <input v-model.number="settingsStore.agentForm.toolTimeoutMs" type="number" min="100" />
         </label>
         <label class="field">
-          <span>Default Memory Strategy</span>
+          <span>默认记忆策略</span>
           <select v-model="settingsStore.agentForm.defaultMemoryStrategy">
-            <option value="NONE">NONE</option>
-            <option value="SLIDING_WINDOW">SLIDING_WINDOW</option>
-            <option value="SUMMARY_WINDOW">SUMMARY_WINDOW</option>
-            <option value="SUMMARY_PLUS_WINDOW">SUMMARY_PLUS_WINDOW</option>
+            <option value="NONE">不启用记忆</option>
+            <option value="SLIDING_WINDOW">滑动窗口</option>
+            <option value="SUMMARY_WINDOW">摘要窗口</option>
+            <option value="SUMMARY_PLUS_WINDOW">摘要 + 最近消息</option>
           </select>
         </label>
         <label class="field field--full">
-          <span>Allowed HTTP Domains</span>
+          <span>允许访问的域名</span>
           <textarea
             v-model="settingsStore.agentForm.allowedHttpDomainsText"
             rows="5"
@@ -356,7 +356,7 @@
 
       <div class="panel__footer">
         <button class="pill-button" type="button" :disabled="settingsStore.savingTab === 'agent'" @click="saveAgent">
-          {{ settingsStore.savingTab === 'agent' ? '保存中...' : '保存 Agent 设置' }}
+          {{ settingsStore.savingTab === 'agent' ? '保存中...' : '保存智能体配置' }}
         </button>
       </div>
     </section>
@@ -364,38 +364,38 @@
     <section v-else class="card-shell panel">
       <div class="panel__header">
         <div>
-          <h3>Tools 设置</h3>
-          <p>控制搜索 provider、HTTP allowlist 和高风险工具开关。</p>
+          <h3>工具权限</h3>
+          <p>配置联网搜索、HTTP 访问和代码执行等高风险工具的可用范围。</p>
         </div>
       </div>
 
       <div class="field-grid">
         <label class="toggle-field">
-          <span>Web Search</span>
+          <span>联网搜索</span>
           <input v-model="settingsStore.toolForm.webSearchEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>HTTP Tool</span>
+          <span>HTTP 工具</span>
           <input v-model="settingsStore.toolForm.httpToolEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>Graph Tool</span>
+          <span>图谱工具</span>
           <input v-model="settingsStore.toolForm.graphToolEnabled" type="checkbox" />
         </label>
         <label class="toggle-field">
-          <span>Code Execution</span>
+          <span>代码执行</span>
           <input v-model="settingsStore.toolForm.codeExecutionEnabled" type="checkbox" />
         </label>
         <label class="field">
-          <span>Search Provider</span>
+          <span>搜索服务提供方</span>
           <input v-model="settingsStore.toolForm.searchProvider" />
         </label>
         <label class="field">
-          <span>Tool Timeout (ms)</span>
+          <span>工具超时时间（毫秒）</span>
           <input v-model.number="settingsStore.toolForm.toolTimeoutMs" type="number" min="100" />
         </label>
         <label class="field field--full">
-          <span>Allowed HTTP Domains</span>
+          <span>允许访问的域名</span>
           <textarea
             v-model="settingsStore.toolForm.allowedHttpDomainsText"
             rows="5"
@@ -406,7 +406,7 @@
 
       <div class="panel__footer">
         <button class="pill-button" type="button" :disabled="settingsStore.savingTab === 'tools'" @click="saveTools">
-          {{ settingsStore.savingTab === 'tools' ? '保存中...' : '保存 Tools 设置' }}
+          {{ settingsStore.savingTab === 'tools' ? '保存中...' : '保存工具权限' }}
         </button>
       </div>
     </section>
@@ -423,11 +423,11 @@ const settingsStore = useSettingsStore()
 const activeTab = ref<'model' | 'rag' | 'rerank' | 'agent' | 'tools'>('model')
 
 const tabs = [
-  { id: 'model', label: '模型' },
-  { id: 'rag', label: 'RAG' },
-  { id: 'rerank', label: 'Rerank' },
-  { id: 'agent', label: 'Agent' },
-  { id: 'tools', label: 'Tools' },
+  { id: 'model', label: '模型配置' },
+  { id: 'rag', label: '检索策略' },
+  { id: 'rerank', label: '重排序' },
+  { id: 'agent', label: '智能体' },
+  { id: 'tools', label: '工具权限' },
 ] as const
 
 const isOwner = computed(() => authStore.currentRole === 'OWNER')
@@ -455,7 +455,7 @@ async function saveModel() {
   if (!isOwner.value) {
     return
   }
-  if (!window.confirm('模型配置会直接影响对话与 Embedding 调用，确认保存吗？')) {
+  if (!window.confirm('模型配置直接影响对话和向量计算，确认保存吗？')) {
     return
   }
   try {
@@ -466,7 +466,7 @@ async function saveModel() {
 }
 
 async function saveRag() {
-  if (!window.confirm('RAG 配置会影响检索、证据预算和回答质量，确认保存吗？')) {
+  if (!window.confirm('检索策略配置会影响回答质量和证据预算，确认保存吗？')) {
     return
   }
   try {
@@ -480,7 +480,7 @@ async function saveRerank() {
   if (!isOwner.value) {
     return
   }
-  if (!window.confirm('Rerank 配置会影响召回后排序，确认保存吗？')) {
+  if (!window.confirm('重排序配置会影响检索结果的排序质量，确认保存吗？')) {
     return
   }
   try {
@@ -491,7 +491,7 @@ async function saveRerank() {
 }
 
 async function saveAgent() {
-  if (!window.confirm('Agent 设置会影响执行上限、Checkpoint 和工具策略，确认保存吗？')) {
+  if (!window.confirm('智能体设置会影响执行上限、检查点和工具策略，确认保存吗？')) {
     return
   }
   try {
@@ -502,7 +502,7 @@ async function saveAgent() {
 }
 
 async function saveTools() {
-  if (!window.confirm('Tools 设置会影响联网、HTTP 和代码执行权限，确认保存吗？')) {
+  if (!window.confirm('工具权限设置会影响联网搜索、HTTP 和代码执行的可用范围，确认保存吗？')) {
     return
   }
   try {

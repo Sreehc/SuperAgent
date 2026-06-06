@@ -18,9 +18,9 @@
       <input v-model="knowledgeStore.keyword" type="search" placeholder="搜索名称..." @keyup.enter="knowledgeStore.fetchKnowledgeBases" />
       <select v-model="knowledgeStore.statusFilter" @change="knowledgeStore.fetchKnowledgeBases">
         <option value="">全部状态</option>
-        <option value="draft">draft</option>
-        <option value="published">published</option>
-        <option value="archived">archived</option>
+        <option value="draft">草稿</option>
+        <option value="published">已发布</option>
+        <option value="archived">已归档</option>
       </select>
       <button class="ghost-button" type="button" @click="knowledgeStore.fetchKnowledgeBases">查询</button>
     </section>
@@ -43,12 +43,12 @@
         <tbody>
           <tr v-for="item in knowledgeStore.knowledgeBases" :key="item.id">
             <td>{{ item.name }}</td>
-            <td><span class="status-chip">{{ item.status }}</span></td>
+            <td><span class="status-chip">{{ statusLabel(item.status) }}</span></td>
             <td>{{ item.documentCount }}</td>
             <td>{{ formatTime(item.updatedAt) }}</td>
             <td>
               <button class="table-link" type="button" @click="goDetail(item.id)">查看</button>
-              <button v-if="isAdmin" class="table-link" type="button" @click="goDetail(item.id)">编辑</button>
+              <button v-if="isAdmin" class="table-link" type="button" @click="goDetail(item.id)">管理</button>
             </td>
           </tr>
         </tbody>
@@ -96,6 +96,15 @@ function formatTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function statusLabel(status: string) {
+  const map: Record<string, string> = {
+    draft: '草稿',
+    published: '已发布',
+    archived: '已归档',
+  }
+  return map[status] ?? status
 }
 </script>
 

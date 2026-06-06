@@ -139,7 +139,7 @@
           <p v-if="call.errorMessage">错误：{{ call.errorMessage }}</p>
           <div class="evidence-grid">
             <div v-if="searchEvidence(call.metadata).length">
-              <strong>Search Evidence</strong>
+              <strong>检索证据</strong>
               <ul class="retrieval-items">
                 <li v-for="item in searchEvidence(call.metadata).slice(0, 3)" :key="item.title || item.url">
                   {{ item.title || item.url }} · {{ item.url || item.summary || '-' }}
