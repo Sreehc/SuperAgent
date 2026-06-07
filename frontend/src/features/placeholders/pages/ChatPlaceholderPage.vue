@@ -1,87 +1,33 @@
 <template>
-  <section class="page-card page-card--chat">
-    <div class="page-card__hero">
-      <p class="page-card__eyebrow">/chat</p>
-      <h2>登录后的默认落点已经接通。</h2>
-      <p>
-        这里保留阶段 3 所需的对话工作台占位结构，后续阶段再接会话列表、消息时间线和
-        SSE。
-      </p>
-    </div>
-
-    <div class="chat-grid">
-      <article class="placeholder-panel">
-        <h3>会话侧栏</h3>
-        <ul>
-          <li>新建会话按钮</li>
-          <li>搜索框占位</li>
-          <li>按时间分组的会话列表占位</li>
-        </ul>
-      </article>
-
-      <article class="placeholder-panel">
-        <h3>消息工作区</h3>
-        <p>当前阶段只验证守卫、布局和登录态，消息流在下一阶段实现。</p>
-      </article>
-
-      <article class="placeholder-panel">
-        <h3>右侧面板</h3>
-        <p>引用来源和 Trace 入口已预留，但不展开具体细节。</p>
-      </article>
-    </div>
+  <section class="page-stack">
+    <header class="page-header">
+      <div>
+        <p class="page-kicker">/chat</p>
+        <h2>对话工作台</h2>
+        <p>会话、消息、引用来源和 Agent 运行状态会在这里汇总。</p>
+      </div>
+    </header>
+    <section class="placeholder-grid">
+      <article class="panel"><h3>会话</h3><p>新建、搜索、重命名、归档。</p></article>
+      <article class="panel"><h3>消息</h3><p>流式回答、Markdown、安全渲染。</p></article>
+      <article class="panel"><h3>上下文</h3><p>引用来源、文档跳转、Trace 入口。</p></article>
+    </section>
   </section>
 </template>
 
 <style scoped>
-.page-card {
-  padding: 2rem;
-  border-radius: calc(var(--radius-lg) + 4px);
-  background: var(--bg-panel);
-  border: 1px solid var(--line-soft);
-  box-shadow: var(--shadow-card);
-}
-
-.page-card--chat {
-  background:
-    linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(255, 247, 238, 0.96)),
-    radial-gradient(circle at top right, rgba(199, 109, 63, 0.14), transparent 34%);
-}
-
-.page-card__hero h2 {
-  margin: 0.3rem 0 0.8rem;
-  font-family: 'Fraunces', 'Iowan Old Style', serif;
-  font-size: clamp(2rem, 4vw, 3rem);
-}
-
-.page-card__eyebrow {
-  margin: 0;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 0.74rem;
-}
-
-.chat-grid {
+.placeholder-grid {
   display: grid;
-  grid-template-columns: 0.9fr 1.2fr 0.9fr;
-  gap: 1rem;
-  margin-top: 1.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.placeholder-panel {
-  min-height: 240px;
-  padding: 1.2rem;
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(31, 32, 38, 0.08);
+.panel p {
+  margin-bottom: 0;
 }
 
-.placeholder-panel h3 {
-  margin-top: 0;
-}
-
-@media (max-width: 980px) {
-  .chat-grid {
+@media (max-width: 820px) {
+  .placeholder-grid {
     grid-template-columns: 1fr;
   }
 }

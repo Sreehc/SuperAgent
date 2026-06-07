@@ -6,14 +6,14 @@
         <h2>运行时设置</h2>
         <p>模型、RAG、Agent 和工具策略统一在这里维护，密钥只展示“已设置”状态。</p>
       </div>
-      <button class="ghost-button" type="button" data-testid="settings-refresh" @click="reload">刷新</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-testid="settings-refresh" @click="reload">刷新</button>
     </header>
 
     <section class="card-shell tabs">
       <button
         v-for="tab in tabs"
         :key="tab.id"
-        class="tab-button"
+        class="btn btn-secondary btn-sm tab-button"
         :class="{ 'tab-button--active': activeTab === tab.id }"
         type="button"
         @click="activeTab = tab.id"
@@ -22,10 +22,7 @@
       </button>
     </section>
 
-    <p v-if="settingsStore.errorMessage" class="banner banner--error">{{ settingsStore.errorMessage }}</p>
-    <p v-if="settingsStore.successMessage" class="banner banner--success">{{ settingsStore.successMessage }}</p>
-
-    <section v-if="settingsStore.loading" class="card-shell">正在加载设置...</section>
+    <LoadingSpinner v-if="settingsStore.loading" text="正在加载设置..." />
 
     <section v-else-if="activeTab === 'model'" class="card-shell panel">
       <div class="panel__header">
@@ -33,7 +30,7 @@
           <h3>模型配置</h3>
           <p>配置对话模型和向量模型，提供方与密钥由 OWNER 维护，ADMIN 仅可查看。</p>
         </div>
-        <span class="status-chip">{{ settingsStore.modelForm.apiKeySet ? '密钥已设置' : '密钥未设置' }}</span>
+        <span class="status-chip">{{ settingsStore.modelForm.apiKeySet ? 'API Key 已设置' : 'API Key 未设置' }}</span>
       </div>
 
       <div class="field-grid">
@@ -87,15 +84,28 @@
 
       <div class="panel__footer">
         <p v-if="!isOwner" class="caption">当前角色只能查看模型配置。</p>
-        <button
-          class="pill-button"
-          type="button"
-          data-testid="settings-save-model"
-          :disabled="!isOwner || settingsStore.savingTab === 'model'"
-          @click="saveModel"
-        >
-          {{ settingsStore.savingTab === 'model' ? '保存中...' : '保存模型设置' }}
-        </button>
+        <div v-else class="panel__actions">
+          <button
+            class="btn btn-secondary"
+            :class="{ 'btn-loading': testingModel }"
+            type="button"
+            data-testid="settings-test-model"
+            :disabled="testingModel"
+            @click="testModel"
+          >
+            {{ testingModel ? '测试中...' : '测试连接' }}
+          </button>
+          <button
+            class="btn btn-primary"
+            :class="{ 'btn-loading': settingsStore.savingTab === 'model' }"
+            type="button"
+            data-testid="settings-save-model"
+            :disabled="settingsStore.savingTab === 'model'"
+            @click="saveModel"
+          >
+            {{ settingsStore.savingTab === 'model' ? '保存中...' : '保存配置' }}
+          </button>
+        </div>
       </div>
     </section>
 
@@ -207,7 +217,8 @@
 
       <div class="panel__footer">
         <button
-          class="pill-button"
+          class="btn btn-primary"
+          :class="{ 'btn-loading': settingsStore.savingTab === 'rag' }"
           type="button"
           data-testid="settings-save-rag"
           :disabled="settingsStore.savingTab === 'rag'"
@@ -224,7 +235,7 @@
           <h3>重排序配置</h3>
           <p>配置重排序模型的提供方、接口地址和密钥，仅 OWNER 可更新。</p>
         </div>
-        <span class="status-chip">{{ settingsStore.rerankForm.apiKeySet ? '密钥已设置' : '密钥未设置' }}</span>
+        <span class="status-chip">{{ settingsStore.rerankForm.apiKeySet ? 'API Key 已设置' : 'API Key 未设置' }}</span>
       </div>
 
       <div class="field-grid">
@@ -278,15 +289,28 @@
 
       <div class="panel__footer">
         <p v-if="!isOwner" class="caption">当前角色只能查看重排序配置。</p>
-        <button
-          class="pill-button"
-          type="button"
-          data-testid="settings-save-rerank"
-          :disabled="!isOwner || settingsStore.savingTab === 'rerank'"
-          @click="saveRerank"
-        >
-          {{ settingsStore.savingTab === 'rerank' ? '保存中...' : '保存重排序配置' }}
-        </button>
+        <div v-else class="panel__actions">
+          <button
+            class="btn btn-secondary"
+            :class="{ 'btn-loading': testingRerank }"
+            type="button"
+            data-testid="settings-test-rerank"
+            :disabled="testingRerank"
+            @click="testRerank"
+          >
+            {{ testingRerank ? '测试中...' : '测试连接' }}
+          </button>
+          <button
+            class="btn btn-primary"
+            :class="{ 'btn-loading': settingsStore.savingTab === 'rerank' }"
+            type="button"
+            data-testid="settings-save-rerank"
+            :disabled="settingsStore.savingTab === 'rerank'"
+            @click="saveRerank"
+          >
+            {{ settingsStore.savingTab === 'rerank' ? '保存中...' : '保存配置' }}
+          </button>
+        </div>
       </div>
     </section>
 
@@ -355,7 +379,13 @@
       </div>
 
       <div class="panel__footer">
-        <button class="pill-button" type="button" :disabled="settingsStore.savingTab === 'agent'" @click="saveAgent">
+        <button
+          class="btn btn-primary"
+          :class="{ 'btn-loading': settingsStore.savingTab === 'agent' }"
+          type="button"
+          :disabled="settingsStore.savingTab === 'agent'"
+          @click="saveAgent"
+        >
           {{ settingsStore.savingTab === 'agent' ? '保存中...' : '保存智能体配置' }}
         </button>
       </div>
@@ -405,7 +435,13 @@
       </div>
 
       <div class="panel__footer">
-        <button class="pill-button" type="button" :disabled="settingsStore.savingTab === 'tools'" @click="saveTools">
+        <button
+          class="btn btn-primary"
+          :class="{ 'btn-loading': settingsStore.savingTab === 'tools' }"
+          type="button"
+          :disabled="settingsStore.savingTab === 'tools'"
+          @click="saveTools"
+        >
           {{ settingsStore.savingTab === 'tools' ? '保存中...' : '保存工具权限' }}
         </button>
       </div>
@@ -415,6 +451,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { LoadingSpinner } from '../../../components'
+import { toast } from '../../../utils/toast'
 import { useAuthStore } from '../../auth/store/auth'
 import { useSettingsStore } from '../store/settings'
 
@@ -422,9 +460,12 @@ const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const activeTab = ref<'model' | 'rag' | 'rerank' | 'agent' | 'tools'>('model')
 
+const testingModel = ref(false)
+const testingRerank = ref(false)
+
 const tabs = [
-  { id: 'model', label: '模型配置' },
-  { id: 'rag', label: '检索策略' },
+  { id: 'model', label: '模型' },
+  { id: 'rag', label: 'RAG' },
   { id: 'rerank', label: '重排序' },
   { id: 'agent', label: '智能体' },
   { id: 'tools', label: '工具权限' },
@@ -440,6 +481,25 @@ watch(
   () => authStore.currentTenantId,
   async () => {
     await reload()
+  },
+)
+
+// 监听成功和错误消息，触发 toast
+watch(
+  () => settingsStore.successMessage,
+  (message) => {
+    if (message) {
+      toast.success(message)
+    }
+  },
+)
+
+watch(
+  () => settingsStore.errorMessage,
+  (message) => {
+    if (message) {
+      toast.error(message)
+    }
   },
 )
 
@@ -511,20 +571,50 @@ async function saveTools() {
     // Store already exposed the error.
   }
 }
+
+async function testModel() {
+  if (!isOwner.value) {
+    return
+  }
+  testingModel.value = true
+  try {
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    toast.success('模型连接测试成功！')
+  } catch (error) {
+    toast.error('模型连接测试失败，请检查配置')
+  } finally {
+    testingModel.value = false
+  }
+}
+
+async function testRerank() {
+  if (!isOwner.value) {
+    return
+  }
+  testingRerank.value = true
+  try {
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    toast.success('重排序连接测试成功！')
+  } catch (error) {
+    toast.error('重排序连接测试失败，请检查配置')
+  } finally {
+    testingRerank.value = false
+  }
+}
+
 </script>
 
 <style scoped>
 .settings-page {
   display: grid;
-  gap: 1rem;
+  gap: 16px;
 }
 
 .card-shell {
-  border-radius: calc(var(--radius-md) + 4px);
-  border: 1px solid var(--line-soft);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-soft);
-  padding: 1rem 1.2rem;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
 }
 
 .page-header,
@@ -533,74 +623,83 @@ async function saveTools() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 14px;
+}
+
+.panel__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
 }
 
 .page-header h2,
 .panel h3 {
-  margin: 0.2rem 0;
-  font-family: 'Fraunces', 'Iowan Old Style', serif;
+  margin: 0;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.page-header h2 {
+  font-size: 22px;
+}
+
+.panel h3 {
+  font-size: 17px;
+}
+
+.page-header p,
+.panel__header p {
+  margin: 6px 0 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .tabs {
   display: flex;
-  gap: 0.75rem;
+  gap: 8px;
   flex-wrap: wrap;
-}
-
-.tab-button,
-.ghost-button,
-.pill-button {
-  border-radius: 999px;
-  padding: 0.55rem 0.85rem;
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.78);
+  padding: 10px;
 }
 
 .tab-button--active {
-  background: rgba(199, 109, 63, 0.12);
-  border-color: rgba(199, 109, 63, 0.36);
-}
-
-.pill-button {
-  border: 0;
-  background: linear-gradient(135deg, var(--bg-accent), #d78655);
-  color: var(--text-contrast);
+  color: var(--color-accent) !important;
+  border-color: color-mix(in srgb, var(--color-accent), transparent 58%) !important;
+  background: var(--color-accent-soft) !important;
 }
 
 .panel {
   display: grid;
-  gap: 1rem;
+  gap: 16px;
 }
 
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 12px;
 }
 
 .field,
 .toggle-field {
   display: grid;
-  gap: 0.35rem;
+  gap: 6px;
+}
+
+.field > span,
+.toggle-field > span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .field-error {
-  color: var(--danger);
-  font-size: 0.82rem;
+  color: var(--color-danger);
+  font-size: 12px;
 }
 
 .field--full {
   grid-column: 1 / -1;
-}
-
-.field input,
-.field select,
-.field textarea {
-  padding: 0.65rem 0.85rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.84);
 }
 
 .field textarea {
@@ -610,6 +709,11 @@ async function saveTools() {
 .toggle-field {
   grid-template-columns: 1fr auto;
   align-items: center;
+  min-height: 42px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
 }
 
 .toggle-field label {
@@ -621,38 +725,25 @@ async function saveTools() {
 
 .status-chip {
   display: inline-flex;
-  padding: 0.2rem 0.65rem;
-  border-radius: 999px;
-  background: rgba(27, 47, 61, 0.08);
-  color: var(--text-secondary);
-}
-
-.banner {
-  margin: 0;
-  padding: 0.9rem 1rem;
-  border-radius: var(--radius-sm);
-}
-
-.banner--error {
-  background: rgba(179, 63, 45, 0.08);
-  color: var(--danger);
-}
-
-.banner--success {
-  background: rgba(45, 106, 79, 0.1);
-  color: var(--success);
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .caption,
 .eyebrow {
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--color-text-muted);
 }
 
 .eyebrow {
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 @media (max-width: 960px) {

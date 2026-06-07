@@ -1,90 +1,110 @@
 <template>
-  <section class="knowledge-detail">
-    <header class="card-shell detail-header">
+  <section class="knowledge-detail page-stack">
+    <header class="page-header">
       <div>
-        <p class="eyebrow">/knowledge/{{ route.params.knowledgeBaseId }}</p>
+        <p class="page-kicker">/knowledge/{{ route.params.knowledgeBaseId }}</p>
         <h2>{{ knowledgeStore.selectedKnowledgeBase?.name ?? '知识库详情' }}</h2>
-        <p>{{ knowledgeStore.selectedKnowledgeBase?.description || '暂无描述' }}</p>
-        <div class="header-meta">
-          <span class="status-chip">{{ statusLabel(knowledgeStore.selectedKnowledgeBase?.status) }}</span>
-          <span>文档数：{{ knowledgeStore.selectedKnowledgeBase?.documentCount ?? 0 }}</span>
+        <p>{{ knowledgeStore.selectedKnowledgeBase?.description || '管理知识库状态、上传文档并查看处理结果。' }}</p>
+        <div class="meta-row">
+          <span class="badge" :class="statusClass(knowledgeStore.selectedKnowledgeBase?.status)">{{ statusLabel(knowledgeStore.selectedKnowledgeBase?.status) }}</span>
+          <span class="badge">文档 {{ knowledgeStore.selectedKnowledgeBase?.documentCount ?? 0 }}</span>
         </div>
       </div>
       <div v-if="isAdmin" class="header-actions">
-        <button class="ghost-button" type="button" @click="editing = !editing">{{ editing ? '取消编辑' : '编辑' }}</button>
-        <button class="ghost-button" type="button" @click="knowledgeStore.publishKnowledgeBase">发布</button>
-        <button class="ghost-button" type="button" @click="knowledgeStore.archiveKnowledgeBase">归档</button>
-        <button class="ghost-button danger-button" type="button" @click="removeKnowledgeBase">删除</button>
+        <button class="btn btn-ghost btn-sm" type="button" @click="editing = !editing">{{ editing ? '取消编辑' : '编辑' }}</button>
+        <button class="btn btn-secondary btn-sm" type="button" @click="knowledgeStore.publishKnowledgeBase">发布</button>
+        <button class="btn btn-secondary btn-sm" type="button" @click="knowledgeStore.archiveKnowledgeBase">归档</button>
+        <button class="btn btn-danger btn-sm" type="button" @click="removeKnowledgeBase">删除</button>
       </div>
     </header>
 
-    <section v-if="isAdmin && editing && knowledgeStore.selectedKnowledgeBase" class="card-shell edit-form">
+    <section v-if="isAdmin && editing && knowledgeStore.selectedKnowledgeBase" class="panel edit-panel">
       <div>
         <h3>编辑知识库</h3>
-        <p>更新名称和描述，不影响当前文档列表。</p>
+        <p>更新名称和描述，不改变文档处理状态。</p>
       </div>
-      <form class="upload-form__grid" @submit.prevent="saveKnowledgeBase">
-        <input v-model="editName" type="text" placeholder="知识库名称" />
-        <input v-model="editDescription" class="field-span-4" type="text" placeholder="知识库描述" />
-        <button class="pill-button" type="submit" :disabled="knowledgeStore.savingKnowledgeBase || !editName.trim()">
+      <form class="edit-form" @submit.prevent="saveKnowledgeBase">
+        <label class="field">
+          <span>名称</span>
+          <input v-model="editName" type="text" placeholder="知识库名称" />
+        </label>
+        <label class="field">
+          <span>描述</span>
+          <input v-model="editDescription" type="text" placeholder="知识库描述" />
+        </label>
+        <button class="btn btn-primary" type="submit" :disabled="knowledgeStore.savingKnowledgeBase || !editName.trim()">
           {{ knowledgeStore.savingKnowledgeBase ? '保存中...' : '保存修改' }}
         </button>
       </form>
     </section>
 
-    <section v-if="isAdmin" class="card-shell upload-form">
-      <div>
-        <h3>上传文档</h3>
-        <p>上传时可直接绑定知识域和切块策略，进入版本化处理链路。</p>
+    <section v-if="isAdmin" class="panel upload-panel">
+      <div class="panel-heading">
+        <div>
+          <h3>上传文档</h3>
+          <p>上传后进入解析、切块和图谱处理链路。</p>
+        </div>
+        <span class="badge">域 {{ knowledgeStore.knowledgeDomains.length }} / 策略 {{ knowledgeStore.chunkingProfiles.length }}</span>
       </div>
-      <form class="upload-form__grid" @submit.prevent="submitUpload">
-        <input ref="fileInput" data-testid="document-upload-file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
-        <input v-model="uploadTitle" type="text" placeholder="文档标题（可选）" />
-        <input v-model="uploadCategory" type="text" placeholder="业务分类（可选）" />
-        <input v-model="uploadTags" type="text" placeholder="标签，逗号分隔" />
-        <select v-model="uploadKnowledgeDomainId">
-          <option value="">不绑定知识域</option>
-          <option v-for="domain in knowledgeStore.knowledgeDomains" :key="domain.id" :value="`${domain.id}`">
-            {{ domain.name }} · {{ domain.code }}
-          </option>
-        </select>
-        <select v-model="uploadChunkingProfileId">
-          <option value="">默认切块策略</option>
-          <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">
-            {{ profile.name }} · {{ profile.strategy }}
-          </option>
-        </select>
-        <button class="pill-button" data-testid="document-upload-submit" type="submit" :disabled="knowledgeStore.uploadingDocument || !selectedFile">
+      <form class="upload-grid" @submit.prevent="submitUpload">
+        <label class="field file-field">
+          <span>文件</span>
+          <input ref="fileInput" data-testid="document-upload-file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
+        </label>
+        <label class="field"><span>标题</span><input v-model="uploadTitle" type="text" placeholder="可选" /></label>
+        <label class="field"><span>分类</span><input v-model="uploadCategory" type="text" placeholder="可选" /></label>
+        <label class="field"><span>标签</span><input v-model="uploadTags" type="text" placeholder="逗号分隔" /></label>
+        <label class="field">
+          <span>知识域</span>
+          <select v-model="uploadKnowledgeDomainId">
+            <option value="">不绑定知识域</option>
+            <option v-for="domain in knowledgeStore.knowledgeDomains" :key="domain.id" :value="`${domain.id}`">{{ domain.name }} / {{ domain.code }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>切块策略</span>
+          <select v-model="uploadChunkingProfileId">
+            <option value="">默认策略</option>
+            <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">{{ profile.name }} / {{ profile.strategy }}</option>
+          </select>
+        </label>
+        <button class="btn btn-primary upload-submit" data-testid="document-upload-submit" type="submit" :disabled="knowledgeStore.uploadingDocument || !selectedFile">
           {{ knowledgeStore.uploadingDocument ? '上传中...' : '上传文档' }}
         </button>
       </form>
-      <p class="form-hint">
-        已加载 {{ knowledgeStore.knowledgeDomains.length }} 个知识域、{{ knowledgeStore.chunkingProfiles.length }} 个切块策略。
-      </p>
     </section>
 
-    <section class="card-shell filters">
-      <select v-model="knowledgeStore.documentStatusFilter" @change="knowledgeStore.refreshDocuments">
-        <option value="">全部状态</option>
-        <option value="uploaded">已上传</option>
-        <option value="ready">就绪</option>
-        <option value="failed">失败</option>
-      </select>
-      <select v-model="knowledgeStore.documentTypeFilter" @change="knowledgeStore.refreshDocuments">
-        <option value="">全部类型</option>
-        <option value="pdf">PDF</option>
-        <option value="md">Markdown</option>
-        <option value="docx">Word</option>
-        <option value="txt">纯文本</option>
-      </select>
-      <input v-model="knowledgeStore.tagFilter" type="search" placeholder="按标签筛选" @keyup.enter="knowledgeStore.refreshDocuments" />
-      <button class="ghost-button" type="button" @click="knowledgeStore.refreshDocuments">刷新</button>
+    <section class="toolbar">
+      <label class="field toolbar-field">
+        <span>文档状态</span>
+        <select v-model="knowledgeStore.documentStatusFilter" @change="knowledgeStore.refreshDocuments">
+          <option value="">全部状态</option>
+          <option value="uploaded">已上传</option>
+          <option value="ready">就绪</option>
+          <option value="failed">失败</option>
+        </select>
+      </label>
+      <label class="field toolbar-field">
+        <span>文件类型</span>
+        <select v-model="knowledgeStore.documentTypeFilter" @change="knowledgeStore.refreshDocuments">
+          <option value="">全部类型</option>
+          <option value="pdf">PDF</option>
+          <option value="md">Markdown</option>
+          <option value="docx">Word</option>
+          <option value="txt">纯文本</option>
+        </select>
+      </label>
+      <label class="field toolbar-field">
+        <span>标签</span>
+        <input v-model="knowledgeStore.tagFilter" type="search" placeholder="按标签筛选" @keyup.enter="knowledgeStore.refreshDocuments" />
+      </label>
+      <button class="btn btn-secondary" type="button" @click="knowledgeStore.refreshDocuments">刷新</button>
     </section>
 
     <p v-if="knowledgeStore.errorMessage" class="error-banner">{{ knowledgeStore.errorMessage }}</p>
 
-    <section v-if="knowledgeStore.loadingDocuments" class="card-shell">正在加载文档列表...</section>
-    <section v-else class="card-shell">
+    <LoadingSpinner v-if="knowledgeStore.loadingDocuments" text="正在加载文档列表..." />
+    <section v-else class="table-wrap">
       <table class="table">
         <thead>
           <tr>
@@ -97,9 +117,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-if="knowledgeStore.documents.length === 0">
-            <td colspan="6">暂无文档。</td>
-          </tr>
+          <tr v-if="knowledgeStore.documents.length === 0"><td colspan="6">暂无文档。</td></tr>
           <tr
             v-for="document in knowledgeStore.documents"
             :key="document.id"
@@ -107,9 +125,9 @@
             :data-testid="`document-row-${document.id}`"
             @click="openDocument(document.id)"
           >
-            <td>{{ document.title }}</td>
+            <td><strong>{{ document.title }}</strong></td>
             <td>{{ fileTypeLabel(document.fileType) }}</td>
-            <td><span class="status-chip">{{ statusLabel(document.status) }}</span></td>
+            <td><span class="badge" :class="statusClass(document.status)">{{ statusLabel(document.status) }}</span></td>
             <td>{{ formatFileSize(document.fileSize) }}</td>
             <td>{{ document.chunkCount }}</td>
             <td>{{ formatTime(document.updatedAt) }}</td>
@@ -123,6 +141,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { LoadingSpinner } from '../../../components'
 import { useAuthStore } from '../../auth/store/auth'
 import { useKnowledgeStore } from '../store/knowledge'
 
@@ -256,8 +275,23 @@ function statusLabel(status?: string) {
     uploaded: '已上传',
     ready: '就绪',
     failed: '失败',
+    processing: '处理中',
+    pending: '等待中',
   }
   return status ? (map[status] ?? status) : '-'
+}
+
+function statusClass(status?: string) {
+  if (status === 'published' || status === 'ready') {
+    return 'badge--success'
+  }
+  if (status === 'failed') {
+    return 'badge--danger'
+  }
+  if (status === 'archived' || status === 'processing' || status === 'pending') {
+    return 'badge--warning'
+  }
+  return 'badge--accent'
 }
 
 function fileTypeLabel(type?: string) {
@@ -276,132 +310,86 @@ function fileTypeLabel(type?: string) {
 </script>
 
 <style scoped>
-.knowledge-detail {
-  display: grid;
-  gap: 1rem;
-}
-
-.card-shell {
-  border-radius: calc(var(--radius-md) + 4px);
-  border: 1px solid var(--line-soft);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-soft);
-  padding: 1rem 1.2rem;
-}
-
-.detail-header,
+.meta-row,
 .header-actions,
-.filters {
+.panel-heading {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.detail-header h2,
-.upload-form h3 {
-  margin: 0.2rem 0;
-  font-family: 'Fraunces', 'Iowan Old Style', serif;
-}
-
-.header-meta {
-  display: flex;
-  gap: 0.8rem;
   flex-wrap: wrap;
-  color: var(--text-secondary);
+  align-items: center;
+  gap: 8px;
 }
 
-.upload-form__grid {
+.meta-row {
+  margin-top: 10px;
+}
+
+.header-actions {
+  justify-content: flex-end;
+}
+
+.edit-panel,
+.upload-panel {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.8rem;
-  margin-top: 0.8rem;
+  gap: 14px;
 }
 
-.field-span-4 {
-  grid-column: span 4;
+.panel-heading {
+  justify-content: space-between;
 }
 
-.filters input,
-.upload-form__grid input {
-  padding: 0.6rem 0.85rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.84);
+.panel-heading h3,
+.edit-panel h3 {
+  margin: 0;
 }
 
-.form-hint {
-  margin: 0.8rem 0 0;
-  color: var(--text-secondary);
-  font-size: 0.92rem;
+.panel-heading p,
+.edit-panel p {
+  margin: 6px 0 0;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
+.edit-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
 }
 
-.table th,
-.table td {
-  padding: 0.95rem 0.75rem;
-  border-bottom: 1px solid var(--line-soft);
-  text-align: left;
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.file-field,
+.upload-submit {
+  grid-column: span 2;
+}
+
+.toolbar-field {
+  width: min(220px, 100%);
 }
 
 .table-row {
   cursor: pointer;
 }
 
-.table-row:hover {
-  background: rgba(209, 148, 104, 0.08);
+@media (max-width: 1120px) {
+  .edit-form,
+  .upload-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .file-field,
+  .upload-submit {
+    grid-column: auto;
+  }
 }
 
-.eyebrow {
-  margin: 0;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.status-chip {
-  display: inline-flex;
-  padding: 0.2rem 0.65rem;
-  border-radius: 999px;
-  background: rgba(27, 47, 61, 0.08);
-}
-
-.pill-button,
-.ghost-button {
-  border-radius: 999px;
-  padding: 0.55rem 0.85rem;
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.78);
-}
-
-.danger-button {
-  color: var(--danger);
-}
-
-.pill-button {
-  border: 0;
-  background: linear-gradient(135deg, var(--bg-accent), #d78655);
-  color: var(--text-contrast);
-}
-
-.error-banner {
-  margin: 0;
-  color: var(--danger);
-}
-
-@media (max-width: 1100px) {
-  .detail-header,
-  .header-actions,
-  .filters,
-  .upload-form__grid {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
+@media (max-width: 760px) {
+  .edit-form,
+  .upload-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -1,35 +1,50 @@
 <template>
-  <section class="knowledge-page">
-    <header class="knowledge-page__header card-shell">
+  <section class="knowledge-page page-stack">
+    <header class="page-header">
       <div>
-        <p class="eyebrow">/knowledge</p>
+        <p class="page-kicker">/knowledge</p>
         <h2>知识库</h2>
-        <p>管理员管理知识库，成员查看已发布知识库。</p>
+        <p>管理租户知识库、发布状态和文档入口。</p>
       </div>
       <form v-if="isAdmin" class="create-form" @submit.prevent="createKnowledgeBase">
-        <input v-model="draftName" data-testid="knowledge-create-name" type="text" placeholder="新知识库名称" />
-        <button class="pill-button" data-testid="knowledge-create-submit" type="submit" :disabled="knowledgeStore.creatingKnowledgeBase || !draftName.trim()">
-          {{ knowledgeStore.creatingKnowledgeBase ? '创建中...' : '+ 新建知识库' }}
+        <label class="field">
+          <span>新知识库名称</span>
+          <input v-model="draftName" data-testid="knowledge-create-name" type="text" placeholder="例如：售后知识库" />
+        </label>
+        <button
+          class="btn btn-primary"
+          :class="{ 'btn-loading': knowledgeStore.creatingKnowledgeBase }"
+          data-testid="knowledge-create-submit"
+          type="submit"
+          :disabled="knowledgeStore.creatingKnowledgeBase || !draftName.trim()"
+        >
+          {{ knowledgeStore.creatingKnowledgeBase ? '创建中...' : '新建知识库' }}
         </button>
       </form>
     </header>
 
-    <section class="knowledge-page__filters card-shell">
-      <input v-model="knowledgeStore.keyword" type="search" placeholder="搜索名称..." @keyup.enter="knowledgeStore.fetchKnowledgeBases" />
-      <select v-model="knowledgeStore.statusFilter" @change="knowledgeStore.fetchKnowledgeBases">
-        <option value="">全部状态</option>
-        <option value="draft">草稿</option>
-        <option value="published">已发布</option>
-        <option value="archived">已归档</option>
-      </select>
-      <button class="ghost-button" type="button" @click="knowledgeStore.fetchKnowledgeBases">查询</button>
+    <section class="toolbar">
+      <label class="field toolbar-field">
+        <span>搜索</span>
+        <input v-model="knowledgeStore.keyword" type="search" placeholder="搜索名称" @keyup.enter="knowledgeStore.fetchKnowledgeBases" />
+      </label>
+      <label class="field toolbar-field toolbar-field--small">
+        <span>状态</span>
+        <select v-model="knowledgeStore.statusFilter" @change="knowledgeStore.fetchKnowledgeBases">
+          <option value="">全部状态</option>
+          <option value="draft">草稿</option>
+          <option value="published">已发布</option>
+          <option value="archived">已归档</option>
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="button" @click="knowledgeStore.fetchKnowledgeBases">查询</button>
     </section>
 
     <p v-if="knowledgeStore.errorMessage" class="error-banner">{{ knowledgeStore.errorMessage }}</p>
 
-    <section v-if="knowledgeStore.loadingKnowledgeBases" class="card-shell">正在加载知识库列表...</section>
-    <section v-else-if="knowledgeStore.isEmpty" class="card-shell">暂无知识库。</section>
-    <section v-else class="card-shell">
+    <LoadingSpinner v-if="knowledgeStore.loadingKnowledgeBases" text="正在加载知识库列表..." />
+    <EmptyState v-else-if="knowledgeStore.isEmpty" variant="knowledge" title="暂无知识库" description="创建第一个知识库后上传文档并发布给成员使用。" />
+    <section v-else class="table-wrap">
       <table class="table">
         <thead>
           <tr>
@@ -42,13 +57,11 @@
         </thead>
         <tbody>
           <tr v-for="item in knowledgeStore.knowledgeBases" :key="item.id">
-            <td>{{ item.name }}</td>
-            <td><span class="status-chip">{{ statusLabel(item.status) }}</span></td>
+            <td><strong>{{ item.name }}</strong></td>
+            <td><span class="badge" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span></td>
             <td>{{ item.documentCount }}</td>
             <td>{{ formatTime(item.updatedAt) }}</td>
-            <td>
-              <button class="table-link" type="button" @click="goDetail(item.id)">详情</button>
-            </td>
+            <td><button class="btn-text" type="button" @click="goDetail(item.id)">详情</button></td>
           </tr>
         </tbody>
       </table>
@@ -59,6 +72,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { LoadingSpinner, EmptyState } from '../../../components'
 import { useAuthStore } from '../../auth/store/auth'
 import { useKnowledgeStore } from '../store/knowledge'
 
@@ -105,100 +119,38 @@ function statusLabel(status: string) {
   }
   return map[status] ?? status
 }
+
+function statusClass(status: string) {
+  if (status === 'published') {
+    return 'badge--success'
+  }
+  if (status === 'archived') {
+    return 'badge--warning'
+  }
+  return 'badge--accent'
+}
 </script>
 
 <style scoped>
-.knowledge-page {
-  display: grid;
-  gap: 1rem;
-}
-
-.card-shell {
-  border-radius: calc(var(--radius-md) + 4px);
-  border: 1px solid var(--line-soft);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-soft);
-  padding: 1rem 1.2rem;
-}
-
-.knowledge-page__header,
-.knowledge-page__filters,
 .create-form {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) auto;
+  align-items: end;
+  gap: 10px;
 }
 
-.knowledge-page__header h2 {
-  margin: 0.2rem 0;
-  font-family: 'Fraunces', 'Iowan Old Style', serif;
+.toolbar-field {
+  width: min(320px, 100%);
 }
 
-.knowledge-page__filters input,
-.create-form input {
-  padding: 0.6rem 0.85rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.84);
+.toolbar-field--small {
+  width: 180px;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table th,
-.table td {
-  padding: 0.95rem 0.75rem;
-  border-bottom: 1px solid var(--line-soft);
-  text-align: left;
-}
-
-.eyebrow {
-  margin: 0;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.status-chip {
-  display: inline-flex;
-  padding: 0.2rem 0.65rem;
-  border-radius: 999px;
-  background: rgba(27, 47, 61, 0.08);
-}
-
-.pill-button,
-.ghost-button {
-  border-radius: 999px;
-  padding: 0.55rem 0.85rem;
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.78);
-}
-
-.pill-button {
-  border: 0;
-  background: linear-gradient(135deg, var(--bg-accent), #d78655);
-  color: var(--text-contrast);
-}
-
-.table-link {
-  padding: 0.35rem 0.7rem;
-}
-
-.error-banner {
-  margin: 0;
-  color: var(--danger);
-}
-
-@media (max-width: 960px) {
-  .knowledge-page__header,
-  .knowledge-page__filters,
+@media (max-width: 820px) {
   .create-form {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: 1fr;
+    width: 100%;
   }
 }
 </style>

@@ -1,133 +1,85 @@
 <template>
-  <section class="document-detail">
-    <header class="card-shell detail-header">
+  <section class="document-detail page-stack">
+    <header class="page-header">
       <div>
-        <p class="eyebrow">/documents/{{ route.params.documentId }}</p>
+        <p class="page-kicker">/documents/{{ route.params.documentId }}</p>
         <h2>{{ knowledgeStore.selectedDocument?.title ?? '文档详情' }}</h2>
         <p>
-          状态：{{ docStatusLabel(knowledgeStore.selectedDocument?.status) }}
-          · 类型：{{ fileTypeLabel(knowledgeStore.selectedDocument?.fileType) }}
-          · 大小：{{ formatFileSize(knowledgeStore.selectedDocument?.fileSize ?? 0) }}
-          · 切块：{{ knowledgeStore.selectedDocument?.chunkCount ?? 0 }}
+          {{ docStatusLabel(knowledgeStore.selectedDocument?.status) }} / {{ fileTypeLabel(knowledgeStore.selectedDocument?.fileType) }} /
+          {{ formatFileSize(knowledgeStore.selectedDocument?.fileSize ?? 0) }} / 切块 {{ knowledgeStore.selectedDocument?.chunkCount ?? 0 }}
         </p>
-        <div class="header-meta">
-          <span class="status-chip">当前版本 v{{ knowledgeStore.selectedDocument?.activeVersionNo ?? '-' }}</span>
-          <span class="status-chip">文档图谱 {{ documentGraphStatus }}</span>
-          <span class="status-chip">版本图谱 {{ versionGraphStatus }}</span>
+        <div class="meta-row">
+          <span class="badge">v{{ knowledgeStore.selectedDocument?.activeVersionNo ?? '-' }}</span>
+          <span class="badge">文档图谱 {{ documentGraphStatus }}</span>
+          <span class="badge">版本图谱 {{ versionGraphStatus }}</span>
         </div>
       </div>
       <div v-if="isAdmin" class="header-actions">
         <select v-model="reprocessChunkingProfileId">
           <option value="">沿用当前切块策略</option>
-          <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">
-            {{ profile.name }} · {{ profile.strategy }}
-          </option>
+          <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">{{ profile.name }} / {{ profile.strategy }}</option>
         </select>
-        <button
-          class="pill-button"
-          type="button"
-          :disabled="knowledgeStore.reprocessingDocument"
-          @click="triggerReprocess"
-        >
+        <button class="btn btn-primary btn-sm" type="button" :disabled="knowledgeStore.reprocessingDocument" @click="triggerReprocess">
           {{ knowledgeStore.reprocessingDocument ? '处理中...' : '重处理' }}
         </button>
-        <button
-          class="ghost-button"
-          type="button"
-          :disabled="knowledgeStore.rebuildingDocumentGraph"
-          @click="knowledgeStore.rebuildCurrentDocumentGraph"
-        >
+        <button class="btn btn-secondary btn-sm" type="button" :disabled="knowledgeStore.rebuildingDocumentGraph" @click="knowledgeStore.rebuildCurrentDocumentGraph">
           {{ knowledgeStore.rebuildingDocumentGraph ? '重建中...' : '重建图谱' }}
         </button>
-        <button
-          class="danger-button"
-          type="button"
-          :disabled="knowledgeStore.deletingDocument"
-          @click="deleteDocument"
-        >
+        <button class="btn btn-danger btn-sm" type="button" :disabled="knowledgeStore.deletingDocument" @click="deleteDocument">
           {{ knowledgeStore.deletingDocument ? '删除中...' : '删除文档' }}
         </button>
       </div>
     </header>
 
     <p v-if="knowledgeStore.errorMessage" class="error-banner">{{ knowledgeStore.errorMessage }}</p>
-    <section v-if="knowledgeStore.loadingDocumentDetail" class="card-shell">正在加载文档详情...</section>
+    <LoadingSpinner v-if="knowledgeStore.loadingDocumentDetail" text="正在加载文档详情..." />
 
     <template v-else-if="knowledgeStore.selectedDocument">
       <section class="document-grid">
-        <article class="card-shell">
+        <article class="panel meta-panel">
           <h3>元数据</h3>
           <dl class="meta-list">
-            <div>
-              <dt>知识域</dt>
-              <dd>{{ knowledgeDomainLabel }}</dd>
-            </div>
-            <div>
-              <dt>切块策略</dt>
-              <dd>{{ chunkingProfileLabel }}</dd>
-            </div>
-            <div>
-              <dt>当前版本</dt>
-              <dd>v{{ knowledgeStore.selectedDocument.activeVersionNo }}</dd>
-            </div>
-            <div>
-              <dt>文件名</dt>
-              <dd>{{ knowledgeStore.selectedDocument.fileName }}</dd>
-            </div>
-            <div>
-              <dt>创建时间</dt>
-              <dd>{{ formatTime(knowledgeStore.selectedDocument.createdAt) }}</dd>
-            </div>
-            <div>
-              <dt>更新时间</dt>
-              <dd>{{ formatTime(knowledgeStore.selectedDocument.updatedAt) }}</dd>
-            </div>
-            <div>
-              <dt>图谱状态</dt>
-              <dd>{{ documentGraphStatus }} / {{ versionGraphStatus }}</dd>
-            </div>
-            <div>
-              <dt>错误摘要</dt>
-              <dd>{{ knowledgeStore.selectedDocument.errorMessage || '-' }}</dd>
-            </div>
+            <div><dt>知识域</dt><dd>{{ knowledgeDomainLabel }}</dd></div>
+            <div><dt>切块策略</dt><dd>{{ chunkingProfileLabel }}</dd></div>
+            <div><dt>当前版本</dt><dd>v{{ knowledgeStore.selectedDocument.activeVersionNo }}</dd></div>
+            <div><dt>文件名</dt><dd>{{ knowledgeStore.selectedDocument.fileName }}</dd></div>
+            <div><dt>创建时间</dt><dd>{{ formatTime(knowledgeStore.selectedDocument.createdAt) }}</dd></div>
+            <div><dt>更新时间</dt><dd>{{ formatTime(knowledgeStore.selectedDocument.updatedAt) }}</dd></div>
+            <div><dt>错误摘要</dt><dd>{{ knowledgeStore.selectedDocument.errorMessage || '-' }}</dd></div>
           </dl>
         </article>
 
-        <article class="card-shell">
+        <article class="panel versions-panel">
           <h3>版本列表</h3>
           <div v-if="knowledgeStore.documentVersions.length === 0" class="empty-line">当前无版本记录。</div>
-          <div v-for="version in knowledgeStore.documentVersions" :key="version.id" class="version-card">
-            <div class="version-card__head">
-              <strong>v{{ version.versionNo }}</strong>
-              <span class="status-chip">{{ docStatusLabel(version.status) }}</span>
-            </div>
+          <div v-for="version in knowledgeStore.documentVersions" :key="version.id" class="compact-card">
+            <div class="item-head"><strong>v{{ version.versionNo }}</strong><span class="badge" :class="statusClass(version.status)">{{ docStatusLabel(version.status) }}</span></div>
             <p>切块策略：{{ profileName(version.chunkingProfileId) }}</p>
-            <p>切块数：{{ version.chunkCount }}</p>
-            <p>图谱同步：{{ version.graphSyncStatus }}</p>
+            <p>切块数：{{ version.chunkCount }} / 图谱同步：{{ version.graphSyncStatus }}</p>
             <p>更新时间：{{ formatTime(version.updatedAt) }}</p>
           </div>
         </article>
 
-        <article class="card-shell">
+        <article class="panel parsed-panel">
           <h3>解析文本</h3>
           <div v-if="!knowledgeStore.selectedDocument.parsedText" class="empty-line">当前无解析文本。</div>
           <pre v-else class="parsed-text">{{ knowledgeStore.selectedDocument.parsedText }}</pre>
         </article>
 
-        <article class="card-shell">
+        <article class="panel chunks-panel">
           <h3>切块预览</h3>
           <div v-if="knowledgeStore.documentChunks.length === 0" class="empty-line">当前无切块数据。</div>
-          <div v-for="chunk in knowledgeStore.documentChunks" :key="chunk.id" class="chunk-card">
+          <div v-for="chunk in knowledgeStore.documentChunks" :key="chunk.id" class="compact-card">
             <strong>#{{ chunk.chunkNo }} {{ chunk.sectionTitle || '未命名章节' }}</strong>
             <p>{{ chunk.content }}</p>
             <small>{{ chunk.charCount }} 字</small>
           </div>
         </article>
 
-        <article class="card-shell">
+        <article class="panel tasks-panel">
           <h3>任务日志</h3>
           <div v-if="knowledgeStore.documentTasks.length === 0" class="empty-line">当前无任务日志。</div>
-          <div v-for="task in knowledgeStore.documentTasks" :key="task.id" class="task-card">
+          <div v-for="task in knowledgeStore.documentTasks" :key="task.id" class="compact-card">
             <strong>{{ taskLabel(task.taskType, task.status) }}</strong>
             <p>attempt={{ task.attemptCount }}</p>
             <p>输入：{{ task.inputSummary || '-' }}</p>
@@ -136,47 +88,34 @@
           </div>
         </article>
 
-        <article class="card-shell graph-card">
-          <div class="graph-card__header">
+        <article class="panel graph-panel">
+          <div class="panel-heading">
             <div>
               <h3>文档图谱</h3>
-              <p>展示当前文档版本的结构节点和关系边。</p>
+              <p>当前文档版本的结构节点和关系边。</p>
             </div>
-            <div class="graph-badges">
-              <span class="status-chip">节点 {{ graphNodeCount }}</span>
-              <span class="status-chip">边 {{ graphEdgeCount }}</span>
-            </div>
+            <div class="meta-row"><span class="badge">节点 {{ graphNodeCount }}</span><span class="badge">边 {{ graphEdgeCount }}</span></div>
           </div>
-          <div v-if="knowledgeStore.loadingDocumentGraph" class="empty-line">正在加载图谱...</div>
+          <LoadingSpinner v-if="knowledgeStore.loadingDocumentGraph" text="正在加载图谱..." />
           <div v-else-if="!knowledgeStore.documentGraph" class="empty-line">当前无图谱数据。</div>
           <template v-else>
             <div class="graph-summary">
-              <div class="graph-stat">
-                <strong>节点类型</strong>
-                <p>{{ nodeTypeSummary }}</p>
-              </div>
-              <div class="graph-stat">
-                <strong>边类型</strong>
-                <p>{{ edgeTypeSummary }}</p>
-              </div>
+              <div><strong>节点类型</strong><p>{{ nodeTypeSummary }}</p></div>
+              <div><strong>边类型</strong><p>{{ edgeTypeSummary }}</p></div>
             </div>
             <div class="graph-columns">
               <div>
                 <h4>节点</h4>
-                <div v-for="node in knowledgeStore.documentGraph.nodes" :key="node.id" class="graph-item">
-                  <strong>{{ node.type }} · {{ node.label }}</strong>
+                <div v-for="node in knowledgeStore.documentGraph.nodes" :key="node.id" class="compact-card">
+                  <strong>{{ node.type }} / {{ node.label }}</strong>
                   <p>{{ formatMetadata(node.metadata) }}</p>
                 </div>
               </div>
               <div>
                 <h4>关系</h4>
-                <div
-                  v-for="edge in knowledgeStore.documentGraph.edges"
-                  :key="`${edge.sourceId}-${edge.targetId}-${edge.type}`"
-                  class="graph-item"
-                >
+                <div v-for="edge in knowledgeStore.documentGraph.edges" :key="`${edge.sourceId}-${edge.targetId}-${edge.type}`" class="compact-card">
                   <strong>{{ edge.type }}</strong>
-                  <p>{{ edge.sourceId }} → {{ edge.targetId }}</p>
+                  <p>{{ edge.sourceId }} -> {{ edge.targetId }}</p>
                   <p>{{ formatMetadata(edge.metadata) }}</p>
                 </div>
               </div>
@@ -191,6 +130,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { LoadingSpinner } from '../../../components'
 import { useAuthStore } from '../../auth/store/auth'
 import { useKnowledgeStore } from '../store/knowledge'
 
@@ -207,7 +147,7 @@ const knowledgeDomainLabel = computed(() => {
     return '未绑定'
   }
   const domain = knowledgeStore.knowledgeDomains.find((item) => item.id === domainId)
-  return domain ? `${domain.name} · ${domain.code}` : `#${domainId}`
+  return domain ? `${domain.name} / ${domain.code}` : `#${domainId}`
 })
 
 const chunkingProfileLabel = computed(() => profileName(knowledgeStore.selectedDocument?.chunkingProfileId ?? null))
@@ -264,7 +204,7 @@ function profileName(profileId: number | null) {
     return '默认/未绑定'
   }
   const profile = knowledgeStore.chunkingProfiles.find((item) => item.id === profileId)
-  return profile ? `${profile.name} · ${profile.strategy}` : `#${profileId}`
+  return profile ? `${profile.name} / ${profile.strategy}` : `#${profileId}`
 }
 
 function parseSelectedId(value: string) {
@@ -284,8 +224,8 @@ function summarizeTypes(values: string[]) {
     return accumulator
   }, {})
   return Object.entries(counts)
-    .map(([key, count]) => `${key} × ${count}`)
-    .join('，')
+    .map(([key, count]) => `${key} x ${count}`)
+    .join(', ')
 }
 
 function formatMetadata(metadata: Record<string, unknown>) {
@@ -296,7 +236,7 @@ function formatMetadata(metadata: Record<string, unknown>) {
   return entries
     .slice(0, 4)
     .map(([key, value]) => `${key}: ${formatUnknown(value)}`)
-    .join(' · ')
+    .join(' / ')
 }
 
 function formatUnknown(value: unknown) {
@@ -341,8 +281,33 @@ function docStatusLabel(status?: string) {
     failed: '失败',
     processing: '处理中',
     pending: '待处理',
+    success: 'success',
   }
   return status ? (map[status] ?? status) : '-'
+}
+
+function statusClass(status?: string) {
+  if (status === 'ready' || status === 'success') {
+    return 'badge--success'
+  }
+  if (status === 'failed') {
+    return 'badge--danger'
+  }
+  if (status === 'processing' || status === 'pending') {
+    return 'badge--warning'
+  }
+  return 'badge--accent'
+}
+
+function taskLabel(taskType: string, status: string) {
+  const typeMap: Record<string, string> = {
+    parse: 'parse',
+    chunk: 'chunk',
+    embed: 'embed',
+    graph: 'graph',
+    reprocess: '重处理',
+  }
+  return `${typeMap[taskType] ?? taskType} · ${docStatusLabel(status)}`
 }
 
 function fileTypeLabel(type?: string) {
@@ -361,173 +326,138 @@ function fileTypeLabel(type?: string) {
 </script>
 
 <style scoped>
-.document-detail,
-.document-grid {
-  display: grid;
-  gap: 1rem;
-}
-
-.document-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.card-shell {
-  border-radius: calc(var(--radius-md) + 4px);
-  border: 1px solid var(--line-soft);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-soft);
-  padding: 1rem 1.2rem;
-}
-
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
-}
-
+.meta-row,
 .header-actions,
-.header-meta,
-.graph-badges,
-.graph-summary,
-.graph-columns {
+.item-head,
+.panel-heading {
   display: flex;
-  gap: 0.8rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-row {
+  margin-top: 10px;
 }
 
 .header-actions {
-  align-items: center;
-  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
 .header-actions select {
-  min-width: 10rem;
+  width: 220px;
 }
 
-.header-actions {
-  gap: 0.6rem;
+.document-grid {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 12px;
 }
 
-.header-meta,
-.graph-badges {
-  flex-wrap: wrap;
-  margin-top: 0.8rem;
+.parsed-panel,
+.graph-panel {
+  grid-column: 1 / -1;
 }
 
-.detail-header h2 {
-  margin: 0.2rem 0;
-  font-family: 'Fraunces', 'Iowan Old Style', serif;
+.panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.panel h3,
+.panel h4 {
+  margin: 0;
+}
+
+.panel-heading {
+  justify-content: space-between;
+}
+
+.panel-heading p {
+  margin: 6px 0 0;
 }
 
 .meta-list {
   display: grid;
-  gap: 0.8rem;
+  gap: 10px;
+  margin: 0;
+}
+
+.meta-list div {
+  display: grid;
+  gap: 3px;
 }
 
 .meta-list dt {
-  color: var(--text-secondary);
+  color: var(--color-text-subtle);
+  font-size: 12px;
 }
 
 .meta-list dd {
-  margin: 0.2rem 0 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
 }
 
-.chunk-card,
-.task-card,
-.version-card,
-.graph-item {
-  padding: 0.8rem 0;
-  border-bottom: 1px solid var(--line-soft);
+.compact-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
 }
 
-.version-card__head,
-.graph-card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.8rem;
+.compact-card:first-of-type {
+  border-top: 0;
+}
+
+.compact-card p,
+.compact-card small {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.6;
 }
 
 .parsed-text {
+  max-height: 420px;
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text-primary);
-  max-height: 24rem;
-  overflow: auto;
-}
-
-.eyebrow {
-  margin: 0;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.pill-button {
-  border-radius: 999px;
-  padding: 0.75rem 1rem;
-  border: 0;
-  background: linear-gradient(135deg, var(--bg-accent), #d78655);
-  color: var(--text-contrast);
-}
-
-.ghost-button,
-.danger-button {
-  border-radius: var(--radius-sm);
-  padding: 0.55rem 0.85rem;
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.84);
-}
-
-.danger-button {
-  border-color: rgba(178, 63, 63, 0.35);
-  color: #9f2f2f;
-}
-
-.status-chip {
-  display: inline-flex;
-  padding: 0.25rem 0.7rem;
-  border-radius: 999px;
-  background: rgba(27, 47, 61, 0.08);
-}
-
-.graph-card {
-  grid-column: 1 / -1;
 }
 
 .graph-summary,
 .graph-columns {
-  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.graph-stat,
+.graph-summary > div,
 .graph-columns > div {
-  flex: 1;
   min-width: 0;
 }
 
-.empty-line,
-.error-banner {
-  color: var(--text-secondary);
+.graph-summary > div {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
 }
 
-@media (max-width: 960px) {
-  .document-grid {
+.graph-summary p {
+  margin: 6px 0 0;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 980px) {
+  .document-grid,
+  .graph-summary,
+  .graph-columns {
     grid-template-columns: 1fr;
   }
 
-  .detail-header,
-  .graph-card__header,
-  .graph-columns,
-  .graph-summary {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .graph-card {
+  .parsed-panel,
+  .graph-panel {
     grid-column: auto;
   }
 }

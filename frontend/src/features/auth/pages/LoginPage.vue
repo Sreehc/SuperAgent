@@ -1,27 +1,33 @@
 <template>
-  <div class="login-page">
-    <section class="login-story">
-      <div class="login-story__panel">
-        <p class="login-story__eyebrow">SuperAgent</p>
-        <h1>先登录，再直接进入 AI 工作台。</h1>
-        <p class="login-story__body">
-          当前阶段只接入登录态、基础布局和角色菜单控制。登录成功后会直接落到
-          <code>/chat</code> 占位页。
-        </p>
-
-        <div class="login-story__chips">
-          <span>Vue 3 + Vite</span>
-          <span>Pinia 状态层</span>
-          <span>JWT + 租户上下文</span>
-        </div>
+  <main class="login-page">
+    <section class="login-brief">
+      <BrandLogo size="large" show-text />
+      <div class="login-brief__copy">
+        <p class="page-kicker">Agent/RAG operations console</p>
+        <h1>进入 SuperAgent 工作台</h1>
+        <p>管理租户知识库、运行对话、追踪模型链路和调整运行时配置。</p>
       </div>
+      <dl class="login-brief__metrics">
+        <div>
+          <dt>Modules</dt>
+          <dd>Chat / KB / Trace</dd>
+        </div>
+        <div>
+          <dt>Access</dt>
+          <dd>Tenant roles</dd>
+        </div>
+        <div>
+          <dt>Runtime</dt>
+          <dd>RAG + Agent</dd>
+        </div>
+      </dl>
     </section>
 
-    <section class="login-form-wrap">
+    <section class="login-panel" aria-label="登录表单">
       <form class="login-form" @submit.prevent="submit">
         <div class="login-form__header">
-          <p>登录</p>
-          <h2>进入默认租户下的工作台</h2>
+          <p class="page-kicker">Sign in</p>
+          <h2>账号登录</h2>
         </div>
 
         <label class="field">
@@ -41,26 +47,33 @@
           />
         </label>
 
-        <p v-if="errorMessage" class="login-form__error">{{ errorMessage }}</p>
+        <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
 
-        <button class="login-form__submit" data-testid="login-submit" :disabled="submitting" type="submit">
-          {{ submitting ? '登录中...' : '登录并进入 /chat' }}
+        <button
+          class="btn btn-primary btn-lg login-form__submit"
+          :class="{ 'btn-loading': submitting }"
+          data-testid="login-submit"
+          :disabled="submitting"
+          type="submit"
+        >
+          {{ submitting ? '登录中...' : '登录' }}
         </button>
 
         <div class="login-form__hint">
-          <strong>本地种子账号</strong>
-          <span>admin / password123</span>
-          <span>member / password123</span>
+          <span>测试账号</span>
+          <code>admin / password123</code>
+          <code>member / password123</code>
         </div>
       </form>
     </section>
-  </div>
+  </main>
 </template>
 
 <script setup lang="ts">
 import axios from 'axios'
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { BrandLogo } from '../../../components'
 import { useAuthStore } from '../store/auth'
 
 const router = useRouter()
@@ -97,149 +110,122 @@ async function submit() {
 <style scoped>
 .login-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
   min-height: 100vh;
-  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 520px);
 }
 
-.login-story,
-.login-form-wrap {
+.login-brief,
+.login-panel {
   display: grid;
-  place-items: center;
-  padding: 2rem;
+  align-content: center;
+  padding: clamp(24px, 5vw, 72px);
 }
 
-.login-story {
-  background:
-    linear-gradient(145deg, rgba(19, 45, 64, 0.94), rgba(33, 58, 78, 0.92)),
-    radial-gradient(circle at top right, rgba(199, 109, 63, 0.26), transparent 30%);
-  color: var(--text-contrast);
+.login-brief {
+  gap: 34px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
-.login-story__panel {
-  max-width: 560px;
-  padding: 3rem;
+.login-brief__copy {
+  display: grid;
+  gap: 12px;
+  max-width: 620px;
 }
 
-.login-story__eyebrow {
+.login-brief h1 {
+  max-width: 12ch;
   margin: 0;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  font-size: 0.74rem;
-  color: rgba(255, 247, 239, 0.66);
-}
-
-.login-story h1 {
-  margin: 0.6rem 0 1rem;
-  font-family: 'Fraunces', 'Iowan Old Style', serif;
-  font-size: clamp(2.4rem, 4vw, 4.6rem);
+  font-size: clamp(36px, 6vw, 68px);
   line-height: 0.98;
+  letter-spacing: -0.05em;
 }
 
-.login-story__body {
+.login-brief p {
+  max-width: 56ch;
   margin: 0;
-  max-width: 42ch;
-  color: rgba(255, 247, 239, 0.78);
+  color: var(--color-text-muted);
+  font-size: 16px;
+  line-height: 1.7;
 }
 
-.login-story__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 1.8rem;
+.login-brief__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 680px;
+  margin: 0;
 }
 
-.login-story__chips span {
-  padding: 0.65rem 0.95rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 247, 239, 0.16);
-  background: rgba(255, 255, 255, 0.05);
+.login-brief__metrics div {
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.login-brief__metrics dt {
+  margin-bottom: 8px;
+  color: var(--color-text-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.login-brief__metrics dd {
+  margin: 0;
+  font-weight: 760;
+}
+
+.login-panel {
+  background: var(--color-bg);
 }
 
 .login-form {
-  width: min(100%, 440px);
-  padding: 2rem;
-  border-radius: calc(var(--radius-lg) + 4px);
-  background: var(--bg-panel-strong);
-  box-shadow: var(--shadow-card);
-  border: 1px solid rgba(36, 33, 27, 0.09);
-}
-
-.login-form__header p {
-  margin: 0;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.74rem;
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  padding: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raised);
 }
 
 .login-form__header h2 {
-  margin: 0.4rem 0 1.4rem;
-  font-family: 'Fraunces', 'Iowan Old Style', serif;
-  font-size: 2rem;
-  line-height: 1.05;
-}
-
-.field {
-  display: grid;
-  gap: 0.55rem;
-  margin-bottom: 1rem;
-}
-
-.field span {
-  color: var(--text-secondary);
-}
-
-.field input {
-  width: 100%;
-  padding: 0.95rem 1rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.88);
-}
-
-.field input:focus {
-  outline: 2px solid rgba(199, 109, 63, 0.24);
-  border-color: rgba(199, 109, 63, 0.5);
+  margin: 0;
+  font-size: 24px;
 }
 
 .login-form__submit {
   width: 100%;
-  margin-top: 0.5rem;
-  border: 0;
-  border-radius: 999px;
-  padding: 0.95rem 1.2rem;
-  background: linear-gradient(135deg, var(--bg-accent), #d78655);
-  color: var(--text-contrast);
-  font-weight: 600;
-  box-shadow: 0 16px 30px rgba(199, 109, 63, 0.24);
-}
-
-.login-form__submit:disabled {
-  opacity: 0.7;
-}
-
-.login-form__error {
-  margin: 0.25rem 0 0;
-  color: var(--danger);
 }
 
 .login-form__hint {
   display: grid;
-  gap: 0.25rem;
-  margin-top: 1.4rem;
-  padding-top: 1rem;
-  border-top: 1px dashed var(--line-soft);
-  color: var(--text-secondary);
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 13px;
 }
 
-@media (max-width: 900px) {
+.login-form__hint code {
+  color: var(--color-text);
+}
+
+@media (max-width: 860px) {
   .login-page {
     grid-template-columns: 1fr;
   }
 
-  .login-story__panel,
-  .login-form {
-    padding: 1.6rem;
+  .login-brief {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .login-brief__metrics {
+    grid-template-columns: 1fr;
   }
 }
 </style>
