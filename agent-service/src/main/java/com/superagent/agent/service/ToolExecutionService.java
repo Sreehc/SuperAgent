@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -41,6 +42,7 @@ public class ToolExecutionService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
+    @Autowired
     public ToolExecutionService(
             SandboxRunnerClient sandboxRunnerClient,
             GraphQueryService graphQueryService,

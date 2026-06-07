@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +30,7 @@ public class AgentRunExecutionService {
     private final ObjectMapper objectMapper;
     private final Executor executor;
 
+    @Autowired
     public AgentRunExecutionService(
             AgentRunRepository agentRunRepository,
             AgentRunStreamRegistry streamRegistry,

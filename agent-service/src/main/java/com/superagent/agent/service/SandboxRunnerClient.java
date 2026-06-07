@@ -10,6 +10,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,6 +23,7 @@ public class SandboxRunnerClient {
     private final ObjectMapper objectMapper;
     private final AgentServiceProperties properties;
 
+    @Autowired
     public SandboxRunnerClient(ObjectMapper objectMapper, AgentServiceProperties properties) {
         this(objectMapper, properties, HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
