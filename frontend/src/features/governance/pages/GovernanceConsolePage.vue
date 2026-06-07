@@ -26,9 +26,18 @@
 
     <section v-if="activeTab === '知识域'" class="card-shell stack">
       <form class="form-grid" @submit.prevent="submitDomain">
-        <input v-model="domainForm.code" placeholder="编码" />
-        <input v-model="domainForm.name" placeholder="名称" />
-        <input v-model="domainForm.description" class="span-2" placeholder="描述" />
+        <label class="field">
+          <span>编码</span>
+          <input v-model="domainForm.code" :disabled="Boolean(editingDomainId)" placeholder="support" />
+        </label>
+        <label class="field">
+          <span>名称</span>
+          <input v-model="domainForm.name" placeholder="售后知识域" />
+        </label>
+        <label class="field span-2">
+          <span>描述</span>
+          <input v-model="domainForm.description" placeholder="用于限定知识治理和检索范围" />
+        </label>
         <button class="pill-button" type="submit">{{ editingDomainId ? '更新知识域' : '新增知识域' }}</button>
       </form>
       <article v-for="domain in domains" :key="domain.id" class="item-card">
@@ -45,14 +54,26 @@
 
     <section v-else-if="activeTab === '切块策略'" class="card-shell stack">
       <form class="form-grid" @submit.prevent="submitProfile">
-        <input v-model="profileForm.code" placeholder="编码" />
-        <input v-model="profileForm.name" placeholder="名称" />
-        <input v-model="profileForm.strategy" placeholder="策略" />
+        <label class="field">
+          <span>编码</span>
+          <input v-model="profileForm.code" :disabled="Boolean(editingProfileId)" placeholder="recursive-default" />
+        </label>
+        <label class="field">
+          <span>名称</span>
+          <input v-model="profileForm.name" placeholder="默认递归切块" />
+        </label>
+        <label class="field">
+          <span>策略</span>
+          <input v-model="profileForm.strategy" placeholder="recursive" />
+        </label>
         <label class="toggle-inline">
           <span>默认</span>
           <input v-model="profileForm.isDefault" type="checkbox" />
         </label>
-        <textarea v-model="profileForm.configText" class="span-2" rows="5" placeholder='{"maxChars": 1200}' />
+        <label class="field span-2">
+          <span>配置 JSON</span>
+          <textarea v-model="profileForm.configText" rows="5" placeholder='{"maxChars": 1200}' />
+        </label>
         <button class="pill-button" type="submit">{{ editingProfileId ? '更新策略' : '新增策略' }}</button>
       </form>
       <article v-for="profile in profiles" :key="profile.id" class="item-card">
@@ -69,10 +90,13 @@
 
     <section v-else class="card-shell stack">
       <div class="filter-row">
-        <select v-model="selectedKnowledgeBaseId" @change="loadKnowledgeDocuments">
-          <option value="">选择知识库查看图谱文档</option>
-          <option v-for="base in knowledgeBases" :key="base.id" :value="`${base.id}`">{{ base.name }}</option>
-        </select>
+        <label class="field filter-field">
+          <span>知识库</span>
+          <select v-model="selectedKnowledgeBaseId" @change="loadKnowledgeDocuments">
+            <option value="">选择知识库查看图谱文档</option>
+            <option v-for="base in knowledgeBases" :key="base.id" :value="`${base.id}`">{{ base.name }}</option>
+          </select>
+        </label>
       </div>
       <div v-if="graphDocuments.length === 0" class="empty-line">选择知识库后可查看文档图谱同步状态。</div>
       <article v-for="document in graphDocuments" :key="document.id" class="item-card">
@@ -298,6 +322,21 @@ function formatTime(value: string) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field > span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.filter-field {
+  width: min(360px, 100%);
 }
 
 .span-2 {

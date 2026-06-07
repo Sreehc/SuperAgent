@@ -5,7 +5,9 @@
         <section class="command-palette" aria-label="命令面板" @click.stop>
           <div class="command-palette__search">
             <span class="search-token" aria-hidden="true">CMD</span>
+            <label class="command-palette__label" for="command-palette-search">搜索</label>
             <input
+              id="command-palette-search"
               ref="searchInput"
               v-model="query"
               type="text"
@@ -168,11 +170,17 @@ defineExpose({ open, close })
 
 .command-palette__search {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 12px;
   border-bottom: 1px solid var(--color-border);
+}
+
+.command-palette__label {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .search-token,

@@ -26,7 +26,10 @@
 
     <section v-if="activeTab === 'toolCalls'" class="card-shell">
       <div class="filter-row">
-        <input v-model="toolIdFilter" type="search" placeholder="按工具 ID 筛选" @keyup.enter="loadToolCalls" />
+        <label class="field filter-field">
+          <span>工具 ID</span>
+          <input v-model="toolIdFilter" type="search" placeholder="例如 web.search" @keyup.enter="loadToolCalls" />
+        </label>
         <button class="ghost-button" type="button" @click="loadToolCalls">查询</button>
       </div>
       <div v-if="loadingToolCalls" class="empty-line">正在加载工具调用...</div>
@@ -203,6 +206,21 @@ function statusLabel(status: string) {
 .stack {
   display: grid;
   gap: 10px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field > span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.filter-field {
+  width: min(340px, 100%);
 }
 
 .tab-button,
