@@ -2,6 +2,7 @@ import os
 import textwrap
 import subprocess
 import tempfile
+from typing import Union
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -18,7 +19,7 @@ class SandboxResponse(BaseModel):
     stdout: str
     stderr: str
     exit_code: int
-    limits: dict[str, int | str]
+    limits: dict[str, Union[int, str]]
 
 
 app = FastAPI(title="SuperAgent Sandbox Runner", version="0.1.0")

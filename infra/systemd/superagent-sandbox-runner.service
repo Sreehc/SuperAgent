@@ -1,0 +1,18 @@
+[Unit]
+Description=SuperAgent Sandbox Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=superagent
+Group=superagent
+WorkingDirectory=/opt/superagent/current/sandbox-runner
+EnvironmentFile=-/opt/superagent/shared/env/sandbox-runner.env
+ExecStart=/opt/superagent/shared/sandbox-venv/bin/uvicorn app:app --host 127.0.0.1 --port 18122
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

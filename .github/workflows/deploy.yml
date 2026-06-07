@@ -1,0 +1,164 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || '/api/v1' }}
+      VITE_SSE_TIMEOUT_SECONDS: ${{ vars.VITE_SSE_TIMEOUT_SECONDS || '120' }}
+      VITE_APP_NAME: ${{ vars.VITE_APP_NAME || 'SuperAgent' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build backend
+        run: |
+          set -euo pipefail
+          chmod +x backend/mvnw
+          cd backend
+          ./mvnw -B -DskipTests package
+
+      - name: Build agent service
+        run: mvn -B -f agent-service/pom.xml -DskipTests package
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Package release
+        run: |
+          set -euo pipefail
+          release_dir="$(mktemp -d)"
+          mkdir -p "$release_dir/backend" "$release_dir/agent-service" "$release_dir/frontend" "$release_dir/sandbox-runner" "$release_dir/plugins"
+
+          backend_jar="$(find backend/target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | sort | head -n 1)"
+          agent_jar="$(find agent-service/target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | sort | head -n 1)"
+          test -n "$backend_jar"
+          test -n "$agent_jar"
+
+          cp "$backend_jar" "$release_dir/backend/app.jar"
+          cp "$agent_jar" "$release_dir/agent-service/app.jar"
+          cp -R frontend/dist/. "$release_dir/frontend/"
+          cp sandbox-runner/app.py sandbox-runner/requirements.txt "$release_dir/sandbox-runner/"
+          cp -R plugins/. "$release_dir/plugins/"
+
+          tar -czf superagent-release.tgz -C "$release_dir" .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: superagent-release-${{ github.sha }}
+          path: superagent-release.tgz
+          retention-days: 14
+
+      - name: Prepare SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_HOST:?Missing DEPLOY_HOST secret}"
+          : "${DEPLOY_USER:?Missing DEPLOY_USER secret}"
+          : "${DEPLOY_SSH_KEY:?Missing DEPLOY_SSH_KEY secret}"
+
+          ssh_port="${DEPLOY_SSH_PORT:-22}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/superagent_deploy
+          chmod 600 ~/.ssh/superagent_deploy
+
+          if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$ssh_port" "$DEPLOY_HOST" > ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload release to server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          ssh_port="${DEPLOY_SSH_PORT:-22}"
+          remote_archive="/tmp/superagent-release-${GITHUB_SHA}.tgz"
+          scp -i ~/.ssh/superagent_deploy \
+            -P "$ssh_port" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            superagent-release.tgz \
+            "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
+
+      - name: Deploy on server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+          BACKEND_SERVICE: ${{ vars.DEPLOY_BACKEND_SERVICE || 'superagent-backend' }}
+          AGENT_SERVICE: ${{ vars.DEPLOY_AGENT_SERVICE || 'superagent-agent-service' }}
+          SANDBOX_SERVICE: ${{ vars.DEPLOY_SANDBOX_SERVICE || 'superagent-sandbox-runner' }}
+          KEEP_RELEASES: ${{ vars.DEPLOY_KEEP_RELEASES || '5' }}
+          RUN_SUDO: ${{ vars.DEPLOY_SUDO || 'sudo -n' }}
+          INSTALL_SANDBOX_DEPS: ${{ vars.DEPLOY_INSTALL_SANDBOX_DEPS || 'false' }}
+          HEALTHCHECK_URLS: ${{ vars.DEPLOY_HEALTHCHECK_URLS || 'http://127.0.0.1:18121/actuator/health' }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_PATH:?Missing DEPLOY_PATH secret}"
+
+          ssh_port="${DEPLOY_SSH_PORT:-22}"
+          remote_archive="/tmp/superagent-release-${GITHUB_SHA}.tgz"
+          remote_env="$(printf ' %q' \
+            "DEPLOY_PATH=$DEPLOY_PATH" \
+            "RELEASE_ARCHIVE=$remote_archive" \
+            "BACKEND_SERVICE=$BACKEND_SERVICE" \
+            "AGENT_SERVICE=$AGENT_SERVICE" \
+            "SANDBOX_SERVICE=$SANDBOX_SERVICE" \
+            "KEEP_RELEASES=$KEEP_RELEASES" \
+            "RUN_SUDO=$RUN_SUDO" \
+            "INSTALL_SANDBOX_DEPS=$INSTALL_SANDBOX_DEPS" \
+            "HEALTHCHECK_URLS=$HEALTHCHECK_URLS")"
+
+          ssh -i ~/.ssh/superagent_deploy \
+            -p "$ssh_port" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "env${remote_env} bash -s" < infra/scripts/deploy-release.sh

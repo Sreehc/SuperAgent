@@ -1,0 +1,17 @@
+[Unit]
+Description=SuperAgent Backend
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f superagent-backend
+ExecStartPre=-/usr/bin/docker pull eclipse-temurin:21-jre
+ExecStart=/usr/bin/docker run --name superagent-backend --network host --env-file /opt/superagent/shared/env/backend.env -v /opt/superagent/current/backend/app.jar:/app/app.jar:ro eclipse-temurin:21-jre java -jar /app/app.jar
+ExecStop=/usr/bin/docker stop superagent-backend
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
