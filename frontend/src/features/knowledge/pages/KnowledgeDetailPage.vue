@@ -127,7 +127,7 @@
           >
             <td><strong>{{ document.title }}</strong></td>
             <td>{{ fileTypeLabel(document.fileType) }}</td>
-            <td><span class="badge" :class="statusClass(document.status)">{{ statusLabel(document.status) }}</span></td>
+            <td><span class="badge" :class="statusClass(document.status)">{{ documentStatusLabel(document.status) }}</span></td>
             <td>{{ formatFileSize(document.fileSize) }}</td>
             <td>{{ document.chunkCount }}</td>
             <td>{{ formatTime(document.updatedAt) }}</td>
@@ -272,13 +272,12 @@ function statusLabel(status?: string) {
     draft: '草稿',
     published: '已发布',
     archived: '已归档',
-    uploaded: '已上传',
-    ready: '就绪',
-    failed: '失败',
-    processing: '处理中',
-    pending: '等待中',
   }
   return status ? (map[status] ?? status) : '-'
+}
+
+function documentStatusLabel(status?: string) {
+  return status ?? '-'
 }
 
 function statusClass(status?: string) {
