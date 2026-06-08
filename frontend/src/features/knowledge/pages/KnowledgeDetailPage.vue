@@ -1,16 +1,16 @@
 <template>
-  <section class="knowledge-detail page-stack">
-    <header class="page-header">
-      <div>
-        <p class="page-kicker">/knowledge/{{ route.params.knowledgeBaseId }}</p>
-        <h2>{{ knowledgeStore.selectedKnowledgeBase?.name ?? '知识库详情' }}</h2>
+  <section class="knowledge-console workspace-page">
+    <header class="workspace-strip">
+      <div class="workspace-title">
+        <p class="section-label">Processing console</p>
+        <h1>{{ knowledgeStore.selectedKnowledgeBase?.name ?? '知识库详情' }}</h1>
         <p>{{ knowledgeStore.selectedKnowledgeBase?.description || '管理知识库状态、上传文档并查看处理结果。' }}</p>
         <div class="meta-row">
           <span class="badge" :class="statusClass(knowledgeStore.selectedKnowledgeBase?.status)">{{ statusLabel(knowledgeStore.selectedKnowledgeBase?.status) }}</span>
-          <span class="badge">文档 {{ knowledgeStore.selectedKnowledgeBase?.documentCount ?? 0 }}</span>
+          <span class="metric-chip">documents {{ knowledgeStore.selectedKnowledgeBase?.documentCount ?? 0 }}</span>
         </div>
       </div>
-      <div v-if="isAdmin" class="header-actions">
+      <div v-if="isAdmin" class="action-row">
         <button class="btn btn-ghost btn-sm" type="button" @click="editing = !editing">{{ editing ? '取消编辑' : '编辑' }}</button>
         <button class="btn btn-secondary btn-sm" type="button" @click="knowledgeStore.publishKnowledgeBase">发布</button>
         <button class="btn btn-secondary btn-sm" type="button" @click="knowledgeStore.archiveKnowledgeBase">归档</button>
@@ -18,7 +18,7 @@
       </div>
     </header>
 
-    <section v-if="isAdmin && editing && knowledgeStore.selectedKnowledgeBase" class="panel edit-panel">
+    <section v-if="isAdmin && editing && knowledgeStore.selectedKnowledgeBase" class="edit-strip command-box">
       <div>
         <h3>编辑知识库</h3>
         <p>更新名称和描述，不改变文档处理状态。</p>
@@ -38,102 +38,110 @@
       </form>
     </section>
 
-    <section v-if="isAdmin" class="panel upload-panel">
-      <div class="panel-heading">
-        <div>
-          <h3>上传文档</h3>
-          <p>上传后进入解析、切块和图谱处理链路。</p>
-        </div>
-        <span class="badge">域 {{ knowledgeStore.knowledgeDomains.length }} / 策略 {{ knowledgeStore.chunkingProfiles.length }}</span>
-      </div>
-      <form class="upload-grid" @submit.prevent="submitUpload">
-        <label class="field file-field">
-          <span>文件</span>
-          <input ref="fileInput" data-testid="document-upload-file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
-        </label>
-        <label class="field"><span>标题</span><input v-model="uploadTitle" type="text" placeholder="可选" /></label>
-        <label class="field"><span>分类</span><input v-model="uploadCategory" type="text" placeholder="可选" /></label>
-        <label class="field"><span>标签</span><input v-model="uploadTags" type="text" placeholder="逗号分隔" /></label>
-        <label class="field">
-          <span>知识域</span>
-          <select v-model="uploadKnowledgeDomainId">
-            <option value="">不绑定知识域</option>
-            <option v-for="domain in knowledgeStore.knowledgeDomains" :key="domain.id" :value="`${domain.id}`">{{ domain.name }} / {{ domain.code }}</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>切块策略</span>
-          <select v-model="uploadChunkingProfileId">
-            <option value="">默认策略</option>
-            <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">{{ profile.name }} / {{ profile.strategy }}</option>
-          </select>
-        </label>
-        <button class="btn btn-primary upload-submit" data-testid="document-upload-submit" type="submit" :disabled="knowledgeStore.uploadingDocument || !selectedFile">
-          {{ knowledgeStore.uploadingDocument ? '上传中...' : '上传文档' }}
-        </button>
-      </form>
-    </section>
-
-    <section class="toolbar">
-      <label class="field toolbar-field">
-        <span>文档状态</span>
-        <select v-model="knowledgeStore.documentStatusFilter" @change="knowledgeStore.refreshDocuments">
-          <option value="">全部状态</option>
-          <option value="uploaded">已上传</option>
-          <option value="ready">就绪</option>
-          <option value="failed">失败</option>
-        </select>
-      </label>
-      <label class="field toolbar-field">
-        <span>文件类型</span>
-        <select v-model="knowledgeStore.documentTypeFilter" @change="knowledgeStore.refreshDocuments">
-          <option value="">全部类型</option>
-          <option value="pdf">PDF</option>
-          <option value="md">Markdown</option>
-          <option value="docx">Word</option>
-          <option value="txt">纯文本</option>
-        </select>
-      </label>
-      <label class="field toolbar-field">
-        <span>标签</span>
-        <input v-model="knowledgeStore.tagFilter" type="search" placeholder="按标签筛选" @keyup.enter="knowledgeStore.refreshDocuments" />
-      </label>
-      <button class="btn btn-secondary" type="button" @click="knowledgeStore.refreshDocuments">刷新</button>
-    </section>
-
     <p v-if="knowledgeStore.errorMessage" class="error-banner">{{ knowledgeStore.errorMessage }}</p>
 
-    <LoadingSpinner v-if="knowledgeStore.loadingDocuments" text="正在加载文档列表..." />
-    <section v-else class="table-wrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>文档名</th>
-            <th>类型</th>
-            <th>状态</th>
-            <th>大小</th>
-            <th>切块数</th>
-            <th>更新时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="knowledgeStore.documents.length === 0"><td colspan="6">暂无文档。</td></tr>
-          <tr
-            v-for="document in knowledgeStore.documents"
-            :key="document.id"
-            class="table-row"
-            :data-testid="`document-row-${document.id}`"
-            @click="openDocument(document.id)"
-          >
-            <td><strong>{{ document.title }}</strong></td>
-            <td>{{ fileTypeLabel(document.fileType) }}</td>
-            <td><span class="badge" :class="statusClass(document.status)">{{ documentStatusLabel(document.status) }}</span></td>
-            <td>{{ formatFileSize(document.fileSize) }}</td>
-            <td>{{ document.chunkCount }}</td>
-            <td>{{ formatTime(document.updatedAt) }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <section class="knowledge-layout">
+      <main class="document-inventory">
+        <section class="filter-row">
+          <label class="field filter-field">
+            <span>文档状态</span>
+            <select v-model="knowledgeStore.documentStatusFilter" @change="knowledgeStore.refreshDocuments">
+              <option value="">全部状态</option>
+              <option value="uploaded">已上传</option>
+              <option value="ready">就绪</option>
+              <option value="failed">失败</option>
+            </select>
+          </label>
+          <label class="field filter-field">
+            <span>文件类型</span>
+            <select v-model="knowledgeStore.documentTypeFilter" @change="knowledgeStore.refreshDocuments">
+              <option value="">全部类型</option>
+              <option value="pdf">PDF</option>
+              <option value="md">Markdown</option>
+              <option value="docx">Word</option>
+              <option value="txt">纯文本</option>
+            </select>
+          </label>
+          <label class="field filter-field">
+            <span>标签</span>
+            <input v-model="knowledgeStore.tagFilter" type="search" placeholder="按标签筛选" @keyup.enter="knowledgeStore.refreshDocuments" />
+          </label>
+          <button class="btn btn-secondary" type="button" @click="knowledgeStore.refreshDocuments">刷新</button>
+        </section>
+
+        <LoadingSpinner v-if="knowledgeStore.loadingDocuments" text="正在加载文档列表..." />
+        <section v-else class="data-frame">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>文档名</th>
+                <th>类型</th>
+                <th>状态</th>
+                <th>大小</th>
+                <th>切块数</th>
+                <th>更新时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="knowledgeStore.documents.length === 0"><td colspan="6">暂无文档。</td></tr>
+              <tr
+                v-for="document in knowledgeStore.documents"
+                :key="document.id"
+                class="table-row"
+                :data-testid="`document-row-${document.id}`"
+                @click="openDocument(document.id)"
+              >
+                <td><strong>{{ document.title }}</strong></td>
+                <td>{{ fileTypeLabel(document.fileType) }}</td>
+                <td><span class="badge" :class="statusClass(document.status)">{{ documentStatusLabel(document.status) }}</span></td>
+                <td class="numeric">{{ formatFileSize(document.fileSize) }}</td>
+                <td class="numeric">{{ document.chunkCount }}</td>
+                <td>{{ formatTime(document.updatedAt) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </main>
+
+      <aside v-if="isAdmin" class="upload-inspector inspector-box">
+        <div>
+          <p class="section-label">Upload command</p>
+          <h2>上传文档</h2>
+          <p>上传后进入解析、切块和图谱处理链路。</p>
+        </div>
+        <form class="upload-form" @submit.prevent="submitUpload">
+          <label class="upload-drop">
+            <span>文件</span>
+            <input ref="fileInput" data-testid="document-upload-file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
+            <strong>{{ selectedFile?.name ?? '选择文档文件' }}</strong>
+            <small>{{ selectedFile ? formatFileSize(selectedFile.size) : 'PDF / Word / Markdown / HTML / TXT' }}</small>
+          </label>
+          <label class="field"><span>标题</span><input v-model="uploadTitle" type="text" placeholder="可选" /></label>
+          <label class="field"><span>分类</span><input v-model="uploadCategory" type="text" placeholder="可选" /></label>
+          <label class="field"><span>标签</span><input v-model="uploadTags" type="text" placeholder="逗号分隔" /></label>
+          <label class="field">
+            <span>知识域</span>
+            <select v-model="uploadKnowledgeDomainId">
+              <option value="">不绑定知识域</option>
+              <option v-for="domain in knowledgeStore.knowledgeDomains" :key="domain.id" :value="`${domain.id}`">{{ domain.name }} / {{ domain.code }}</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>切块策略</span>
+            <select v-model="uploadChunkingProfileId">
+              <option value="">默认策略</option>
+              <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">{{ profile.name }} / {{ profile.strategy }}</option>
+            </select>
+          </label>
+          <button class="btn btn-primary upload-submit" data-testid="document-upload-submit" type="submit" :disabled="knowledgeStore.uploadingDocument || !selectedFile">
+            {{ knowledgeStore.uploadingDocument ? '上传中...' : '上传文档' }}
+          </button>
+        </form>
+        <div class="governance-metrics">
+          <span class="metric-chip">domains {{ knowledgeStore.knowledgeDomains.length }}</span>
+          <span class="metric-chip">profiles {{ knowledgeStore.chunkingProfiles.length }}</span>
+        </div>
+      </aside>
     </section>
   </section>
 </template>
@@ -309,41 +317,21 @@ function fileTypeLabel(type?: string) {
 </script>
 
 <style scoped>
-.meta-row,
-.header-actions,
-.panel-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.meta-row {
-  margin-top: 10px;
-}
-
-.header-actions {
-  justify-content: flex-end;
-}
-
-.edit-panel,
-.upload-panel {
+.edit-strip {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
-.panel-heading {
-  justify-content: space-between;
-}
-
-.panel-heading h3,
-.edit-panel h3 {
+.edit-strip h3,
+.upload-inspector h2 {
   margin: 0;
 }
 
-.panel-heading p,
-.edit-panel p {
-  margin: 6px 0 0;
+.edit-strip p,
+.upload-inspector p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .edit-form {
@@ -353,41 +341,66 @@ function fileTypeLabel(type?: string) {
   gap: 10px;
 }
 
-.upload-grid {
+.knowledge-layout {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 12px;
 }
 
-.file-field,
-.upload-submit {
-  grid-column: span 2;
+.document-inventory {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
 }
 
-.toolbar-field {
-  width: min(220px, 100%);
+.filter-field {
+  width: min(210px, 100%);
 }
 
 .table-row {
   cursor: pointer;
 }
 
-@media (max-width: 1120px) {
-  .edit-form,
-  .upload-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .file-field,
-  .upload-submit {
-    grid-column: auto;
-  }
+.upload-form {
+  display: grid;
+  gap: 10px;
 }
 
-@media (max-width: 760px) {
-  .edit-form,
-  .upload-grid {
+.upload-drop {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-inset);
+}
+
+.upload-drop span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.upload-drop strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-drop small {
+  color: var(--text-muted);
+}
+
+.governance-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 1120px) {
+  .knowledge-layout,
+  .edit-form {
     grid-template-columns: 1fr;
   }
 }

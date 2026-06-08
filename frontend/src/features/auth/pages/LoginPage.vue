@@ -1,32 +1,27 @@
 <template>
   <main class="login-page">
-    <section class="login-brief">
-      <BrandLogo size="large" show-text />
-      <div class="login-brief__copy">
-        <p class="page-kicker">Agent/RAG operations console</p>
-        <h1>进入 SuperAgent 工作台</h1>
-        <p>管理租户知识库、运行对话、追踪模型链路和调整运行时配置。</p>
+    <section class="access-console">
+      <BrandLogo size="large" show-text animated />
+      <div class="access-console__copy">
+        <p class="section-label">Agent/RAG operations console</p>
+        <h1>SuperAgent control tower</h1>
+        <p>统一进入企业知识、对话运行、证据链路和运行时配置。</p>
       </div>
-      <dl class="login-brief__metrics">
-        <div>
-          <dt>Modules</dt>
-          <dd>Chat / KB / Trace</dd>
-        </div>
-        <div>
-          <dt>Access</dt>
-          <dd>Tenant roles</dd>
-        </div>
-        <div>
-          <dt>Runtime</dt>
-          <dd>RAG + Agent</dd>
-        </div>
-      </dl>
+      <div class="system-strips" aria-label="系统状态">
+        <article v-for="item in statusStrips" :key="item.label" class="system-strip">
+          <span :class="`system-strip__dot system-strip__dot--${item.tone}`"></span>
+          <div>
+            <strong>{{ item.label }}</strong>
+            <p>{{ item.value }}</p>
+          </div>
+        </article>
+      </div>
     </section>
 
-    <section class="login-panel" aria-label="登录表单">
-      <form class="login-form" @submit.prevent="submit">
-        <div class="login-form__header">
-          <p class="page-kicker">Sign in</p>
+    <section class="auth-dock" aria-label="登录表单">
+      <form class="auth-module" @submit.prevent="submit">
+        <div class="auth-module__header">
+          <p class="section-label">Secure access</p>
           <h2>账号登录</h2>
         </div>
 
@@ -50,21 +45,22 @@
         <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
 
         <button
-          class="btn btn-primary btn-lg login-form__submit"
+          class="btn btn-primary btn-lg auth-module__submit"
           :class="{ 'btn-loading': submitting }"
           data-testid="login-submit"
           :disabled="submitting"
           type="submit"
         >
-          {{ submitting ? '登录中...' : '登录' }}
+          {{ submitting ? '登录中...' : '进入工作台' }}
         </button>
 
-        <div class="login-form__hint">
+        <div class="auth-module__hint">
           <span>测试账号</span>
           <code>admin / password123</code>
           <code>member / password123</code>
         </div>
       </form>
+      <p class="auth-dock__env">localhost tenant runtime / build target api-v1</p>
     </section>
   </main>
 </template>
@@ -84,6 +80,12 @@ const form = reactive({
   username: 'admin',
   password: 'password123',
 })
+
+const statusStrips = [
+  { label: 'Knowledge index', value: 'ready for tenant-scoped retrieval', tone: 'ok' },
+  { label: 'Trace capture', value: 'model calls and stages recorded', tone: 'info' },
+  { label: 'Tenant access', value: 'role-gated console modules', tone: 'hot' },
+]
 
 async function submit() {
   errorMessage.value = ''
@@ -110,108 +112,167 @@ async function submit() {
 <style scoped>
 .login-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
   min-height: 100vh;
+  background: var(--bg-canvas);
 }
 
-.login-brief,
-.login-panel {
+.access-console,
+.auth-dock {
   display: grid;
   align-content: center;
   padding: clamp(24px, 5vw, 72px);
 }
 
-.login-brief {
+.access-console {
+  position: relative;
   gap: 34px;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-surface);
+  overflow: hidden;
+  color: #eef2ec;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(123, 210, 179, 0.18), transparent 28%),
+    linear-gradient(135deg, #101417, #17201b 52%, #0b0f0d);
 }
 
-.login-brief__copy {
+.access-console::before {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(238, 242, 236, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(238, 242, 236, 0.04) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent);
+  content: "";
+}
+
+.access-console > * {
+  position: relative;
+}
+
+.access-console :deep(.product-mark) {
+  color: #eef2ec;
+}
+
+.access-console :deep(.product-mark__copy small) {
+  color: rgba(238, 242, 236, 0.58);
+}
+
+.access-console__copy {
   display: grid;
   gap: 12px;
-  max-width: 620px;
+  max-width: 760px;
 }
 
-.login-brief h1 {
-  max-width: 12ch;
+.access-console h1 {
+  max-width: 11ch;
   margin: 0;
-  font-size: clamp(36px, 6vw, 68px);
-  line-height: 0.98;
-  letter-spacing: -0.05em;
+  font-family: var(--font-display);
+  font-size: clamp(48px, 7vw, 92px);
+  line-height: 0.92;
+  letter-spacing: 0;
 }
 
-.login-brief p {
+.access-console p {
   max-width: 56ch;
   margin: 0;
-  color: var(--color-text-muted);
+  color: rgba(238, 242, 236, 0.68);
   font-size: 16px;
-  line-height: 1.7;
+  line-height: 1.65;
 }
 
-.login-brief__metrics {
+.system-strips {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  max-width: 680px;
-  margin: 0;
+  max-width: 720px;
 }
 
-.login-brief__metrics div {
-  padding: 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
+.system-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 13px 14px;
+  border: 1px solid rgba(238, 242, 236, 0.12);
+  border-radius: var(--radius-2);
+  background: rgba(238, 242, 236, 0.045);
+  backdrop-filter: blur(10px);
 }
 
-.login-brief__metrics dt {
-  margin-bottom: 8px;
-  color: var(--color-text-subtle);
+.system-strip__dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: #7bd2b3;
+  box-shadow: 0 0 0 5px rgba(123, 210, 179, 0.13);
+}
+
+.system-strip__dot--info {
+  background: #86bdd0;
+}
+
+.system-strip__dot--hot {
+  background: #ff9b69;
+  box-shadow: 0 0 0 5px rgba(255, 155, 105, 0.13);
+}
+
+.system-strip strong {
+  display: block;
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.system-strip p {
+  margin-top: 4px;
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
 }
 
-.login-brief__metrics dd {
-  margin: 0;
-  font-weight: 760;
+.auth-dock {
+  align-content: center;
+  gap: 14px;
 }
 
-.login-panel {
-  background: var(--color-bg);
-}
-
-.login-form {
+.auth-module {
   display: grid;
   gap: 16px;
   width: 100%;
+  max-width: 430px;
   padding: 22px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-3);
+  background: var(--bg-lift);
+  box-shadow: var(--shadow-lift);
 }
 
-.login-form__header h2 {
-  margin: 0;
-  font-size: 24px;
+.auth-module__header h2 {
+  margin: 4px 0 0;
+  font-size: 25px;
 }
 
-.login-form__submit {
+.auth-module__submit {
   width: 100%;
 }
 
-.login-form__hint {
+.auth-module__hint {
   display: grid;
   gap: 6px;
   padding-top: 14px;
-  border-top: 1px solid var(--color-border);
-  color: var(--color-text-muted);
+  border-top: 1px solid var(--line-soft);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
-.login-form__hint code {
-  color: var(--color-text);
+.auth-module__hint code {
+  color: var(--text-main);
+}
+
+.auth-dock__env {
+  max-width: 430px;
+  margin: 0;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 @media (max-width: 860px) {
@@ -219,13 +280,12 @@ async function submit() {
     grid-template-columns: 1fr;
   }
 
-  .login-brief {
-    border-right: 0;
-    border-bottom: 1px solid var(--color-border);
+  .access-console {
+    min-height: 48vh;
   }
 
-  .login-brief__metrics {
-    grid-template-columns: 1fr;
+  .auth-dock {
+    align-content: start;
   }
 }
 </style>

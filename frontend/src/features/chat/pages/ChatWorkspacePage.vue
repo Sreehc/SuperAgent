@@ -1,9 +1,9 @@
 <template>
   <section class="chat-workspace">
-    <aside class="chat-panel chat-sessions">
-      <header class="chat-panel__header">
+    <aside class="session-rail" aria-label="会话列表">
+      <div class="session-rail__top">
         <div>
-          <p class="page-kicker">Sessions</p>
+          <p class="section-label">Sessions</p>
           <h2>会话</h2>
         </div>
         <button
@@ -14,53 +14,54 @@
           type="button"
           @click="newConversation"
         >
-          {{ chatStore.creatingConversation ? '创建中...' : '新建会话' }}
+          <PhPlus :size="14" weight="bold" aria-hidden="true" />
+          {{ chatStore.creatingConversation ? '创建中' : '新建' }}
         </button>
-      </header>
+      </div>
 
-      <label class="field chat-search">
+      <label class="field session-search">
         <span>搜索会话</span>
         <input v-model="chatStore.keyword" type="search" placeholder="输入标题" />
       </label>
 
       <LoadingSpinner v-if="chatStore.loadingConversations" text="正在加载会话列表..." />
-      <EmptyState v-else-if="chatStore.filteredConversations.length === 0" variant="chat" title="暂无会话" description="创建一个会话后开始提问。" />
+      <EmptyState v-else-if="chatStore.filteredConversations.length === 0" variant="chat" title="暂无会话" description="创建会话后开始提问。" />
       <nav v-else class="conversation-list" aria-label="会话列表">
         <article
           v-for="conversation in chatStore.filteredConversations"
           :key="conversation.id"
-          class="conversation-item"
-          :class="{ 'conversation-item--active': chatStore.selectedSessionId === conversation.id }"
+          class="conversation-row"
+          :class="{ 'conversation-row--active': chatStore.selectedSessionId === conversation.id }"
         >
-          <button type="button" class="conversation-item__main" @click="selectConversation(conversation.id)">
+          <button type="button" class="conversation-row__main" @click="selectConversation(conversation.id)">
             <strong v-if="chatStore.editingConversationId !== conversation.id">{{ conversation.title }}</strong>
             <input
               v-else
               :value="conversation.title"
-              class="conversation-item__rename"
+              class="conversation-row__rename"
               type="text"
               @keyup.enter="renameConversation(conversation.id, ($event.target as HTMLInputElement).value)"
               @blur="renameConversation(conversation.id, ($event.target as HTMLInputElement).value)"
             />
             <small>{{ formatTime(conversation.lastMessageAt) }}</small>
           </button>
-          <div class="conversation-item__actions">
+          <div class="conversation-row__actions">
             <button class="btn-text" type="button" @click="chatStore.editingConversationId = conversation.id">重命名</button>
             <button class="btn-text" type="button" @click="archiveConversation(conversation.id)">归档</button>
-            <button class="btn-text btn-danger" type="button" @click="removeConversation(conversation.id)">删除</button>
+            <button class="btn-text danger-text" type="button" @click="removeConversation(conversation.id)">删除</button>
           </div>
         </article>
       </nav>
     </aside>
 
-    <main class="chat-main">
-      <header class="chat-main__header">
+    <main class="conversation-surface">
+      <header class="conversation-header">
         <div>
-          <p class="page-kicker">/chat</p>
-          <h2>{{ chatStore.selectedConversation?.title ?? '新会话' }}</h2>
+          <p class="section-label">Conversation</p>
+          <h1>{{ chatStore.selectedConversation?.title ?? '新会话' }}</h1>
         </div>
         <div class="runtime-meta">
-          <span class="badge">{{ chatStore.memoryStrategy }}</span>
+          <span class="metric-chip">{{ chatStore.memoryStrategy }}</span>
           <span v-if="chatStore.streamState.stage" class="badge badge--accent">{{ chatStore.streamState.stage }}</span>
           <button
             v-if="chatStore.selectedSessionId && chatStore.streamState.runId && !chatStore.streaming"
@@ -85,16 +86,16 @@
           <article
             v-for="message in chatStore.messages"
             :key="message.id"
-            class="message-card"
-            :class="`message-card--${message.role}`"
+            class="message-block"
+            :class="`message-block--${message.role}`"
           >
-            <header class="message-card__header">
+            <header class="message-block__header">
               <strong>{{ roleLabel(message.role) }}</strong>
               <span>{{ formatTime(message.createdAt) }}</span>
             </header>
-            <div class="message-card__content markdown-body" v-html="renderMessage(message.content || '...')" />
-            <p v-if="message.status === 'stopped'" class="message-card__status">已停止生成</p>
-            <p v-if="message.status === 'error'" class="message-card__status message-card__status--error">生成失败</p>
+            <div class="message-block__content markdown-body" v-html="renderMessage(message.content || '...')" />
+            <p v-if="message.status === 'stopped'" class="message-block__status">已停止生成</p>
+            <p v-if="message.status === 'error'" class="message-block__status message-block__status--error">生成失败</p>
             <div v-if="message.references.length" class="chip-row">
               <button
                 v-for="reference in message.references"
@@ -112,22 +113,11 @@
             </div>
           </article>
         </div>
-
-        <section v-if="chatStore.streamState.timeline.length" class="agent-timeline">
-          <header>
-            <h3>Agent timeline</h3>
-            <span class="badge">run #{{ chatStore.streamState.runId }}</span>
-          </header>
-          <article v-for="(item, index) in chatStore.streamState.timeline" :key="`${item.type}-${index}`" class="agent-timeline__item">
-            <strong>{{ item.title }}</strong>
-            <p>{{ item.summary }}</p>
-          </article>
-        </section>
       </section>
 
-      <footer class="composer-card">
-        <div class="composer-card__controls">
-          <label class="field">
+      <footer class="composer-dock">
+        <div class="composer-chips">
+          <label class="composer-chip">
             <span>记忆</span>
             <select v-model="chatStore.memoryStrategy">
               <option value="NONE">不启用记忆</option>
@@ -136,7 +126,7 @@
               <option value="SUMMARY_PLUS_WINDOW">摘要 + 最近消息</option>
             </select>
           </label>
-          <label class="field">
+          <label class="composer-chip composer-chip--wide">
             <span>知识库</span>
             <select :value="chatStore.selectedKnowledgeBaseId ?? ''" data-testid="chat-knowledge-base" @change="updateKnowledgeBase">
               <option value="">不指定</option>
@@ -150,17 +140,18 @@
         <textarea
           v-model="chatStore.composerMessage"
           data-testid="chat-composer"
-          class="composer-card__input"
+          class="composer-input"
           placeholder="输入问题"
           rows="4"
           :disabled="chatStore.streaming"
         />
 
-        <div class="composer-card__actions">
-          <p v-if="chatStore.streamState.error" class="composer-card__error">{{ chatStore.streamState.error }}</p>
-          <div class="composer-card__buttons">
+        <div class="composer-actions">
+          <p v-if="chatStore.streamState.error" class="composer-error">{{ chatStore.streamState.error }}</p>
+          <div class="composer-buttons">
             <button v-if="chatStore.streaming" class="btn btn-ghost" data-testid="chat-stop" type="button" @click="chatStore.stopStreaming">
-              停止生成
+              <PhStop :size="15" weight="bold" aria-hidden="true" />
+              停止
             </button>
             <button
               class="btn btn-primary"
@@ -170,6 +161,7 @@
               :disabled="chatStore.streaming || !chatStore.composerMessage.trim()"
               @click="sendMessage"
             >
+              <PhPaperPlaneTilt v-if="!chatStore.streaming" :size="15" weight="bold" aria-hidden="true" />
               {{ chatStore.streaming ? '生成中...' : '发送' }}
             </button>
           </div>
@@ -186,22 +178,28 @@
       </footer>
     </main>
 
-    <aside class="chat-panel reference-panel">
-      <header class="chat-panel__header">
+    <aside class="evidence-inspector reference-panel" aria-label="引用来源">
+      <header class="evidence-inspector__header">
         <div>
-          <p class="page-kicker">Context</p>
+          <p class="section-label">Evidence</p>
           <h2>引用来源</h2>
         </div>
       </header>
+
       <template v-if="chatStore.selectedReference">
         <article class="reference-detail">
           <h3>{{ chatStore.selectedReference.title }}</h3>
-          <p>{{ chatStore.selectedReference.quote }}</p>
+          <blockquote>{{ chatStore.selectedReference.quote }}</blockquote>
+          <div class="score-meter">
+            <span>score</span>
+            <strong>{{ chatStore.selectedReference.score ?? '-' }}</strong>
+            <div><i :style="{ width: scoreWidth(chatStore.selectedReference.score) }"></i></div>
+          </div>
           <dl>
             <div><dt>chunk</dt><dd>#{{ chatStore.selectedReference.chunkId }}</dd></div>
-            <div><dt>score</dt><dd>{{ chatStore.selectedReference.score ?? '-' }}</dd></div>
+            <div><dt>document</dt><dd>#{{ chatStore.selectedReference.documentId }}</dd></div>
           </dl>
-          <div class="reference-panel__actions">
+          <div class="action-row">
             <button class="btn btn-secondary btn-sm" type="button" @click="openDocument(chatStore.selectedReference.documentId)">查看文档</button>
             <button v-if="isAdmin && chatStore.streamState.exchangeId" class="btn btn-secondary btn-sm" type="button" @click="openTrace(chatStore.streamState.exchangeId)">
               查看 Trace
@@ -209,12 +207,27 @@
           </div>
         </article>
       </template>
-      <EmptyState v-else variant="search" title="等待引用来源" description="收到 reference 事件后，这里会展示文档摘录。" />
+      <EmptyState v-else variant="search" title="等待引用来源" description="收到 reference 事件后，这里会展示文档摘录和 score。" />
+
+      <section v-if="chatStore.streamState.timeline.length" class="run-timeline">
+        <header>
+          <h3>Run timeline</h3>
+          <span class="metric-chip">run #{{ chatStore.streamState.runId }}</span>
+        </header>
+        <article v-for="(item, index) in chatStore.streamState.timeline" :key="`${item.type}-${index}`" class="run-step">
+          <span></span>
+          <div>
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.summary }}</p>
+          </div>
+        </article>
+      </section>
     </aside>
   </section>
 </template>
 
 <script setup lang="ts">
+import { PhPaperPlaneTilt, PhPlus, PhStop } from '@phosphor-icons/vue'
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LoadingSpinner, EmptyState } from '../../../components'
@@ -355,6 +368,13 @@ function renderMessage(content: string) {
   return renderMarkdown(content)
 }
 
+function scoreWidth(score: number | null) {
+  if (score == null) {
+    return '0%'
+  }
+  return `${Math.max(0, Math.min(1, score)) * 100}%`
+}
+
 async function openDocument(documentId: number) {
   await router.push(`/documents/${documentId}`)
 }
@@ -367,22 +387,23 @@ async function openTrace(exchangeId: number) {
 <style scoped>
 .chat-workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-columns: 292px minmax(0, 1fr) 332px;
   gap: 12px;
-  height: calc(100vh - var(--topbar-height) - 36px);
-  min-height: 680px;
+  height: calc(100vh - var(--utility-height) - 28px);
+  min-height: 690px;
 }
 
-.chat-panel,
-.chat-main {
+.session-rail,
+.conversation-surface,
+.evidence-inspector {
   min-width: 0;
   min-height: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
 }
 
-.chat-panel {
+.session-rail {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
@@ -390,93 +411,119 @@ async function openTrace(exchangeId: number) {
   overflow: hidden;
 }
 
-.chat-panel__header,
-.chat-main__header,
-.composer-card__actions,
-.agent-timeline header {
+.session-rail__top,
+.conversation-header,
+.composer-actions,
+.run-timeline header,
+.evidence-inspector__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.chat-panel__header h2,
-.chat-main__header h2 {
+.session-rail__top h2,
+.evidence-inspector__header h2,
+.conversation-header h1 {
   margin: 0;
-  font-size: 17px;
 }
 
-.chat-search {
-  gap: 5px;
+.session-rail__top h2,
+.evidence-inspector__header h2 {
+  font-size: 16px;
+}
+
+.conversation-header h1 {
+  font-size: 19px;
 }
 
 .conversation-list {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 4px;
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
 }
 
-.conversation-item {
+.conversation-row {
+  position: relative;
   display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
+  gap: 7px;
+  padding: 9px 9px 9px 12px;
+  border-radius: var(--radius-1);
 }
 
-.conversation-item--active {
-  border-color: color-mix(in srgb, var(--color-accent), transparent 55%);
-  background: var(--color-accent-soft);
+.conversation-row::before {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+  content: "";
 }
 
-.conversation-item__main {
+.conversation-row:hover {
+  background: var(--bg-subtle);
+}
+
+.conversation-row--active {
+  background: var(--accent-soft);
+}
+
+.conversation-row--active::before {
+  background: var(--accent);
+}
+
+.conversation-row__main {
   display: grid;
   gap: 5px;
   width: 100%;
   padding: 0;
-  color: var(--color-text);
+  color: var(--text-main);
   text-align: left;
   border: 0;
   background: transparent;
 }
 
-.conversation-item__main strong {
+.conversation-row__main strong,
+.conversation-row__main small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.conversation-item__main small {
-  color: var(--color-text-muted);
+.conversation-row__main small {
+  color: var(--text-muted);
 }
 
-.conversation-item__rename {
-  min-height: 32px;
-}
-
-.conversation-item__actions,
-.chip-row,
-.composer-card__buttons,
-.reference-panel__actions {
+.conversation-row__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
-.chat-main {
+.conversation-row:hover .conversation-row__actions,
+.conversation-row:focus-within .conversation-row__actions {
+  opacity: 1;
+}
+
+.danger-text {
+  color: var(--danger);
+}
+
+.conversation-surface {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
-.chat-main__header {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border);
+.conversation-header {
+  align-items: center;
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .runtime-meta {
@@ -493,7 +540,9 @@ async function openTrace(exchangeId: number) {
   min-height: 0;
   overflow: auto;
   padding: 16px;
-  background: var(--color-surface-muted);
+  background:
+    linear-gradient(180deg, rgba(47, 111, 94, 0.06), transparent 34%),
+    color-mix(in srgb, var(--bg-inset), var(--bg-surface) 34%);
 }
 
 .message-list {
@@ -501,54 +550,54 @@ async function openTrace(exchangeId: number) {
   gap: 12px;
 }
 
-.message-card {
+.message-block {
   display: grid;
-  gap: 8px;
-  max-width: min(820px, 100%);
+  gap: 9px;
+  max-width: min(860px, 100%);
   padding: 13px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
 }
 
-.message-card--user {
+.message-block--user {
   justify-self: end;
   width: min(680px, 92%);
-  background: var(--color-accent-soft);
-  border-color: color-mix(in srgb, var(--color-accent), transparent 68%);
+  background: color-mix(in srgb, var(--accent-soft), var(--bg-surface) 55%);
+  border-color: color-mix(in srgb, var(--accent), transparent 68%);
 }
 
-.message-card--assistant {
+.message-block--assistant {
   justify-self: start;
 }
 
-.message-card__header {
+.message-block__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
-.message-card__header strong {
-  color: var(--color-text);
+.message-block__header strong {
+  color: var(--text-main);
   font-family: var(--font-mono);
 }
 
-.message-card__content {
+.message-block__content {
   min-width: 0;
 }
 
-.message-card__status {
+.message-block__status {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
-.message-card__status--error,
-.composer-card__error {
-  color: var(--color-danger);
+.message-block__status--error,
+.composer-error {
+  color: var(--danger);
 }
 
 .reference-chip {
@@ -556,87 +605,89 @@ async function openTrace(exchangeId: number) {
   align-items: center;
   min-height: 28px;
   padding: 0 9px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-accent);
-  background: var(--color-surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  color: var(--accent);
+  background: var(--bg-surface);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 720;
 }
 
 .reference-chip:hover {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
-.agent-timeline {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-
-.agent-timeline h3 {
-  margin: 0;
-  font-size: 14px;
-}
-
-.agent-timeline__item {
-  padding-top: 8px;
-  border-top: 1px solid var(--color-border);
-}
-
-.agent-timeline__item p {
-  margin: 4px 0 0;
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
-
-.composer-card {
+.composer-dock {
   display: grid;
   gap: 10px;
-  padding: 14px;
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
+  padding: 12px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--bg-surface);
 }
 
-.composer-card__controls {
+.composer-chips {
   display: grid;
   grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
-.composer-card__input {
-  min-height: 92px;
+.composer-chip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.composer-card__actions {
+.composer-chip span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.composer-chip select {
+  min-height: 32px;
+}
+
+.composer-input {
+  min-height: 88px;
+  background: color-mix(in srgb, var(--bg-surface), var(--bg-inset) 18%);
+}
+
+.composer-actions {
   align-items: center;
 }
 
-.composer-card__error {
+.composer-error {
   margin: 0;
   font-size: 13px;
+}
+
+.composer-buttons {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .recommendations {
   display: grid;
   gap: 8px;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
-.reference-panel {
-  grid-template-rows: auto minmax(0, 1fr);
+.evidence-inspector {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  padding: 14px;
 }
 
 .reference-detail {
   display: grid;
   gap: 12px;
-  min-height: 0;
-  overflow: auto;
 }
 
 .reference-detail h3 {
@@ -644,10 +695,48 @@ async function openTrace(exchangeId: number) {
   font-size: 16px;
 }
 
-.reference-detail p {
+.reference-detail blockquote {
   margin: 0;
-  color: var(--color-text-muted);
-  line-height: 1.7;
+  padding: 12px;
+  color: var(--text-muted);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-1);
+  background: var(--accent-soft);
+  line-height: 1.68;
+}
+
+.score-meter {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 7px 10px;
+  align-items: center;
+}
+
+.score-meter span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.score-meter strong {
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.score-meter div {
+  grid-column: 1 / -1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-inset);
+}
+
+.score-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
 }
 
 .reference-detail dl {
@@ -659,13 +748,13 @@ async function openTrace(exchangeId: number) {
 
 .reference-detail dl div {
   padding: 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  background: var(--bg-inset);
 }
 
 .reference-detail dt {
-  color: var(--color-text-subtle);
+  color: var(--text-subtle);
   font-family: var(--font-mono);
   font-size: 11px;
 }
@@ -675,25 +764,60 @@ async function openTrace(exchangeId: number) {
   font-weight: 760;
 }
 
-@media (max-width: 1220px) {
+.run-timeline {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.run-timeline h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.run-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+}
+
+.run-step > span {
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+
+.run-step p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1240px) {
   .chat-workspace {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: 270px minmax(0, 1fr);
     height: auto;
     min-height: 0;
   }
 
-  .reference-panel {
+  .evidence-inspector {
     grid-column: 1 / -1;
   }
 }
 
 @media (max-width: 860px) {
-  .chat-workspace {
+  .chat-workspace,
+  .composer-chips {
     grid-template-columns: 1fr;
   }
 
-  .composer-card__controls {
-    grid-template-columns: 1fr;
+  .conversation-row__actions {
+    opacity: 1;
   }
 }
 </style>

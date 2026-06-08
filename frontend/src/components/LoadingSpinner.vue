@@ -4,6 +4,7 @@
       <span></span>
       <span></span>
       <span></span>
+      <span v-if="size !== 'small'"></span>
     </div>
     <p v-if="text">{{ text }}</p>
   </div>
@@ -29,10 +30,10 @@ const sizeClass = computed(() => `loading-state--${props.size}`)
 .loading-state {
   display: grid;
   gap: 12px;
-  padding: 20px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--bg-surface), var(--bg-inset) 28%);
 }
 
 .loading-state__rows {
@@ -41,16 +42,24 @@ const sizeClass = computed(() => `loading-state--${props.size}`)
 }
 
 .loading-state__rows span {
+  position: relative;
   display: block;
   height: 10px;
-  border-radius: var(--radius-xs);
-  background: linear-gradient(90deg, var(--color-surface-subtle), var(--color-border), var(--color-surface-subtle));
-  background-size: 220% 100%;
+  overflow: hidden;
+  border-radius: var(--radius-1);
+  background: var(--bg-subtle);
+}
+
+.loading-state__rows span::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.36), transparent);
+  content: "";
   animation: loadingRows 1.2s ease-in-out infinite;
 }
 
 .loading-state__rows span:nth-child(1) {
-  width: 72%;
+  width: 64%;
 }
 
 .loading-state__rows span:nth-child(2) {
@@ -63,9 +72,14 @@ const sizeClass = computed(() => `loading-state--${props.size}`)
   animation-delay: 160ms;
 }
 
+.loading-state__rows span:nth-child(4) {
+  width: 76%;
+  animation-delay: 220ms;
+}
+
 .loading-state p {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -74,15 +88,15 @@ const sizeClass = computed(() => `loading-state--${props.size}`)
 }
 
 .loading-state--large {
-  padding: 28px;
+  padding: 24px;
 }
 
 @keyframes loadingRows {
-  0% {
-    background-position: 100% 0;
+  from {
+    transform: translateX(-100%);
   }
-  100% {
-    background-position: -100% 0;
+  to {
+    transform: translateX(100%);
   }
 }
 </style>

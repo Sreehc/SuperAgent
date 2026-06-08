@@ -1,10 +1,12 @@
 <template>
-  <button class="theme-toggle" type="button" :aria-label="label" :title="label" @click="toggleTheme">
-    <span class="theme-toggle__icon" aria-hidden="true">{{ theme === 'light' ? 'D' : 'L' }}</span>
+  <button class="theme-toggle icon-button" type="button" :aria-label="label" :title="label" @click="toggleTheme">
+    <PhMoon v-if="theme === 'light'" :size="17" weight="regular" aria-hidden="true" />
+    <PhSun v-else :size="17" weight="regular" aria-hidden="true" />
   </button>
 </template>
 
 <script setup lang="ts">
+import { PhMoon, PhSun } from '@phosphor-icons/vue'
 import { computed, onMounted, ref } from 'vue'
 
 const theme = ref<'light' | 'dark'>('light')
@@ -29,29 +31,6 @@ onMounted(() => {
 
 <style scoped>
 .theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
-}
-
-.theme-toggle:hover {
-  background: var(--color-surface-subtle);
-  border-color: var(--color-border-strong);
-}
-
-.theme-toggle:active {
-  transform: translateY(1px);
-}
-
-.theme-toggle__icon {
-  font-size: 15px;
-  line-height: 1;
+  flex: 0 0 auto;
 }
 </style>

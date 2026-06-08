@@ -10,7 +10,11 @@
           type="button"
           @click="remove(toast.id)"
         >
-          <span class="toast__type">{{ typeLabel(toast.type) }}</span>
+          <span class="toast__icon" aria-hidden="true">
+            <PhCheckCircle v-if="toast.type === 'success'" :size="18" weight="duotone" />
+            <PhWarningCircle v-else-if="toast.type === 'error'" :size="18" weight="duotone" />
+            <PhInfo v-else :size="18" weight="duotone" />
+          </span>
           <span class="toast__message">{{ toast.message }}</span>
         </button>
       </TransitionGroup>
@@ -19,6 +23,7 @@
 </template>
 
 <script setup lang="ts">
+import { PhCheckCircle, PhInfo, PhWarningCircle } from '@phosphor-icons/vue'
 import { ref } from 'vue'
 
 export interface Toast {
@@ -41,15 +46,6 @@ function remove(id: number) {
   toasts.value = toasts.value.filter((toast) => toast.id !== id)
 }
 
-function typeLabel(type: Toast['type']) {
-  const map: Record<Toast['type'], string> = {
-    success: 'OK',
-    error: 'ERR',
-    info: 'INFO',
-  }
-  return map[type]
-}
-
 defineExpose({
   success: (message: string, duration?: number) => show('success', message, duration),
   error: (message: string, duration?: number) => show('error', message, duration),
@@ -60,12 +56,12 @@ defineExpose({
 <style scoped>
 .toast-container {
   position: fixed;
-  top: 16px;
-  right: 16px;
+  top: 14px;
+  right: 14px;
   z-index: 1000;
   display: grid;
-  gap: 10px;
-  width: min(420px, calc(100vw - 32px));
+  gap: 8px;
+  width: min(420px, calc(100vw - 28px));
   pointer-events: none;
 }
 
@@ -75,38 +71,48 @@ defineExpose({
   gap: 10px;
   align-items: start;
   width: 100%;
-  padding: 12px;
-  color: var(--color-text);
+  padding: 11px 12px;
+  color: var(--text-main);
   text-align: left;
-  border: 1px solid var(--color-border);
-  border-left-width: 4px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-raised);
-  box-shadow: var(--shadow-popover);
+  border: 1px solid var(--line-soft);
+  border-left-width: 3px;
+  border-radius: var(--radius-2);
+  background: var(--bg-lift);
+  box-shadow: var(--shadow-menu);
   pointer-events: auto;
 }
 
 .toast--success {
-  border-left-color: var(--color-success);
+  border-left-color: var(--success);
 }
 
 .toast--error {
-  border-left-color: var(--color-danger);
+  border-left-color: var(--danger);
 }
 
 .toast--info {
-  border-left-color: var(--color-accent);
+  border-left-color: var(--accent);
 }
 
-.toast__type {
-  color: var(--color-text-subtle);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 800;
+.toast__icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.toast--success .toast__icon {
+  color: var(--success);
+}
+
+.toast--error .toast__icon {
+  color: var(--danger);
+}
+
+.toast--info .toast__icon {
+  color: var(--accent);
 }
 
 .toast__message {
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .toast-enter-active,

@@ -1,34 +1,41 @@
 <template>
-  <section class="knowledge-page page-stack">
-    <header class="page-header">
-      <div>
-        <p class="page-kicker">/knowledge</p>
-        <h2>知识库</h2>
+  <section class="knowledge-inventory workspace-page">
+    <header class="workspace-strip">
+      <div class="workspace-title">
+        <p class="section-label">Knowledge inventory</p>
+        <h1>知识库</h1>
         <p>管理租户知识库、发布状态和文档入口。</p>
       </div>
-      <form v-if="isAdmin" class="create-form" @submit.prevent="createKnowledgeBase">
-        <label class="field">
-          <span>新知识库名称</span>
-          <input v-model="draftName" data-testid="knowledge-create-name" type="text" placeholder="例如：售后知识库" />
-        </label>
-        <button
-          class="btn btn-primary"
-          :class="{ 'btn-loading': knowledgeStore.creatingKnowledgeBase }"
-          data-testid="knowledge-create-submit"
-          type="submit"
-          :disabled="knowledgeStore.creatingKnowledgeBase || !draftName.trim()"
-        >
-          {{ knowledgeStore.creatingKnowledgeBase ? '创建中...' : '新建知识库' }}
+      <div class="meta-row">
+        <span class="metric-chip">total {{ knowledgeStore.knowledgeBases.length }}</span>
+        <button v-if="isAdmin" class="btn btn-primary btn-sm" type="button" @click="creating = !creating">
+          {{ creating ? '收起' : '新建知识库' }}
         </button>
-      </form>
+      </div>
     </header>
 
-    <section class="toolbar">
-      <label class="field toolbar-field">
+    <form v-if="isAdmin && creating" class="create-row command-box" @submit.prevent="createKnowledgeBase">
+      <label class="field">
+        <span>新知识库名称</span>
+        <input v-model="draftName" data-testid="knowledge-create-name" type="text" placeholder="例如：售后知识库" />
+      </label>
+      <button
+        class="btn btn-primary"
+        :class="{ 'btn-loading': knowledgeStore.creatingKnowledgeBase }"
+        data-testid="knowledge-create-submit"
+        type="submit"
+        :disabled="knowledgeStore.creatingKnowledgeBase || !draftName.trim()"
+      >
+        {{ knowledgeStore.creatingKnowledgeBase ? '创建中...' : '创建并进入' }}
+      </button>
+    </form>
+
+    <section class="filter-row">
+      <label class="field filter-field">
         <span>搜索</span>
         <input v-model="knowledgeStore.keyword" type="search" placeholder="搜索名称" @keyup.enter="knowledgeStore.fetchKnowledgeBases" />
       </label>
-      <label class="field toolbar-field toolbar-field--small">
+      <label class="field filter-field filter-field--small">
         <span>状态</span>
         <select v-model="knowledgeStore.statusFilter" @change="knowledgeStore.fetchKnowledgeBases">
           <option value="">全部状态</option>
@@ -44,8 +51,8 @@
 
     <LoadingSpinner v-if="knowledgeStore.loadingKnowledgeBases" text="正在加载知识库列表..." />
     <EmptyState v-else-if="knowledgeStore.isEmpty" variant="knowledge" title="暂无知识库" description="创建第一个知识库后上传文档并发布给成员使用。" />
-    <section v-else class="table-wrap">
-      <table class="table">
+    <section v-else class="data-frame">
+      <table class="data-table">
         <thead>
           <tr>
             <th>名称</th>
@@ -57,11 +64,16 @@
         </thead>
         <tbody>
           <tr v-for="item in knowledgeStore.knowledgeBases" :key="item.id">
-            <td><strong>{{ item.name }}</strong></td>
+            <td>
+              <button class="inventory-name" type="button" @click="goDetail(item.id)">
+                <strong>{{ item.name }}</strong>
+                <span>#{{ item.id }}</span>
+              </button>
+            </td>
             <td><span class="badge" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span></td>
-            <td>{{ item.documentCount }}</td>
+            <td class="numeric">{{ item.documentCount }}</td>
             <td>{{ formatTime(item.updatedAt) }}</td>
-            <td><button class="btn-text" type="button" @click="goDetail(item.id)">详情</button></td>
+            <td><button class="btn-text" type="button" @click="goDetail(item.id)">打开</button></td>
           </tr>
         </tbody>
       </table>
@@ -80,6 +92,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const knowledgeStore = useKnowledgeStore()
 const draftName = ref('')
+const creating = ref(false)
 
 const isAdmin = computed(() => ['OWNER', 'ADMIN'].includes(authStore.currentRole ?? ''))
 
@@ -93,6 +106,7 @@ async function createKnowledgeBase() {
     visibility: 'tenant',
   })
   draftName.value = ''
+  creating.value = false
   if (knowledgeStore.selectedKnowledgeBase) {
     await router.push(`/knowledge/${knowledgeStore.selectedKnowledgeBase.id}`)
   }
@@ -132,25 +146,40 @@ function statusClass(status: string) {
 </script>
 
 <style scoped>
-.create-form {
+.create-row {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) auto;
+  grid-template-columns: minmax(240px, 340px) auto;
   align-items: end;
   gap: 10px;
 }
 
-.toolbar-field {
+.filter-field {
   width: min(320px, 100%);
 }
 
-.toolbar-field--small {
+.filter-field--small {
   width: 180px;
 }
 
+.inventory-name {
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  color: var(--text-main);
+  text-align: left;
+  border: 0;
+  background: transparent;
+}
+
+.inventory-name span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 @media (max-width: 820px) {
-  .create-form {
+  .create-row {
     grid-template-columns: 1fr;
-    width: 100%;
   }
 }
 </style>

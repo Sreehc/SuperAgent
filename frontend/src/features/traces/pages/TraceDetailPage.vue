@@ -1,16 +1,19 @@
 <template>
-  <section class="trace-detail-page page-stack">
-    <header class="page-header">
-      <div>
-        <p class="page-kicker">/traces/{{ route.params.exchangeId }}</p>
-        <h2>Trace #{{ traceStore.selectedTrace?.exchangeId ?? route.params.exchangeId }}</h2>
+  <section class="trace-debugger workspace-page">
+    <header class="workspace-strip">
+      <div class="workspace-title">
+        <p class="section-label">Run debugger</p>
+        <h1>Trace #{{ traceStore.selectedTrace?.exchangeId ?? route.params.exchangeId }}</h1>
         <p v-if="traceStore.selectedTrace">
           {{ traceStore.selectedTrace.executionMode }} / {{ traceStore.selectedTrace.status }} / {{ formatDuration(traceStore.selectedTrace.durationMs) }}
         </p>
       </div>
-      <div v-if="traceStore.selectedTrace?.agentRunId" class="meta-row">
-        <span class="badge">Agent run #{{ traceStore.selectedTrace.agentRunId }}</span>
-        <span class="badge" :class="statusClass(traceStore.selectedTrace.agentRunStatus)">{{ agentRunStatusLabel(traceStore.selectedTrace.agentRunStatus) }}</span>
+      <div v-if="traceStore.selectedTrace" class="meta-row">
+        <span class="badge" :class="statusClass(traceStore.selectedTrace.status)">{{ traceStore.selectedTrace.status }}</span>
+        <span class="metric-chip">stages {{ traceStore.selectedTrace.stages.length }}</span>
+        <span class="metric-chip">retrievals {{ traceStore.selectedTrace.retrievals.length }}</span>
+        <span class="metric-chip">models {{ traceStore.selectedTrace.modelCalls.length }}</span>
+        <span v-if="traceStore.selectedTrace.agentRunId" class="metric-chip">run #{{ traceStore.selectedTrace.agentRunId }}</span>
       </div>
     </header>
 
@@ -18,61 +21,74 @@
     <LoadingSpinner v-if="traceStore.loadingDetail" text="正在加载 Trace 详情..." />
 
     <template v-else-if="traceStore.selectedTrace">
-      <section class="tabs panel">
+      <section class="trace-tabs">
         <button v-for="tab in visibleTabs" :key="tab.id" class="tab-button" :class="{ 'tab-button--active': activeTab === tab.id }" type="button" @click="activeTab = tab.id">
           {{ tab.label }}
         </button>
       </section>
 
       <section v-if="activeTab === 'exchange'" class="trace-layout">
-        <aside class="panel timeline-panel">
-          <h3>阶段时间线</h3>
-          <article v-for="stage in traceStore.selectedTrace.stages" :key="stage.stageId" class="timeline-item" :class="{ 'timeline-item--failed': stage.status === 'failed' }">
+        <aside class="stage-rail">
+          <h2>阶段时间线</h2>
+          <button
+            v-for="stage in traceStore.selectedTrace.stages"
+            :key="stage.stageId"
+            class="stage-node"
+            :class="{ 'stage-node--active': selectedStageId === stage.stageId, 'stage-node--failed': stage.status === 'failed' }"
+            type="button"
+            @click="selectedStageId = stage.stageId"
+          >
+            <span></span>
             <div>
               <strong>{{ stage.stageCode }}</strong>
-              <p>{{ stageStatusLabel(stage.status) }}</p>
+              <small>{{ stageStatusLabel(stage.status) }} / {{ formatDuration(stage.durationMs) }}</small>
             </div>
-            <span>{{ formatDuration(stage.durationMs) }}</span>
-          </article>
+          </button>
         </aside>
 
-        <section class="detail-panel">
-          <article class="panel">
-            <h3>阶段详情</h3>
-            <div v-for="stage in traceStore.selectedTrace.stages" :key="`detail-${stage.stageId}`" class="detail-block" :class="{ 'detail-block--failed': stage.status === 'failed' }">
-              <strong>{{ stage.stageCode }}</strong>
-              <p>输入摘要：{{ stage.inputSummary || '-' }}</p>
-              <p>输出摘要：{{ stage.outputSummary || '-' }}</p>
-              <p v-if="stage.errorMessage">错误：{{ stage.errorMessage }}</p>
+        <main class="trace-main">
+          <article class="trace-section">
+            <div class="section-heading">
+              <h2>阶段详情</h2>
+              <span v-if="selectedStage" class="metric-chip">{{ selectedStage.stageCode }}</span>
+            </div>
+            <div v-if="selectedStage" class="detail-block" :class="{ 'detail-block--failed': selectedStage.status === 'failed' }">
+              <strong>{{ selectedStage.stageCode }}</strong>
+              <p>输入摘要：{{ selectedStage.inputSummary || '-' }}</p>
+              <p>输出摘要：{{ selectedStage.outputSummary || '-' }}</p>
+              <p v-if="selectedStage.errorMessage">错误：{{ selectedStage.errorMessage }}</p>
             </div>
           </article>
 
-          <article class="panel">
-            <h3>模型调用</h3>
+          <article class="trace-section">
+            <h2>模型调用</h2>
             <div v-if="traceStore.selectedTrace.modelCalls.length === 0" class="empty-line">暂无模型调用。</div>
             <div v-for="call in traceStore.selectedTrace.modelCalls" :key="call.id" class="detail-block">
               <div class="item-head"><strong>{{ call.provider }} / {{ call.model }}</strong><span class="badge" :class="statusClass(call.status)">{{ callStatusLabel(call.status) }}</span></div>
-              <p>类型：{{ call.callType }} / 延迟：{{ call.latencyMs ?? 0 }}ms</p>
+              <p>类型：{{ call.callType }} / 延迟：{{ call.latencyMs ?? 0 }}ms / tokens {{ call.inputTokens ?? '-' }} + {{ call.outputTokens ?? '-' }}</p>
               <p>Prompt 摘要：{{ call.promptSummary || '-' }}</p>
               <p>输出摘要：{{ call.outputSummary || '-' }}</p>
+              <p v-if="call.errorMessage">错误：{{ call.errorMessage }}</p>
             </div>
           </article>
 
-          <article class="panel">
-            <h3>检索结果</h3>
+          <article class="trace-section">
+            <h2>检索结果</h2>
             <div v-if="traceStore.selectedTrace.retrievals.length === 0" class="empty-line">暂无检索记录。</div>
             <div v-for="retrieval in traceStore.selectedTrace.retrievals" :key="retrieval.id" class="detail-block">
               <strong>#{{ retrieval.subQuestionNo }} / {{ retrieval.channel }}</strong>
               <p>查询：{{ retrieval.queryText }}</p>
               <p>结果数：{{ retrieval.resultCount }} / 选中：{{ retrieval.selectedCount }} / 延迟：{{ retrieval.latencyMs ?? '-' }}ms</p>
               <ul class="retrieval-items">
-                <li v-for="item in retrieval.items.slice(0, 5)" :key="item.id">块 {{ item.chunkId }} / 排名 {{ item.rankNo }} / {{ item.selected ? '已选中' : '未选中' }}</li>
+                <li v-for="item in retrieval.items.slice(0, 5)" :key="item.id">
+                  chunk {{ item.chunkId }} / rank {{ item.rankNo }} / score {{ item.fusedScore ?? item.rawScore ?? '-' }} / {{ item.selected ? 'selected' : 'skipped' }}
+                </li>
               </ul>
             </div>
           </article>
 
-          <article class="panel">
-            <h3>重排序 / 错误</h3>
+          <article class="trace-section">
+            <h2>重排序 / 错误</h2>
             <div v-if="traceStore.selectedTrace.reranks.length === 0" class="empty-line">暂无重排序记录。</div>
             <div v-for="rerank in traceStore.selectedTrace.reranks" :key="rerank.id" class="detail-block">
               <div class="item-head"><strong>{{ rerank.provider || 'rerank' }} / {{ rerank.model || '-' }}</strong><span class="badge" :class="statusClass(rerank.status)">{{ rerank.status }}</span></div>
@@ -81,10 +97,10 @@
               <p v-if="rerank.errorMessage">错误：{{ rerank.errorMessage }}</p>
             </div>
           </article>
-        </section>
+        </main>
       </section>
 
-      <section v-else-if="activeTab === 'agent'" class="panel stack">
+      <section v-else-if="activeTab === 'agent'" class="trace-section">
         <LoadingSpinner v-if="loadingAgentDetail" text="正在加载智能体运行详情..." />
         <div v-else-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定智能体运行。</div>
         <template v-else>
@@ -104,7 +120,7 @@
         </template>
       </section>
 
-      <section v-else-if="activeTab === 'tools'" class="panel stack">
+      <section v-else-if="activeTab === 'tools'" class="trace-section">
         <div v-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定智能体运行。</div>
         <article v-for="call in agentRunDetail?.toolCalls ?? []" :key="call.id" class="detail-block">
           <div class="item-head"><strong>{{ call.toolId }}</strong><span class="badge" :class="statusClass(call.status)">{{ call.status }}</span></div>
@@ -130,7 +146,7 @@
         <div v-if="agentRunDetail && agentRunDetail.toolCalls.length === 0" class="empty-line">暂无工具调用。</div>
       </section>
 
-      <section v-else-if="activeTab === 'checkpoints'" class="panel stack">
+      <section v-else-if="activeTab === 'checkpoints'" class="trace-section">
         <div v-if="!agentRunDetail" class="empty-line">当前 Trace 未绑定智能体运行。</div>
         <article v-for="checkpoint in agentRunDetail?.checkpoints ?? []" :key="checkpoint.id" class="detail-block">
           <div class="item-head"><strong>#{{ checkpoint.checkpointNo }} {{ checkpoint.checkpointType }}</strong><span class="badge">{{ checkpoint.stable ? '稳定' : '待定' }}</span></div>
@@ -140,7 +156,7 @@
         <div v-if="agentRunDetail && agentRunDetail.checkpoints.length === 0" class="empty-line">暂无检查点。</div>
       </section>
 
-      <section v-else class="panel stack">
+      <section v-else class="trace-section">
         <div v-if="resumeSteps.length === 0" class="empty-line">暂无恢复链路记录。</div>
         <article v-for="step in resumeSteps" :key="step.id" class="detail-block">
           <strong>#{{ step.stepNo }} {{ step.phase }}</strong>
@@ -166,6 +182,7 @@ const agentRunDetail = ref<AgentRunDetail | null>(null)
 const loadingAgentDetail = ref(false)
 const agentErrorMessage = ref('')
 const activeTab = ref<'exchange' | 'agent' | 'tools' | 'checkpoints' | 'resume'>('exchange')
+const selectedStageId = ref<number | null>(null)
 
 const visibleTabs = computed(() => {
   const items: Array<{ id: 'exchange' | 'agent' | 'tools' | 'checkpoints' | 'resume'; label: string }> = [{ id: 'exchange', label: 'Exchange追踪' }]
@@ -179,6 +196,10 @@ const visibleTabs = computed(() => {
   }
   return items
 })
+
+const selectedStage = computed(() =>
+  traceStore.selectedTrace?.stages.find((stage) => stage.stageId === selectedStageId.value) ?? traceStore.selectedTrace?.stages[0] ?? null,
+)
 
 const resumeSteps = computed(() =>
   (agentRunDetail.value?.steps ?? []).filter((step) => (step.decisionSummary || '').toLowerCase().includes('resume')),
@@ -201,6 +222,7 @@ async function loadTrace() {
     return
   }
   await traceStore.selectTrace(exchangeId)
+  selectedStageId.value = traceStore.selectedTrace?.stages[0]?.stageId ?? null
   activeTab.value = 'exchange'
   await loadAgentRun()
 }
@@ -279,11 +301,6 @@ function callStatusLabel(status: string) {
   return map[status] ?? status
 }
 
-function agentRunStatusLabel(status: string | null | undefined) {
-  const map: Record<string, string> = { success: '成功', failed: '失败', running: '运行中', pending: '待处理', completed: '已完成' }
-  return status ? (map[status] ?? status) : '未知'
-}
-
 function stepStatusLabel(status: string) {
   const map: Record<string, string> = { success: '成功', failed: '失败', running: '运行中', pending: '待处理' }
   return map[status] ?? status
@@ -304,93 +321,142 @@ function statusClass(status: string | null | undefined) {
 </script>
 
 <style scoped>
-.meta-row,
-.item-head,
-.tabs {
+.trace-tabs {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 8px;
-}
-
-.tabs {
   padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
 }
 
 .tab-button {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-color: var(--line-soft);
 }
 
 .tab-button--active {
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent), transparent 58%);
-  background: var(--color-accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent), transparent 58%);
+  background: var(--accent-soft);
 }
 
 .trace-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 12px;
 }
 
-.timeline-panel,
-.detail-panel,
-.stack,
-.panel {
+.stage-rail,
+.trace-section {
   display: grid;
   align-content: start;
   gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
 }
 
-.timeline-panel h3,
-.detail-panel h3,
-.stack h3,
-.panel h3 {
+.stage-rail h2,
+.trace-section h2,
+.section-heading h2 {
   margin: 0;
+  font-size: 16px;
 }
 
-.timeline-item,
+.stage-node {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+}
+
+.stage-node > span {
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+
+.stage-node--failed > span {
+  background: var(--danger);
+  box-shadow: 0 0 0 5px var(--danger-soft);
+}
+
+.stage-node:hover,
+.stage-node--active {
+  border-color: color-mix(in srgb, var(--accent), transparent 58%);
+  background: var(--accent-soft);
+}
+
+.stage-node strong,
+.stage-node small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-node small {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+.trace-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.section-heading,
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .detail-block,
 .summary-card {
   display: grid;
-  gap: 5px;
+  gap: 6px;
   padding: 10px 0;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--line-soft);
 }
 
-.timeline-item:first-of-type,
-.detail-block:first-of-type {
+.detail-block:first-of-type,
+.summary-card:first-of-type {
   border-top: 0;
 }
 
-.timeline-item {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.timeline-item--failed,
 .detail-block--failed {
-  border-left: 3px solid var(--color-danger);
+  border-left: 3px solid var(--danger);
   padding-left: 10px;
 }
 
-.timeline-item p,
 .detail-block p,
 .summary-card p {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   line-height: 1.6;
 }
 
 .retrieval-items {
   margin: 4px 0 0;
   padding-left: 18px;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
 }
 
 .evidence-grid {

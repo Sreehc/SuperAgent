@@ -1,62 +1,73 @@
 <template>
-  <div class="app-shell" :class="{ 'app-shell--nav-open': navOpen }">
-    <aside class="app-shell__sidebar" aria-label="主导航">
-      <div class="sidebar-brand">
-        <BrandLogo size="medium" show-text />
-        <button class="sidebar-brand__close" type="button" aria-label="关闭导航" @click="navOpen = false">Esc</button>
-      </div>
+  <div class="console-shell" :class="{ 'console-shell--nav-open': navOpen }">
+    <aside class="global-rail" aria-label="主导航">
+      <RouterLink class="global-rail__mark" to="/chat" aria-label="SuperAgent 对话">
+        <BrandLogo size="small" />
+      </RouterLink>
 
-      <nav class="sidebar-nav">
+      <nav class="global-rail__nav" aria-label="主导航">
         <RouterLink
           v-for="item in visibleMenuItems"
           :key="item.to"
           :to="item.to"
-          class="sidebar-nav__item"
-          :class="{ 'sidebar-nav__item--active': isActive(item.to) }"
+          class="global-rail__item"
+          :class="{ 'global-rail__item--active': isActive(item.to) }"
+          :aria-label="item.label"
+          :title="item.label"
           @click="navOpen = false"
         >
-          <span class="sidebar-nav__icon" aria-hidden="true">{{ item.icon }}</span>
+          <component :is="item.icon" :size="20" weight="regular" aria-hidden="true" />
           <span>{{ item.label }}</span>
         </RouterLink>
       </nav>
 
-      <div class="sidebar-footer">
-        <span>Role</span>
-        <strong>{{ authStore.currentRole ?? '未加载' }}</strong>
+      <div class="global-rail__tools">
+        <button class="global-rail__item" type="button" aria-label="打开命令面板" title="命令面板 ⌘K" @click="openCommand">
+          <PhCommand :size="20" weight="regular" aria-hidden="true" />
+          <span>命令</span>
+        </button>
+        <ThemeToggle />
       </div>
     </aside>
 
-    <div class="app-shell__overlay" aria-hidden="true" @click="navOpen = false"></div>
+    <div class="console-shell__overlay" aria-hidden="true" @click="navOpen = false"></div>
 
-    <section class="app-shell__workspace">
-      <header class="app-topbar">
-        <div class="app-topbar__title">
-          <button class="app-topbar__menu" type="button" aria-label="打开导航" @click="navOpen = true">Menu</button>
-          <div>
-            <p class="page-kicker">{{ route.path }}</p>
-            <h1>{{ pageTitle }}</h1>
-          </div>
-        </div>
-
-        <div class="app-topbar__actions">
-          <label class="tenant-switcher">
-            <span>租户</span>
+    <section class="console-workspace">
+      <header class="utility-bar">
+        <div class="utility-bar__left">
+          <button class="utility-bar__menu icon-button" type="button" aria-label="打开导航" @click="navOpen = true">
+            <PhSidebarSimple :size="18" weight="regular" aria-hidden="true" />
+          </button>
+          <div class="tenant-chip">
+            <span>Tenant</span>
             <select v-model="selectedTenantId" :disabled="tenantSwitching" @change="switchTenant">
               <option v-for="tenant in authStore.tenants" :key="tenant.id" :value="tenant.id">
                 {{ tenant.name }} / {{ tenant.role }}
               </option>
             </select>
-          </label>
-          <ThemeToggle />
+          </div>
+          <span class="role-chip">{{ authStore.currentRole ?? '未加载' }}</span>
+        </div>
+
+        <button class="command-trigger" type="button" @click="openCommand">
+          <PhMagnifyingGlass :size="16" weight="regular" aria-hidden="true" />
+          <span>搜索页面或操作</span>
+          <kbd>⌘K</kbd>
+        </button>
+
+        <div class="utility-bar__right">
           <div class="identity-block">
             <strong>{{ authStore.user?.displayName || authStore.user?.username || 'User' }}</strong>
             <span>{{ authStore.user?.username || 'unknown' }}</span>
           </div>
-          <button class="btn btn-ghost btn-sm" type="button" @click="logout">退出登录</button>
+          <button class="btn btn-ghost btn-sm" type="button" @click="logout">
+            <PhSignOut :size="15" weight="regular" aria-hidden="true" />
+            退出
+          </button>
         </div>
       </header>
 
-      <main class="app-content">
+      <main class="console-content">
         <RouterView />
       </main>
     </section>
@@ -64,8 +75,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { PhBooks, PhChatCenteredText, PhCommand, PhGearSix, PhGraph, PhMagnifyingGlass, PhPuzzlePiece, PhShieldCheck, PhSidebarSimple, PhSignOut } from '@phosphor-icons/vue'
 import { BrandLogo, ThemeToggle } from '../../components'
 import { useAuthStore } from '../../features/auth/store/auth'
 import type { TenantRole } from '../../features/auth/types'
@@ -73,7 +85,7 @@ import type { TenantRole } from '../../features/auth/types'
 interface MenuItem {
   to: string
   label: string
-  icon: string
+  icon: Component
   roles: TenantRole[]
 }
 
@@ -85,22 +97,17 @@ const tenantSwitching = ref(false)
 const selectedTenantId = ref<number | null>(authStore.currentTenantId)
 
 const menuItems: MenuItem[] = [
-  { to: '/chat', label: '对话', icon: 'CH', roles: ['OWNER', 'ADMIN', 'MEMBER'] },
-  { to: '/knowledge', label: '知识库', icon: 'KB', roles: ['OWNER', 'ADMIN', 'MEMBER'] },
-  { to: '/traces', label: 'Trace', icon: 'TR', roles: ['OWNER', 'ADMIN'] },
-  { to: '/tools', label: 'Tools', icon: 'TL', roles: ['OWNER', 'ADMIN'] },
-  { to: '/governance', label: '治理', icon: 'GV', roles: ['OWNER', 'ADMIN'] },
-  { to: '/settings', label: '设置', icon: 'ST', roles: ['OWNER', 'ADMIN'] },
+  { to: '/chat', label: '对话', icon: PhChatCenteredText, roles: ['OWNER', 'ADMIN', 'MEMBER'] },
+  { to: '/knowledge', label: '知识库', icon: PhBooks, roles: ['OWNER', 'ADMIN', 'MEMBER'] },
+  { to: '/traces', label: 'Trace', icon: PhGraph, roles: ['OWNER', 'ADMIN'] },
+  { to: '/tools', label: 'Tools', icon: PhPuzzlePiece, roles: ['OWNER', 'ADMIN'] },
+  { to: '/governance', label: '治理', icon: PhShieldCheck, roles: ['OWNER', 'ADMIN'] },
+  { to: '/settings', label: '设置', icon: PhGearSix, roles: ['OWNER', 'ADMIN'] },
 ]
 
 const visibleMenuItems = computed(() => {
   const role = authStore.currentRole
   return menuItems.filter((item) => role && item.roles.includes(role))
-})
-
-const pageTitle = computed(() => {
-  const matched = [...route.matched].reverse().find((record) => record.meta.menuLabel)
-  return (matched?.meta.menuLabel as string | undefined) ?? 'SuperAgent'
 })
 
 watch(
@@ -113,6 +120,10 @@ watch(
 
 function isActive(path: string) {
   return route.path === path || route.path.startsWith(`${path}/`)
+}
+
+function openCommand() {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))
 }
 
 async function switchTenant() {
@@ -139,165 +150,207 @@ async function logout() {
 </script>
 
 <style scoped>
-.app-shell {
+.console-shell {
   display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
   min-height: 100vh;
 }
 
-.app-shell__sidebar {
+.global-rail {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  height: 100vh;
+  padding: 12px 9px;
+  background:
+    linear-gradient(180deg, rgba(123, 210, 179, 0.08), transparent 30%),
+    var(--bg-rail);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.global-rail__mark {
+  display: inline-flex;
+  margin-bottom: 18px;
+}
+
+.global-rail__nav,
+.global-rail__tools {
+  display: grid;
+  gap: 8px;
+}
+
+.global-rail__nav {
+  align-content: start;
+}
+
+.global-rail__tools {
+  align-content: end;
+}
+
+.global-rail__item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: rgba(238, 242, 236, 0.68);
+  background: transparent;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.global-rail__item span {
+  position: absolute;
+  left: calc(100% + 10px);
+  z-index: 2;
+  padding: 6px 8px;
+  color: #eef2ec;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-1);
+  background: #101417;
+  box-shadow: var(--shadow-menu);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-4px);
+  transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+
+.global-rail__item:hover,
+.global-rail__item--active {
+  color: #ffffff;
+  border-color: rgba(123, 210, 179, 0.22);
+  background: rgba(123, 210, 179, 0.12);
+}
+
+.global-rail__item:hover span,
+.global-rail__item:focus-visible span {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.console-workspace {
+  display: grid;
+  grid-template-rows: var(--utility-height) minmax(0, 1fr);
+  min-width: 0;
+}
+
+.utility-bar {
   position: sticky;
   top: 0;
   z-index: 30;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  height: 100vh;
-  padding: 14px;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 48px;
-  padding: 4px 2px 14px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.sidebar-brand__close,
-.app-topbar__menu {
-  display: none;
-}
-
-.sidebar-nav {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  padding: 14px 0;
-}
-
-.sidebar-nav__item {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
-  font-weight: 700;
-}
-
-.sidebar-nav__item:hover {
-  color: var(--color-text);
-  background: var(--color-surface-subtle);
-}
-
-.sidebar-nav__item--active {
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent), transparent 64%);
-  background: var(--color-accent-soft);
-}
-
-.sidebar-nav__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 24px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xs);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.sidebar-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding-top: 14px;
-  border-top: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-
-.sidebar-footer strong {
-  color: var(--color-text);
-  font-family: var(--font-mono);
-}
-
-.app-shell__workspace {
-  display: grid;
-  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
-  min-width: 0;
-}
-
-.app-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 0;
-  padding: 0 18px;
-  border-bottom: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-bg), var(--color-surface) 72%);
-}
-
-.app-topbar__title {
-  display: flex;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 420px) minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   min-width: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--bg-canvas), var(--bg-surface) 72%);
+  backdrop-filter: blur(18px);
 }
 
-.app-topbar__title h1 {
-  margin: 0;
-  font-size: 18px;
-  letter-spacing: -0.01em;
-}
-
-.app-topbar__title .page-kicker {
-  margin-bottom: 2px;
-}
-
-.app-topbar__actions {
+.utility-bar__left,
+.utility-bar__right {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
-.tenant-switcher {
+.utility-bar__right {
+  justify-content: flex-end;
+}
+
+.utility-bar__menu {
+  display: none;
+}
+
+.tenant-chip {
   display: grid;
-  grid-template-columns: auto minmax(170px, 240px);
+  grid-template-columns: auto minmax(150px, 230px);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.tenant-chip span,
+.role-chip {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.tenant-chip select {
+  min-height: 32px;
+  background: color-mix(in srgb, var(--bg-surface), transparent 12%);
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  background: var(--bg-subtle);
+}
+
+.command-trigger {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-}
-
-.tenant-switcher span {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.tenant-switcher select {
+  width: 100%;
   min-height: 34px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+  text-align: left;
+}
+
+.command-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-trigger kbd {
+  min-width: 34px;
+  padding: 3px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  background: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .identity-block {
   display: grid;
   justify-items: end;
-  line-height: 1.2;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.identity-block strong,
+.identity-block span {
+  overflow: hidden;
+  max-width: 180px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .identity-block strong {
@@ -305,89 +358,82 @@ async function logout() {
 }
 
 .identity-block span {
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
-.app-content {
+.console-content {
   min-width: 0;
-  padding: 18px;
+  padding: 14px;
 }
 
-.app-shell__overlay {
+.console-shell__overlay {
   display: none;
 }
 
-@media (max-width: 900px) {
-  .app-shell {
+@media (max-width: 980px) {
+  .console-shell {
     grid-template-columns: 1fr;
   }
 
-  .app-shell__sidebar {
+  .global-rail {
     position: fixed;
     inset: 0 auto 0 0;
-    width: min(82vw, var(--sidebar-width));
+    width: var(--rail-width);
     transform: translateX(-100%);
     transition: transform var(--duration-base) var(--ease-standard);
   }
 
-  .app-shell--nav-open .app-shell__sidebar {
+  .console-shell--nav-open .global-rail {
     transform: translateX(0);
   }
 
-  .app-shell__overlay {
+  .console-shell__overlay {
     position: fixed;
     inset: 0;
-    z-index: 25;
+    z-index: 35;
     display: block;
     visibility: hidden;
-    background: rgba(15, 23, 42, 0.42);
+    background: rgba(8, 10, 9, 0.48);
     opacity: 0;
     transition: opacity var(--duration-base) var(--ease-standard), visibility var(--duration-base) var(--ease-standard);
   }
 
-  .app-shell--nav-open .app-shell__overlay {
+  .console-shell--nav-open .console-shell__overlay {
     visibility: visible;
     opacity: 1;
   }
 
-  .sidebar-brand__close,
-  .app-topbar__menu {
+  .utility-bar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .utility-bar__menu {
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 32px;
-    padding: 0 9px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 800;
   }
 
-  .app-topbar {
-    min-height: var(--topbar-height);
-  }
-
-  .app-topbar__actions {
-    gap: 8px;
-  }
-
-  .tenant-switcher,
-  .identity-block {
+  .tenant-chip {
     display: none;
   }
 }
 
-@media (max-width: 620px) {
-  .app-topbar {
-    padding: 0 12px;
+@media (max-width: 680px) {
+  .utility-bar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 0 10px;
   }
 
-  .app-content {
-    padding: 12px;
+  .role-chip,
+  .identity-block {
+    display: none;
+  }
+
+  .command-trigger span {
+    display: none;
+  }
+
+  .console-content {
+    padding: 10px;
   }
 }
 </style>

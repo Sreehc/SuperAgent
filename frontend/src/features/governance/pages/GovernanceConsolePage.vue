@@ -1,114 +1,109 @@
 <template>
-  <section class="governance-page">
-    <header class="card-shell page-header">
-      <div>
-        <p class="eyebrow">/governance</p>
-        <h2>知识治理控制台</h2>
+  <section class="governance-console workspace-page">
+    <header class="workspace-strip">
+      <div class="workspace-title">
+        <p class="section-label">Knowledge governance</p>
+        <h1>知识治理控制台</h1>
         <p>维护知识域、切块策略，并查看图谱同步状态的入口。</p>
       </div>
-      <button class="ghost-button" type="button" @click="loadAll">刷新</button>
+      <button class="btn btn-ghost btn-sm" type="button" @click="loadAll">刷新</button>
     </header>
 
-    <section class="card-shell tabs">
-      <button
-        v-for="tab in tabs"
-        :key="tab"
-        class="tab-button"
-        :class="{ 'tab-button--active': activeTab === tab }"
-        type="button"
-        @click="activeTab = tab"
-      >
+    <section class="governance-tabs">
+      <button v-for="tab in tabs" :key="tab" class="tab-button" :class="{ 'tab-button--active': activeTab === tab }" type="button" @click="activeTab = tab">
         {{ tab }}
       </button>
     </section>
 
     <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
 
-    <section v-if="activeTab === '知识域'" class="card-shell stack">
-      <form class="form-grid" @submit.prevent="submitDomain">
-        <label class="field">
-          <span>编码</span>
-          <input v-model="domainForm.code" :disabled="Boolean(editingDomainId)" placeholder="support" />
-        </label>
-        <label class="field">
-          <span>名称</span>
-          <input v-model="domainForm.name" placeholder="售后知识域" />
-        </label>
-        <label class="field span-2">
-          <span>描述</span>
-          <input v-model="domainForm.description" placeholder="用于限定知识治理和检索范围" />
-        </label>
-        <button class="pill-button" type="submit">{{ editingDomainId ? '更新知识域' : '新增知识域' }}</button>
-      </form>
-      <article v-for="domain in domains" :key="domain.id" class="item-card">
-        <div class="item-head">
-          <div>
-            <strong>{{ domain.name }}</strong>
-            <p>{{ domain.code }} · {{ domain.status }}</p>
-          </div>
-          <button class="ghost-button" type="button" @click="editDomain(domain.id)">编辑</button>
-        </div>
-        <p>{{ domain.description || '暂无描述' }}</p>
-      </article>
-    </section>
+    <section class="governance-layout">
+      <main class="governance-list">
+        <template v-if="activeTab === '知识域'">
+          <article v-for="domain in domains" :key="domain.id" class="governance-row" :class="{ 'governance-row--active': editingDomainId === domain.id }">
+            <div>
+              <strong>{{ domain.name }}</strong>
+              <p>{{ domain.code }} · {{ domain.status }}</p>
+              <p>{{ domain.description || '暂无描述' }}</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" @click="editDomain(domain.id)">编辑</button>
+          </article>
+        </template>
 
-    <section v-else-if="activeTab === '切块策略'" class="card-shell stack">
-      <form class="form-grid" @submit.prevent="submitProfile">
-        <label class="field">
-          <span>编码</span>
-          <input v-model="profileForm.code" :disabled="Boolean(editingProfileId)" placeholder="recursive-default" />
-        </label>
-        <label class="field">
-          <span>名称</span>
-          <input v-model="profileForm.name" placeholder="默认递归切块" />
-        </label>
-        <label class="field">
-          <span>策略</span>
-          <input v-model="profileForm.strategy" placeholder="recursive" />
-        </label>
-        <label class="toggle-inline">
-          <span>默认</span>
-          <input v-model="profileForm.isDefault" type="checkbox" />
-        </label>
-        <label class="field span-2">
-          <span>配置 JSON</span>
-          <textarea v-model="profileForm.configText" rows="5" placeholder='{"maxChars": 1200}' />
-        </label>
-        <button class="pill-button" type="submit">{{ editingProfileId ? '更新策略' : '新增策略' }}</button>
-      </form>
-      <article v-for="profile in profiles" :key="profile.id" class="item-card">
-        <div class="item-head">
-          <div>
-            <strong>{{ profile.name }}</strong>
-            <p>{{ profile.code }} · {{ profile.strategy }} · {{ profile.status }}</p>
-          </div>
-          <button class="ghost-button" type="button" @click="editProfile(profile.id)">编辑</button>
-        </div>
-        <pre class="metadata">{{ JSON.stringify(profile.config, null, 2) }}</pre>
-      </article>
-    </section>
+        <template v-else-if="activeTab === '切块策略'">
+          <article v-for="profile in profiles" :key="profile.id" class="governance-row" :class="{ 'governance-row--active': editingProfileId === profile.id }">
+            <div>
+              <strong>{{ profile.name }}</strong>
+              <p>{{ profile.code }} · {{ profile.strategy }} · {{ profile.status }}</p>
+              <p>{{ profile.isDefault ? '默认策略' : '非默认' }}</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" @click="editProfile(profile.id)">编辑</button>
+          </article>
+        </template>
 
-    <section v-else class="card-shell stack">
-      <div class="filter-row">
-        <label class="field filter-field">
-          <span>知识库</span>
-          <select v-model="selectedKnowledgeBaseId" @change="loadKnowledgeDocuments">
-            <option value="">选择知识库查看图谱文档</option>
-            <option v-for="base in knowledgeBases" :key="base.id" :value="`${base.id}`">{{ base.name }}</option>
-          </select>
-        </label>
-      </div>
-      <div v-if="graphDocuments.length === 0" class="empty-line">选择知识库后可查看文档图谱同步状态。</div>
-      <article v-for="document in graphDocuments" :key="document.id" class="item-card">
-        <div class="item-head">
-          <div>
-            <strong>{{ document.title }}</strong>
-            <p>{{ document.fileType }} · {{ document.status }}</p>
+        <template v-else>
+          <div class="filter-row">
+            <label class="field filter-field">
+              <span>知识库</span>
+              <select v-model="selectedKnowledgeBaseId" @change="loadKnowledgeDocuments">
+                <option value="">选择知识库查看图谱文档</option>
+                <option v-for="base in knowledgeBases" :key="base.id" :value="`${base.id}`">{{ base.name }}</option>
+              </select>
+            </label>
           </div>
-          <RouterLink class="ghost-button link-button" :to="`/documents/${document.id}`">打开文档图谱</RouterLink>
-        </div>
-        <p>切块数：{{ document.chunkCount }} · 更新时间：{{ formatTime(document.updatedAt) }}</p>
-      </article>
+          <div v-if="graphDocuments.length === 0" class="empty-line">选择知识库后可查看文档图谱同步状态。</div>
+          <article v-for="document in graphDocuments" :key="document.id" class="governance-row">
+            <div>
+              <strong>{{ document.title }}</strong>
+              <p>{{ document.fileType }} · {{ document.status }} · chunks {{ document.chunkCount }}</p>
+              <p>更新时间：{{ formatTime(document.updatedAt) }}</p>
+            </div>
+            <RouterLink class="btn btn-ghost btn-sm" :to="`/documents/${document.id}`">打开文档图谱</RouterLink>
+          </article>
+        </template>
+      </main>
+
+      <aside class="governance-editor inspector-box">
+        <template v-if="activeTab === '知识域'">
+          <p class="section-label">Domain editor</p>
+          <h2>{{ editingDomainId ? '编辑知识域' : '新增知识域' }}</h2>
+          <form class="editor-form" @submit.prevent="submitDomain">
+            <label class="field"><span>编码</span><input v-model="domainForm.code" :disabled="Boolean(editingDomainId)" placeholder="support" /></label>
+            <label class="field"><span>名称</span><input v-model="domainForm.name" placeholder="售后知识域" /></label>
+            <label class="field"><span>描述</span><input v-model="domainForm.description" placeholder="用于限定知识治理和检索范围" /></label>
+            <div class="action-row">
+              <button class="btn btn-ghost" type="button" @click="resetDomainForm">清空</button>
+              <button class="btn btn-primary" type="submit">{{ editingDomainId ? '更新知识域' : '新增知识域' }}</button>
+            </div>
+          </form>
+        </template>
+
+        <template v-else-if="activeTab === '切块策略'">
+          <p class="section-label">Chunking editor</p>
+          <h2>{{ editingProfileId ? '编辑策略' : '新增策略' }}</h2>
+          <form class="editor-form" @submit.prevent="submitProfile">
+            <label class="field"><span>编码</span><input v-model="profileForm.code" :disabled="Boolean(editingProfileId)" placeholder="recursive-default" /></label>
+            <label class="field"><span>名称</span><input v-model="profileForm.name" placeholder="默认递归切块" /></label>
+            <label class="field"><span>策略</span><input v-model="profileForm.strategy" placeholder="recursive" /></label>
+            <label class="switch-row"><span>默认</span><input v-model="profileForm.isDefault" type="checkbox" /></label>
+            <label class="field"><span>配置 JSON</span><textarea v-model="profileForm.configText" rows="8" placeholder='{"maxChars": 1200}' /></label>
+            <div class="action-row">
+              <button class="btn btn-ghost" type="button" @click="resetProfileForm">清空</button>
+              <button class="btn btn-primary" type="submit">{{ editingProfileId ? '更新策略' : '新增策略' }}</button>
+            </div>
+          </form>
+        </template>
+
+        <template v-else>
+          <p class="section-label">Graph documents</p>
+          <h2>图谱文档</h2>
+          <p>选择知识库后，左侧会列出文档图谱同步状态。点击文档进入 parser debugger 查看节点、关系和任务日志。</p>
+          <dl>
+            <div><dt>知识库</dt><dd>{{ selectedKnowledgeBaseId || '-' }}</dd></div>
+            <div><dt>文档数</dt><dd>{{ graphDocuments.length }}</dd></div>
+          </dl>
+        </template>
+      </aside>
     </section>
   </section>
 </template>
@@ -285,150 +280,121 @@ function formatTime(value: string) {
 </script>
 
 <style scoped>
-.governance-page {
-  display: grid;
-  gap: 16px;
-}
-
-.card-shell {
-  padding: 16px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-
-.page-header,
-.item-head,
-.filter-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.tabs {
+.governance-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
 }
 
-.stack {
+.tab-button {
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-color: var(--line-soft);
+}
+
+.tab-button--active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent), transparent 58%);
+  background: var(--accent-soft);
+}
+
+.governance-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 12px;
+}
+
+.governance-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.governance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+}
+
+.governance-row--active,
+.governance-row:hover {
+  border-color: color-mix(in srgb, var(--accent), transparent 58%);
+  background: var(--accent-soft);
+}
+
+.governance-row p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.governance-editor h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.governance-editor p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  line-height: 1.58;
+}
+
+.editor-form {
   display: grid;
   gap: 10px;
 }
 
-.form-grid {
+.switch-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.field {
-  display: grid;
-  gap: 6px;
-}
-
-.field > span {
-  color: var(--color-text-muted);
-  font-size: 13px;
-  font-weight: 700;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  background: var(--bg-inset);
 }
 
 .filter-field {
   width: min(360px, 100%);
 }
 
-.span-2 {
-  grid-column: 1 / -1;
-}
-
-.tab-button,
-.ghost-button,
-.pill-button,
-.link-button {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-weight: 700;
-}
-
-.tab-button--active {
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent), transparent 58%);
-  background: var(--color-accent-soft);
-}
-
-.pill-button {
-  color: #ffffff;
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-}
-
-.item-card {
+.governance-editor dl {
   display: grid;
   gap: 8px;
-  padding: 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-}
-
-.item-card p {
   margin: 0;
-  color: var(--color-text-muted);
-  line-height: 1.6;
 }
 
-.toggle-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.governance-editor dl div {
+  padding: 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  background: var(--bg-inset);
 }
 
-.eyebrow,
-.error-banner,
-.empty-line {
-  color: var(--color-text-muted);
+.governance-editor dt {
+  color: var(--text-subtle);
+  font-size: 12px;
 }
 
-.eyebrow {
-  margin: 0;
+.governance-editor dd {
+  margin: 3px 0 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 
-.page-header h2 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: var(--color-text-muted);
-}
-
-textarea {
-  resize: vertical;
-}
-
-@media (max-width: 960px) {
-  .page-header,
-  .item-head,
-  .filter-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .form-grid {
+@media (max-width: 980px) {
+  .governance-layout {
     grid-template-columns: 1fr;
-  }
-
-  .span-2 {
-    grid-column: auto;
   }
 }
 </style>
