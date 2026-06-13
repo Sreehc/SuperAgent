@@ -13,6 +13,7 @@ import type {
   PagedResult,
   UpdateKnowledgeBaseRequest,
   UploadDocumentResponse,
+  UploadBatchDocumentResponse,
   KnowledgeDocumentListItem,
   KnowledgeBaseSummary,
 } from './types'
@@ -77,12 +78,57 @@ export async function uploadKnowledgeDocument(
   return response.data
 }
 
+export async function uploadKnowledgeDocumentsBatch(
+  knowledgeBaseId: number,
+  payload: {
+    files: File[]
+    category?: string
+    tags?: string
+    knowledgeDomainId?: number | null
+    chunkingProfileId?: number | null
+  },
+) {
+  const formData = new FormData()
+  payload.files.forEach((file) => formData.append('files', file))
+  if (payload.category?.trim()) {
+    formData.append('category', payload.category.trim())
+  }
+  if (payload.tags?.trim()) {
+    formData.append('tags', payload.tags.trim())
+  }
+  if (payload.knowledgeDomainId != null) {
+    formData.append('knowledgeDomainId', `${payload.knowledgeDomainId}`)
+  }
+  if (payload.chunkingProfileId != null) {
+    formData.append('chunkingProfileId', `${payload.chunkingProfileId}`)
+  }
+
+  const response = await http.post<{ success: boolean; code: string; message: string; data: UploadBatchDocumentResponse; traceId: string }>(
+    `/knowledge-bases/${knowledgeBaseId}/documents/batch`,
+    formData,
+  )
+  return response.data
+}
+
 export function getKnowledgeDocument(documentId: number) {
   return apiGet<KnowledgeDocumentDetail>(`/documents/${documentId}`)
 }
 
 export function deleteKnowledgeDocument(documentId: number) {
   return http.delete(`/documents/${documentId}`)
+}
+
+export function updateKnowledgeDocument(
+  documentId: number,
+  payload: {
+    title?: string
+    category?: string
+    tags?: string
+    knowledgeDomainId?: number | null
+    chunkingProfileId?: number | null
+  },
+) {
+  return http.patch<{ success: boolean; code: string; message: string; data: KnowledgeDocumentDetail; traceId: string }>(`/documents/${documentId}`, payload)
 }
 
 export function listKnowledgeDocumentChunks(documentId: number, params?: Record<string, string | number | undefined>) {

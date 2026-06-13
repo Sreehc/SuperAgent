@@ -12,8 +12,10 @@ import com.superagent.common.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -85,6 +87,23 @@ public class AgentAdminController {
         return ApiResponse.success(new PluginPatchResponse(pluginId, agentAdminService.updatePlugin(pluginId, request.enabled())));
     }
 
+    @PutMapping("/tools/{toolId}/secrets/{secretKey}")
+    public ApiResponse<AgentAdminService.SecretUpdateResult> updateToolSecret(
+            @PathVariable String toolId,
+            @PathVariable String secretKey,
+            @Valid @RequestBody UpdateToolSecretRequest request
+    ) {
+        return ApiResponse.success(agentAdminService.updateToolSecret(toolId, secretKey, request.value()));
+    }
+
+    @DeleteMapping("/tools/{toolId}/secrets/{secretKey}")
+    public ApiResponse<AgentAdminService.SecretUpdateResult> deleteToolSecret(
+            @PathVariable String toolId,
+            @PathVariable String secretKey
+    ) {
+        return ApiResponse.success(agentAdminService.deleteToolSecret(toolId, secretKey));
+    }
+
     public record PagedResponse<T>(List<T> items, int page, int pageSize, long total) {
     }
 
@@ -92,5 +111,8 @@ public class AgentAdminController {
     }
 
     public record PluginPatchResponse(long pluginId, boolean updated) {
+    }
+
+    public record UpdateToolSecretRequest(String value) {
     }
 }

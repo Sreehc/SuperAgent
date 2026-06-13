@@ -1,9 +1,11 @@
 package com.superagent.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -49,6 +51,7 @@ class AgentAdminIntegrationTest {
 
     @BeforeEach
     void cleanTables() {
+        jdbcTemplate.execute("DELETE FROM audit_log");
         jdbcTemplate.execute("DELETE FROM tool_call_artifact");
         jdbcTemplate.execute("DELETE FROM tool_call_trace");
         jdbcTemplate.execute("DELETE FROM agent_checkpoint");
@@ -300,6 +303,132 @@ class AgentAdminIntegrationTest {
         assertThat(enabled).isFalse();
     }
 
+    @Test
+    void shouldExposeToolCapabilitiesForCurrentRoleWithoutSecretValues() throws Exception {
+        JsonNode adminLogin = login("admin", "password123");
+        String adminToken = adminLogin.path("data").path("accessToken").asText();
+        long tenantId = adminLogin.path("data").path("defaultTenant").path("id").asLong();
+
+        Long pluginId = jdbcTemplate.queryForObject("""
+                        INSERT INTO plugin_registry (plugin_key, version, display_name, manifest_json, status)
+                        VALUES (
+                            'core-tools',
+                            '0.1.0',
+                            'Core Tools',
+                            '{
+                              "riskLevel":"standard",
+                              "tools":[
+                                {"id":"web.search","kind":"web"},
+                                {"id":"http.request","kind":"http","riskLevel":"high"}
+                              ]
+                            }'::jsonb,
+                            'active'
+                        )
+                        RETURNING id
+                        """,
+                Long.class
+        );
+        jdbcTemplate.update(
+                "INSERT INTO plugin_installation (tenant_id, plugin_id, enabled, config_json) VALUES (?, ?, TRUE, '{}'::jsonb)",
+                tenantId,
+                pluginId
+        );
+        jdbcTemplate.update(
+                "INSERT INTO tenant_tool_binding (tenant_id, tool_id, plugin_id, enabled, risk_level, config_json) VALUES (?, 'http.request', ?, TRUE, 'high', '{}'::jsonb)",
+                tenantId,
+                pluginId
+        );
+        jdbcTemplate.update(
+                "INSERT INTO tenant_tool_secret (tenant_id, tool_id, secret_key, secret_value) VALUES (?, 'http.request', 'service_token', 'do-not-return')",
+                tenantId
+        );
+
+        JsonNode adminCapabilities = readJson(mockMvc.perform(get("/api/v1/tools/capabilities")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn());
+        JsonNode adminTools = adminCapabilities.path("data").path("tools");
+        assertThat(adminTools).hasSize(2);
+        JsonNode adminHttp = findTool(adminTools, "http.request");
+        assertThat(adminHttp.path("enabled").asBoolean()).isTrue();
+        assertThat(adminHttp.path("executable").asBoolean()).isTrue();
+        assertThat(adminHttp.path("configuredSecrets").get(0).asText()).isEqualTo("service_token");
+        assertThat(adminCapabilities.toString()).doesNotContain("do-not-return");
+
+        JsonNode memberLogin = login("member", "password123");
+        String memberToken = memberLogin.path("data").path("accessToken").asText();
+        JsonNode memberCapabilities = readJson(mockMvc.perform(get("/api/v1/tools/capabilities")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + memberToken)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn());
+        JsonNode memberHttp = findTool(memberCapabilities.path("data").path("tools"), "http.request");
+        assertThat(memberHttp.path("enabled").asBoolean()).isTrue();
+        assertThat(memberHttp.path("executable").asBoolean()).isFalse();
+        assertThat(memberHttp.path("reason").asText()).isEqualTo("role_not_allowed");
+    }
+
+    @Test
+    void shouldManageToolSecretsWithOwnerOnlyPermissionAndAudit() throws Exception {
+        JsonNode adminLogin = login("admin", "password123");
+        String adminToken = adminLogin.path("data").path("accessToken").asText();
+        long tenantId = adminLogin.path("data").path("defaultTenant").path("id").asLong();
+
+        JsonNode updateResponse = readJson(mockMvc.perform(put("/api/v1/admin/tools/{toolId}/secrets/{secretKey}", "web.search", "tavilyApiKey")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"secret-value\"}")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(updateResponse.path("data").path("toolId").asText()).isEqualTo("web.search");
+        assertThat(updateResponse.path("data").path("secretKey").asText()).isEqualTo("tavilyApiKey");
+        assertThat(updateResponse.path("data").path("configured").asBoolean()).isTrue();
+        assertThat(updateResponse.toString()).doesNotContain("secret-value");
+
+        String stored = jdbcTemplate.queryForObject(
+                "SELECT secret_value FROM tenant_tool_secret WHERE tenant_id = ? AND tool_id = 'web.search' AND secret_key = 'tavilyApiKey'",
+                String.class,
+                tenantId
+        );
+        assertThat(stored).isEqualTo("secret-value");
+        Integer updateAuditCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_log WHERE tenant_id = ? AND action = 'tools.secret.updated' AND detail->>'secretKey' = 'tavilyApiKey'",
+                Integer.class,
+                tenantId
+        );
+        assertThat(updateAuditCount).isEqualTo(1);
+
+        JsonNode memberLogin = login("member", "password123");
+        String memberToken = memberLogin.path("data").path("accessToken").asText();
+        mockMvc.perform(put("/api/v1/admin/tools/{toolId}/secrets/{secretKey}", "web.search", "tavilyApiKey")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"member-secret\"}")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + memberToken)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isForbidden());
+
+        JsonNode deleteResponse = readJson(mockMvc.perform(delete("/api/v1/admin/tools/{toolId}/secrets/{secretKey}", "web.search", "tavilyApiKey")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(deleteResponse.path("data").path("configured").asBoolean()).isFalse();
+        Integer remaining = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM tenant_tool_secret WHERE tenant_id = ? AND tool_id = 'web.search' AND secret_key = 'tavilyApiKey'",
+                Integer.class,
+                tenantId
+        );
+        assertThat(remaining).isZero();
+        Integer deleteAuditCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_log WHERE tenant_id = ? AND action = 'tools.secret.deleted' AND detail->>'configured' = 'false'",
+                Integer.class,
+                tenantId
+        );
+        assertThat(deleteAuditCount).isEqualTo(1);
+    }
+
     private JsonNode login(String username, String password) throws Exception {
         MvcResult response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -314,5 +443,14 @@ class AgentAdminIntegrationTest {
 
     private JsonNode readJson(MvcResult result) throws Exception {
         return objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    private JsonNode findTool(JsonNode tools, String toolId) {
+        for (JsonNode tool : tools) {
+            if (tool.path("toolId").asText().equals(toolId)) {
+                return tool;
+            }
+        }
+        throw new AssertionError("Tool not found: " + toolId);
     }
 }

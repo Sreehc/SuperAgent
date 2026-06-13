@@ -29,6 +29,9 @@ class ToolExecutionServiceTest {
     private SandboxRunnerClient sandboxRunnerClient;
 
     @Mock
+    private KnowledgeSearchService knowledgeSearchService;
+
+    @Mock
     private GraphQueryService graphQueryService;
 
     @Mock
@@ -82,6 +85,43 @@ class ToolExecutionServiceTest {
         assertThat(result.status()).isEqualTo("success");
         assertThat(result.output()).containsEntry("provider", "tavily");
         assertThat((List<?>) result.output().get("results")).hasSize(1);
+    }
+
+    @Test
+    void shouldReturnRealKnowledgeSearchEvidence() {
+        AgentServiceProperties properties = new AgentServiceProperties();
+        ToolExecutionService service = new ToolExecutionService(
+                sandboxRunnerClient,
+                knowledgeSearchService,
+                graphQueryService,
+                toolAccessPolicyService,
+                properties,
+                new ObjectMapper(),
+                HttpClient.newHttpClient()
+        );
+        ToolSpec spec = new ToolSpec("knowledge.search", 1L, "core-tools", "0.1.0", "knowledge", Map.of(), Map.of(), 10_000, "none", "standard", false);
+        when(toolAccessPolicyService.resolve(10001L, "MEMBER", spec)).thenReturn(
+                new ToolAccessPolicyService.ToolAccessPolicy(
+                        true, true, true, false, false, 5_000, 0, "tavily", 3, Map.of(), Map.of(), List.of(), List.of(), List.of("GET")
+                )
+        );
+        when(knowledgeSearchService.search(10001L, "退款规则", 10L, 2)).thenReturn(List.of(
+                Map.of("documentId", 7L, "chunkId", 70L, "title", "退款手册", "quote", "7 天内可申请退款", "score", 0.91)
+        ));
+
+        var result = service.execute(spec, new ToolInvocation(
+                10001L,
+                1L,
+                1L,
+                "MEMBER",
+                "knowledge.search",
+                Map.of("question", "退款规则", "knowledgeBaseId", 10L, "limit", 2)
+        ));
+
+        assertThat(result.status()).isEqualTo("success");
+        assertThat(result.summary()).isEqualTo("返回 1 条知识库证据");
+        assertThat((List<?>) result.output().get("evidence")).hasSize(1);
+        assertThat(String.valueOf(((List<?>) result.output().get("evidence")).get(0))).contains("退款手册");
     }
 
     @Test

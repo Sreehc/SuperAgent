@@ -16,7 +16,7 @@
           :title="item.label"
           @click="navOpen = false"
         >
-          <component :is="item.icon" :size="20" weight="regular" aria-hidden="true" />
+          <component :is="item.icon" :size="20" :weight="isActive(item.to) ? 'fill' : 'regular'" aria-hidden="true" />
           <span>{{ item.label }}</span>
         </RouterLink>
       </nav>
@@ -26,7 +26,7 @@
           <PhCommand :size="20" weight="regular" aria-hidden="true" />
           <span>命令</span>
         </button>
-        <ThemeToggle />
+        <ThemeToggle class="global-rail__item global-rail__theme-toggle" />
       </div>
     </aside>
 
@@ -77,7 +77,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, type Component } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { PhBooks, PhChatCenteredText, PhCommand, PhGearSix, PhGraph, PhMagnifyingGlass, PhPuzzlePiece, PhShieldCheck, PhSidebarSimple, PhSignOut } from '@phosphor-icons/vue'
+import { PhBooks, PhChartLineUp, PhChatCenteredText, PhCommand, PhGearSix, PhGraph, PhMagnifyingGlass, PhPuzzlePiece, PhShieldCheck, PhSidebarSimple, PhSignOut, PhThumbsUp } from '@phosphor-icons/vue'
 import { BrandLogo, ThemeToggle } from '../../components'
 import { useAuthStore } from '../../features/auth/store/auth'
 import type { TenantRole } from '../../features/auth/types'
@@ -102,6 +102,9 @@ const menuItems: MenuItem[] = [
   { to: '/traces', label: 'Trace', icon: PhGraph, roles: ['OWNER', 'ADMIN'] },
   { to: '/tools', label: 'Tools', icon: PhPuzzlePiece, roles: ['OWNER', 'ADMIN'] },
   { to: '/governance', label: '治理', icon: PhShieldCheck, roles: ['OWNER', 'ADMIN'] },
+  { to: '/feedback', label: '反馈', icon: PhThumbsUp, roles: ['OWNER', 'ADMIN'] },
+  { to: '/evaluations', label: '评测', icon: PhChartLineUp, roles: ['OWNER', 'ADMIN'] },
+  { to: '/audit-logs', label: '审计', icon: PhShieldCheck, roles: ['OWNER', 'ADMIN'] },
   { to: '/settings', label: '设置', icon: PhGearSix, roles: ['OWNER', 'ADMIN'] },
 ]
 
@@ -157,6 +160,8 @@ async function logout() {
 }
 
 .global-rail {
+  --rail-accent: #7bd2b3;
+
   position: sticky;
   top: 0;
   z-index: 40;
@@ -173,13 +178,19 @@ async function logout() {
 
 .global-rail__mark {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
   margin-bottom: 18px;
 }
 
 .global-rail__nav,
 .global-rail__tools {
   display: grid;
+  justify-items: center;
   gap: 8px;
+  width: 42px;
 }
 
 .global-rail__nav {
@@ -227,10 +238,23 @@ async function logout() {
 }
 
 .global-rail__item:hover,
-.global-rail__item--active {
+.global-rail__item:focus-visible {
   color: #ffffff;
   border-color: rgba(123, 210, 179, 0.22);
   background: rgba(123, 210, 179, 0.12);
+}
+
+.global-rail__item--active {
+  color: var(--rail-accent);
+  border-color: rgba(123, 210, 179, 0.38);
+  background: rgba(123, 210, 179, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(123, 210, 179, 0.08);
+}
+
+.global-rail__theme-toggle {
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
 }
 
 .global-rail__item:hover span,

@@ -109,6 +109,11 @@ export interface UploadDocumentResponse {
   activeVersionNo: number
 }
 
+export interface UploadBatchDocumentResponse {
+  items: UploadDocumentResponse[]
+  uploadedCount: number
+}
+
 export interface KnowledgeDomainItem {
   id: number
   code: string

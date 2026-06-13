@@ -122,6 +122,35 @@ public class KnowledgeController {
         ));
     }
 
+    @PostMapping(path = "/{knowledgeBaseId}/documents/batch", consumes = "multipart/form-data")
+    public ApiResponse<UploadBatchDocumentResponse> uploadDocuments(
+            @PathVariable long knowledgeBaseId,
+            @RequestPart("files") List<MultipartFile> files,
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "tags", required = false) String tags,
+            @RequestParam(value = "knowledgeDomainId", required = false) Long knowledgeDomainId,
+            @RequestParam(value = "chunkingProfileId", required = false) Long chunkingProfileId
+    ) {
+        var items = knowledgeService.uploadDocuments(
+                knowledgeBaseId,
+                files,
+                category,
+                tags,
+                knowledgeDomainId,
+                chunkingProfileId
+        ).stream().map(result -> new UploadDocumentResponse(
+                result.document().id(),
+                result.document().knowledgeBaseId(),
+                result.document().title(),
+                result.document().status().name(),
+                result.task().id(),
+                result.document().knowledgeDomainId(),
+                result.document().chunkingProfileId(),
+                result.document().activeVersionNo()
+        )).toList();
+        return ApiResponse.success(new UploadBatchDocumentResponse(items, items.size()));
+    }
+
     @GetMapping("/{knowledgeBaseId}/documents")
     public ApiResponse<PagedResponse<KnowledgeDocumentListItem>> listDocuments(
             @PathVariable long knowledgeBaseId,
@@ -231,6 +260,12 @@ public class KnowledgeController {
             Long knowledgeDomainId,
             Long chunkingProfileId,
             int activeVersionNo
+    ) {
+    }
+
+    public record UploadBatchDocumentResponse(
+            List<UploadDocumentResponse> items,
+            int uploadedCount
     ) {
     }
 

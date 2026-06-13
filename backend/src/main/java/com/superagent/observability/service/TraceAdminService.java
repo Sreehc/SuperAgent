@@ -35,6 +35,8 @@ public class TraceAdminService {
             String status,
             String executionMode,
             Long userId,
+            Long sessionId,
+            String toolId,
             OffsetDateTime from,
             OffsetDateTime to
     ) {
@@ -42,13 +44,16 @@ public class TraceAdminService {
         TenantContext tenantContext = requireTenantContext();
         int resolvedPage = normalizePage(page);
         int resolvedPageSize = normalizePageSize(pageSize, 20, 100);
-        long total = traceQueryRepository.countTraces(tenantContext.tenantId(), status, executionMode, userId, from, to);
+        String normalizedToolId = toolId == null || toolId.isBlank() ? null : toolId.trim();
+        long total = traceQueryRepository.countTraces(tenantContext.tenantId(), status, executionMode, userId, sessionId, normalizedToolId, from, to);
         return new ConversationService.PagedResult<>(
                 traceQueryRepository.listTraces(
                         tenantContext.tenantId(),
                         status,
                         executionMode,
                         userId,
+                        sessionId,
+                        normalizedToolId,
                         from,
                         to,
                         resolvedPage,

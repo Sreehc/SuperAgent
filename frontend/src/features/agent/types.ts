@@ -75,6 +75,23 @@ export interface PluginItem {
   updatedAt: string
 }
 
+export interface ToolCapabilityItem {
+  toolId: string
+  name: string
+  kind: string
+  riskLevel: string
+  enabled: boolean
+  executable: boolean
+  requiresConfirmation: boolean
+  reason: string
+  description: string
+  configuredSecrets: string[]
+}
+
+export interface ToolCapabilityResponse {
+  tools: ToolCapabilityItem[]
+}
+
 export interface AgentRunDetail {
   summary: AgentRunSummary
   steps: AgentRunStep[]

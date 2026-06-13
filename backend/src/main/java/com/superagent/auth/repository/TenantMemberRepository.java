@@ -3,6 +3,7 @@ package com.superagent.auth.repository;
 import com.superagent.auth.domain.TenantMembership;
 import com.superagent.auth.domain.TenantRole;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -60,5 +61,80 @@ public class TenantMemberRepository {
                         rs.getObject("joined_at", OffsetDateTime.class)
                 )
         ).stream().findFirst();
+    }
+
+    public boolean exists(long tenantId, long userId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*)
+                        FROM tenant_member
+                        WHERE tenant_id = :tenantId AND user_id = :userId
+                        """,
+                Map.of("tenantId", tenantId, "userId", userId),
+                Integer.class
+        );
+        return count != null && count > 0;
+    }
+
+    public int countActiveOwners(long tenantId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*)
+                        FROM tenant_member
+                        WHERE tenant_id = :tenantId
+                          AND role = 'OWNER'
+                          AND status = 'active'
+                        """,
+                Map.of("tenantId", tenantId),
+                Integer.class
+        );
+        return count == null ? 0 : count;
+    }
+
+    public void updateRole(long tenantId, long userId, TenantRole role) {
+        jdbcTemplate.update("""
+                        UPDATE tenant_member
+                        SET role = :role
+                        WHERE tenant_id = :tenantId AND user_id = :userId
+                        """,
+                Map.of(
+                        "tenantId", tenantId,
+                        "userId", userId,
+                        "role", role.name()
+                )
+        );
+    }
+
+    public void updateStatus(long tenantId, long userId, String status) {
+        jdbcTemplate.update("""
+                        UPDATE tenant_member
+                        SET status = :status
+                        WHERE tenant_id = :tenantId AND user_id = :userId
+                        """,
+                Map.of(
+                        "tenantId", tenantId,
+                        "userId", userId,
+                        "status", status
+                )
+        );
+    }
+
+    public void delete(long tenantId, long userId) {
+        jdbcTemplate.update("""
+                        DELETE FROM tenant_member
+                        WHERE tenant_id = :tenantId AND user_id = :userId
+                        """,
+                Map.of("tenantId", tenantId, "userId", userId)
+        );
+    }
+
+    public List<Long> findTenantIdsByUserId(long userId) {
+        return jdbcTemplate.queryForList("""
+                        SELECT tenant_id
+                        FROM tenant_member
+                        WHERE user_id = :userId
+                        ORDER BY joined_at ASC
+                        """,
+                Map.of("userId", userId),
+                Long.class
+        );
     }
 }

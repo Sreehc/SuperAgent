@@ -4,6 +4,7 @@ import com.superagent.chat.domain.ConversationMessage;
 import com.superagent.chat.domain.ConversationSession;
 import com.superagent.chat.domain.ConversationStatus;
 import com.superagent.chat.domain.MemoryStrategy;
+import com.superagent.chat.domain.RequestedExecutionMode;
 import com.superagent.chat.service.ConversationService;
 import com.superagent.common.api.ApiResponse;
 import jakarta.validation.Valid;
@@ -114,6 +115,7 @@ public class ConversationController {
                         request.message(),
                         request.knowledgeBaseId(),
                         request.memoryStrategy(),
+                        request.executionMode(),
                         request.ragOptions()
                 )
         );
@@ -190,6 +192,7 @@ public class ConversationController {
             @NotBlank(message = "message is required") String message,
             Long knowledgeBaseId,
             MemoryStrategy memoryStrategy,
+            RequestedExecutionMode executionMode,
             ConversationService.RagOptions ragOptions
     ) {
     }

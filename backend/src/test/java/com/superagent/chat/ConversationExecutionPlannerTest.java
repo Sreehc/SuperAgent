@@ -3,6 +3,7 @@ package com.superagent.chat;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.superagent.chat.domain.ExecutionMode;
+import com.superagent.chat.domain.RequestedExecutionMode;
 import com.superagent.chat.service.ConversationExecutionPlanner;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -52,5 +53,23 @@ class ConversationExecutionPlannerTest {
 
         assertThat(plan.executionMode()).isEqualTo(ExecutionMode.RAG_QA);
         assertThat(plan.routeReason()).isEqualTo("direct_chat_with_memory_only");
+    }
+
+    @Test
+    void shouldHonorExplicitRagModeForRealtimeKeywords() {
+        var plan = planner.plan("请搜索今天最新的退款政策变化", 10L, List.of(), RequestedExecutionMode.RAG_QA);
+
+        assertThat(plan.executionMode()).isEqualTo(ExecutionMode.RAG_QA);
+        assertThat(plan.routeReason()).isEqualTo("user_requested_rag");
+        assertThat(plan.steps()).contains("retrieve_evidence");
+    }
+
+    @Test
+    void shouldHonorExplicitAgentModeForDirectKnowledgeQuestion() {
+        var plan = planner.plan("退款规则是什么？", 10L, List.of(), RequestedExecutionMode.REACT_AGENT);
+
+        assertThat(plan.executionMode()).isEqualTo(ExecutionMode.REACT_AGENT);
+        assertThat(plan.routeReason()).isEqualTo("user_requested_agent");
+        assertThat(plan.summary()).isEqualTo("run_react_agent_pipeline");
     }
 }

@@ -141,6 +141,37 @@ public class KnowledgeService {
         return knowledgeRepository.softDeleteDocument(tenantContext.tenantId(), document.id());
     }
 
+    public KnowledgeDocument updateDocumentMetadata(
+            long documentId,
+            String title,
+            String category,
+            String tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId
+    ) {
+        requireAdminRole();
+        KnowledgeDocument existing = requireKnowledgeDocument(documentId);
+        TenantContext tenantContext = requireTenantContext();
+        Long resolvedKnowledgeDomainId = knowledgeDomainId == null ? existing.knowledgeDomainId() : knowledgeDomainId;
+        if (resolvedKnowledgeDomainId != null) {
+            knowledgeRepository.getKnowledgeDomain(tenantContext.tenantId(), resolvedKnowledgeDomainId)
+                    .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Knowledge domain not found"));
+        }
+        ChunkingProfile chunkingProfile = resolveChunkingProfile(
+                tenantContext.tenantId(),
+                chunkingProfileId == null ? existing.chunkingProfileId() : chunkingProfileId
+        );
+        return knowledgeRepository.updateDocumentMetadata(
+                tenantContext.tenantId(),
+                existing.id(),
+                title == null || title.isBlank() ? existing.title() : title.trim(),
+                resolvedKnowledgeDomainId,
+                chunkingProfile == null ? null : chunkingProfile.id(),
+                category == null ? existing.category() : normalizeNullable(category),
+                tags == null ? existing.tags() : parseTags(tags)
+        );
+    }
+
     public UploadedDocumentResult uploadDocument(
             long knowledgeBaseId,
             MultipartFile file,
@@ -215,6 +246,25 @@ public class KnowledgeService {
         );
         publishTaskIfEnabled(new DocumentTaskMessage(tenantContext.tenantId(), document.id(), task.id(), "upload"));
         return new UploadedDocumentResult(document, task);
+    }
+
+    public List<UploadedDocumentResult> uploadDocuments(
+            long knowledgeBaseId,
+            List<MultipartFile> files,
+            String category,
+            String tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId
+    ) {
+        if (files == null || files.isEmpty()) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "files are required");
+        }
+        if (files.size() > 20) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "batch upload supports at most 20 files");
+        }
+        return files.stream()
+                .map(file -> uploadDocument(knowledgeBaseId, file, null, category, tags, knowledgeDomainId, chunkingProfileId))
+                .toList();
     }
 
     public PagedResult<KnowledgeDocument> listDocuments(

@@ -74,4 +74,24 @@ public class UserAccountRepository {
                 Map.of("tenantId", tenantId, "userId", userId)
         );
     }
+
+    public void clearDefaultTenantId(long userId, long tenantId) {
+        jdbcTemplate.update("""
+                        UPDATE user_account
+                        SET default_tenant_id = NULL
+                        WHERE id = :userId AND default_tenant_id = :tenantId
+                        """,
+                Map.of("tenantId", tenantId, "userId", userId)
+        );
+    }
+
+    public void setDefaultTenantId(long userId, Long tenantId) {
+        jdbcTemplate.update("""
+                        UPDATE user_account
+                        SET default_tenant_id = :tenantId
+                        WHERE id = :userId
+                        """,
+                Map.of("tenantId", tenantId, "userId", userId)
+        );
+    }
 }

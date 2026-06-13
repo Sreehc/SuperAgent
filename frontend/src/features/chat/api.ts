@@ -1,10 +1,13 @@
 import { apiGet, apiPost, http } from '../../api/http'
 import type {
   ConversationDetail,
+  ConversationFeedback,
   ConversationMessage,
   ConversationPatchResponse,
   ConversationSummary,
   CreateConversationRequest,
+  DeleteFeedbackResponse,
+  FeedbackRequest,
   MemoryStrategy,
   PagedResult,
   StreamMessageRequest,
@@ -53,6 +56,23 @@ export function deleteConversation(sessionId: number) {
 
 export function listMessages(sessionId: number) {
   return apiGet<PagedResult<ConversationMessage>>(`/conversations/${sessionId}/messages`)
+}
+
+export function listConversationFeedbacks(sessionId: number) {
+  return apiGet<ConversationFeedback[]>(`/conversations/${sessionId}/feedbacks`)
+}
+
+export function upsertMessageFeedback(messageId: number, payload: FeedbackRequest) {
+  return http.put<{ success: boolean; code: string; message: string; data: ConversationFeedback; traceId: string }>(
+    `/messages/${messageId}/feedback`,
+    payload,
+  )
+}
+
+export function deleteMessageFeedback(messageId: number) {
+  return http.delete<{ success: boolean; code: string; message: string; data: DeleteFeedbackResponse; traceId: string }>(
+    `/messages/${messageId}/feedback`,
+  )
 }
 
 export function stopConversation(sessionId: number) {

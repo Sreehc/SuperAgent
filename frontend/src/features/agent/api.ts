@@ -4,6 +4,7 @@ import type {
   AgentRunDetail,
   AgentRunSummary,
   PluginItem,
+  ToolCapabilityResponse,
   ToolCallDetail,
 } from './types'
 
@@ -43,4 +44,16 @@ export function listPlugins() {
 
 export function updatePlugin(pluginId: number, enabled: boolean) {
   return http.patch(`/admin/plugins/${pluginId}`, { enabled })
+}
+
+export function listToolCapabilities() {
+  return apiGet<ToolCapabilityResponse>('/tools/capabilities')
+}
+
+export function updateToolSecret(toolId: string, secretKey: string, value: string) {
+  return http.put(`/admin/tools/${encodeURIComponent(toolId)}/secrets/${encodeURIComponent(secretKey)}`, { value })
+}
+
+export function deleteToolSecret(toolId: string, secretKey: string) {
+  return http.delete(`/admin/tools/${encodeURIComponent(toolId)}/secrets/${encodeURIComponent(secretKey)}`)
 }

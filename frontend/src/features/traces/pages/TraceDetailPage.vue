@@ -29,7 +29,10 @@
 
       <section v-if="activeTab === 'exchange'" class="trace-layout">
         <aside class="stage-rail">
-          <h2>阶段时间线</h2>
+          <div class="section-heading">
+            <h2>阶段时间线</h2>
+            <span class="metric-chip">{{ traceStore.selectedTrace.stages.length }}</span>
+          </div>
           <button
             v-for="stage in traceStore.selectedTrace.stages"
             :key="stage.stageId"
@@ -49,11 +52,15 @@
         <main class="trace-main">
           <article class="trace-section">
             <div class="section-heading">
-              <h2>阶段详情</h2>
+              <h2>详情检查器</h2>
               <span v-if="selectedStage" class="metric-chip">{{ selectedStage.stageCode }}</span>
             </div>
             <div v-if="selectedStage" class="detail-block" :class="{ 'detail-block--failed': selectedStage.status === 'failed' }">
-              <strong>{{ selectedStage.stageCode }}</strong>
+              <div class="item-head">
+                <strong>{{ selectedStage.stageCode }}</strong>
+                <span class="badge" :class="statusClass(selectedStage.status)">{{ stageStatusLabel(selectedStage.status) }}</span>
+              </div>
+              <p>开始：{{ formatTime(selectedStage.startedAt) }} / 耗时：{{ formatDuration(selectedStage.durationMs) }}</p>
               <p>输入摘要：{{ selectedStage.inputSummary || '-' }}</p>
               <p>输出摘要：{{ selectedStage.outputSummary || '-' }}</p>
               <p v-if="selectedStage.errorMessage">错误：{{ selectedStage.errorMessage }}</p>
@@ -61,9 +68,12 @@
           </article>
 
           <article class="trace-section">
-            <h2>模型调用</h2>
-            <div v-if="traceStore.selectedTrace.modelCalls.length === 0" class="empty-line">暂无模型调用。</div>
-            <div v-for="call in traceStore.selectedTrace.modelCalls" :key="call.id" class="detail-block">
+            <div class="section-heading">
+              <h2>关联模型调用</h2>
+              <span class="metric-chip">{{ selectedModelCalls.length }}</span>
+            </div>
+            <div v-if="selectedModelCalls.length === 0" class="empty-line">此阶段暂无模型调用。</div>
+            <div v-for="call in selectedModelCalls" :key="call.id" class="detail-block">
               <div class="item-head"><strong>{{ call.provider }} / {{ call.model }}</strong><span class="badge" :class="statusClass(call.status)">{{ callStatusLabel(call.status) }}</span></div>
               <p>类型：{{ call.callType }} / 延迟：{{ call.latencyMs ?? 0 }}ms / tokens {{ call.inputTokens ?? '-' }} + {{ call.outputTokens ?? '-' }}</p>
               <p>Prompt 摘要：{{ call.promptSummary || '-' }}</p>
@@ -73,9 +83,12 @@
           </article>
 
           <article class="trace-section">
-            <h2>检索结果</h2>
-            <div v-if="traceStore.selectedTrace.retrievals.length === 0" class="empty-line">暂无检索记录。</div>
-            <div v-for="retrieval in traceStore.selectedTrace.retrievals" :key="retrieval.id" class="detail-block">
+            <div class="section-heading">
+              <h2>关联检索结果</h2>
+              <span class="metric-chip">{{ selectedRetrievals.length }}</span>
+            </div>
+            <div v-if="selectedRetrievals.length === 0" class="empty-line">此阶段暂无检索记录。</div>
+            <div v-for="retrieval in selectedRetrievals" :key="retrieval.id" class="detail-block">
               <strong>#{{ retrieval.subQuestionNo }} / {{ retrieval.channel }}</strong>
               <p>查询：{{ retrieval.queryText }}</p>
               <p>结果数：{{ retrieval.resultCount }} / 选中：{{ retrieval.selectedCount }} / 延迟：{{ retrieval.latencyMs ?? '-' }}ms</p>
@@ -199,6 +212,14 @@ const visibleTabs = computed(() => {
 
 const selectedStage = computed(() =>
   traceStore.selectedTrace?.stages.find((stage) => stage.stageId === selectedStageId.value) ?? traceStore.selectedTrace?.stages[0] ?? null,
+)
+
+const selectedModelCalls = computed(() =>
+  (traceStore.selectedTrace?.modelCalls ?? []).filter((call) => !selectedStage.value || call.stageId === selectedStage.value.stageId),
+)
+
+const selectedRetrievals = computed(() =>
+  (traceStore.selectedTrace?.retrievals ?? []).filter((retrieval) => !selectedStage.value || retrieval.stageId === selectedStage.value.stageId),
 )
 
 const resumeSteps = computed(() =>
@@ -360,6 +381,13 @@ function statusClass(status: string | null | undefined) {
   background: var(--bg-surface);
 }
 
+.stage-rail {
+  position: sticky;
+  top: calc(var(--utility-height) + 14px);
+  max-height: calc(100vh - var(--utility-height) - 28px);
+  overflow: auto;
+}
+
 .stage-rail h2,
 .trace-section h2,
 .section-heading h2 {
@@ -467,6 +495,11 @@ function statusClass(status: string | null | undefined) {
 @media (max-width: 960px) {
   .trace-layout {
     grid-template-columns: 1fr;
+  }
+
+  .stage-rail {
+    position: static;
+    max-height: none;
   }
 }
 </style>

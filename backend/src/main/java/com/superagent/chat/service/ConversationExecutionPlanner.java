@@ -1,6 +1,7 @@
 package com.superagent.chat.service;
 
 import com.superagent.chat.domain.ExecutionMode;
+import com.superagent.chat.domain.RequestedExecutionMode;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
@@ -10,8 +11,13 @@ import org.springframework.stereotype.Component;
 public class ConversationExecutionPlanner {
 
     public ExecutionPlan plan(String message, Long knowledgeBaseId, List<String> recentMessages) {
+        return plan(message, knowledgeBaseId, recentMessages, RequestedExecutionMode.AUTO);
+    }
+
+    public ExecutionPlan plan(String message, Long knowledgeBaseId, List<String> recentMessages, RequestedExecutionMode requestedMode) {
         String normalized = message == null ? "" : message.trim();
         String lower = normalized.toLowerCase(Locale.ROOT);
+        RequestedExecutionMode resolvedMode = requestedMode == null ? RequestedExecutionMode.AUTO : requestedMode;
 
         if (needsClarification(normalized, lower)) {
             return new ExecutionPlan(
@@ -20,6 +26,28 @@ public class ConversationExecutionPlanner {
                     BigDecimal.valueOf(0.88d),
                     "ask_for_clarification",
                     List.of("clarify_missing_subject", "pause_rag_retrieval")
+            );
+        }
+
+        if (resolvedMode == RequestedExecutionMode.RAG_QA) {
+            return new ExecutionPlan(
+                    ExecutionMode.RAG_QA,
+                    knowledgeBaseId == null ? "user_requested_rag_without_knowledge_base" : "user_requested_rag",
+                    BigDecimal.valueOf(0.97d),
+                    knowledgeBaseId == null ? "run_rag_pipeline_without_knowledge_base" : "run_rag_pipeline",
+                    knowledgeBaseId == null
+                            ? List.of("assemble_memory", "rewrite_question", "retrieve_evidence_if_available", "answer_or_no_evidence")
+                            : List.of("assemble_memory", "rewrite_question", "retrieve_evidence", "answer_with_citations")
+            );
+        }
+
+        if (resolvedMode == RequestedExecutionMode.REACT_AGENT) {
+            return new ExecutionPlan(
+                    ExecutionMode.REACT_AGENT,
+                    "user_requested_agent",
+                    BigDecimal.valueOf(0.97d),
+                    "run_react_agent_pipeline",
+                    List.of("assemble_agent_memory", "select_tools", "execute_tools", "answer_with_agent_trace")
             );
         }
 

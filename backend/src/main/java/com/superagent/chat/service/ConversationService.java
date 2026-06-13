@@ -14,6 +14,7 @@ import com.superagent.chat.domain.ConversationStatus;
 import com.superagent.chat.domain.ExecutionMode;
 import com.superagent.chat.domain.MemoryStrategy;
 import com.superagent.chat.domain.MessageRole;
+import com.superagent.chat.domain.RequestedExecutionMode;
 import com.superagent.chat.repository.ConversationRepository;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
@@ -241,7 +242,8 @@ public class ConversationService {
             ConversationExecutionPlanner.ExecutionPlan executionPlan = conversationExecutionPlanner.plan(
                     request.message().trim(),
                     resolvedKnowledgeBaseId,
-                    recentMessages
+                    recentMessages,
+                    request.executionMode()
             );
 
             var exchange = conversationRepository.createExchange(
@@ -261,7 +263,7 @@ public class ConversationService {
                     tenantId,
                     emitter,
                     "execution_planning",
-                    "mode=" + executionPlan.executionMode() + ", steps=" + String.join(">", executionPlan.steps()),
+                    "requested_mode=" + resolvedRequestedMode(request.executionMode()) + ", mode=" + executionPlan.executionMode() + ", steps=" + String.join(">", executionPlan.steps()),
                     executionPlan.summary()
             );
             emitTraceStage(exchangeId, tenantId, emitter, "memory_assembly", "recent_messages=" + recentMessages.size(), "已组装最近会话记忆");
@@ -929,8 +931,13 @@ public class ConversationService {
             String message,
             Long knowledgeBaseId,
             MemoryStrategy memoryStrategy,
+            RequestedExecutionMode executionMode,
             RagOptions ragOptions
     ) {
+    }
+
+    private RequestedExecutionMode resolvedRequestedMode(RequestedExecutionMode requestedMode) {
+        return requestedMode == null ? RequestedExecutionMode.AUTO : requestedMode;
     }
 
     public record RagOptions(

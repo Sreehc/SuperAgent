@@ -87,7 +87,16 @@ public class TraceQueryRepository {
         this.objectMapper = objectMapper;
     }
 
-    public long countTraces(long tenantId, String status, String executionMode, Long userId, OffsetDateTime from, OffsetDateTime to) {
+    public long countTraces(
+            long tenantId,
+            String status,
+            String executionMode,
+            Long userId,
+            Long sessionId,
+            String toolId,
+            OffsetDateTime from,
+            OffsetDateTime to
+    ) {
         StringBuilder sql = new StringBuilder("""
                 SELECT COUNT(*)
                 FROM conversation_exchange ce
@@ -97,7 +106,7 @@ public class TraceQueryRepository {
                 ) cm ON cm.id = ce.user_message_id
                 WHERE ce.tenant_id = :tenantId
                 """);
-        MapSqlParameterSource params = buildTraceFilters(sql, tenantId, status, executionMode, userId, from, to);
+        MapSqlParameterSource params = buildTraceFilters(sql, tenantId, status, executionMode, userId, sessionId, toolId, from, to);
         return jdbcTemplate.queryForObject(sql.toString(), params, Long.class);
     }
 
@@ -106,6 +115,8 @@ public class TraceQueryRepository {
             String status,
             String executionMode,
             Long userId,
+            Long sessionId,
+            String toolId,
             OffsetDateTime from,
             OffsetDateTime to,
             int page,
@@ -127,7 +138,7 @@ public class TraceQueryRepository {
                 ) cm ON cm.id = ce.user_message_id
                 WHERE ce.tenant_id = :tenantId
                 """);
-        MapSqlParameterSource params = buildTraceFilters(sql, tenantId, status, executionMode, userId, from, to)
+        MapSqlParameterSource params = buildTraceFilters(sql, tenantId, status, executionMode, userId, sessionId, toolId, from, to)
                 .addValue("limit", pageSize)
                 .addValue("offset", Math.max(page - 1, 0) * pageSize);
         sql.append("""
@@ -471,28 +482,49 @@ public class TraceQueryRepository {
             String status,
             String executionMode,
             Long userId,
+            Long sessionId,
+            String toolId,
             OffsetDateTime from,
             OffsetDateTime to
     ) {
         MapSqlParameterSource params = new MapSqlParameterSource().addValue("tenantId", tenantId);
         if (status != null && !status.isBlank()) {
-            sql.append(" AND ce.status = :status");
+            sql.append(" AND ce.status = :status ");
             params.addValue("status", status.trim());
         }
         if (executionMode != null && !executionMode.isBlank()) {
-            sql.append(" AND ce.execution_mode = :executionMode");
+            sql.append(" AND ce.execution_mode = :executionMode ");
             params.addValue("executionMode", executionMode.trim());
         }
         if (userId != null) {
-            sql.append(" AND (cm.created_by_user_id = :userId)");
+            sql.append(" AND (cm.created_by_user_id = :userId) ");
             params.addValue("userId", userId);
         }
+        if (sessionId != null) {
+            sql.append(" AND ce.session_id = :sessionId ");
+            params.addValue("sessionId", sessionId);
+        }
+        if (toolId != null && !toolId.isBlank()) {
+            sql.append("""
+                    AND EXISTS (
+                        SELECT 1
+                        FROM agent_run ar
+                        JOIN tool_call_trace tct
+                          ON tct.agent_run_id = ar.id
+                         AND tct.tenant_id = ar.tenant_id
+                        WHERE ar.tenant_id = ce.tenant_id
+                          AND ar.exchange_id = ce.id
+                          AND tct.tool_id = :toolId
+                    )
+                    """);
+            params.addValue("toolId", toolId.trim());
+        }
         if (from != null) {
-            sql.append(" AND ce.started_at >= :from");
+            sql.append(" AND ce.started_at >= :from ");
             params.addValue("from", from);
         }
         if (to != null) {
-            sql.append(" AND ce.started_at <= :to");
+            sql.append(" AND ce.started_at <= :to ");
             params.addValue("to", to);
         }
         return params;

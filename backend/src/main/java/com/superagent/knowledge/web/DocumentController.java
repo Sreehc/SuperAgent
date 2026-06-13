@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -66,6 +67,47 @@ public class DocumentController {
     @DeleteMapping("/{documentId}")
     public ApiResponse<DeleteDocumentResponse> deleteDocument(@PathVariable long documentId) {
         return ApiResponse.success(new DeleteDocumentResponse(knowledgeService.deleteDocument(documentId)));
+    }
+
+    @PatchMapping("/{documentId}")
+    public ApiResponse<DocumentDetailItem> updateDocument(
+            @PathVariable long documentId,
+            @Valid @RequestBody UpdateDocumentRequest request
+    ) {
+        var document = knowledgeService.updateDocumentMetadata(
+                documentId,
+                request.title(),
+                request.category(),
+                request.tags(),
+                request.knowledgeDomainId(),
+                request.chunkingProfileId()
+        );
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("category", document.category());
+        metadata.put("tags", document.tags());
+        metadata.put("knowledgeDomainId", document.knowledgeDomainId());
+        metadata.put("chunkingProfileId", document.chunkingProfileId());
+        metadata.put("graphSyncStatus", document.graphSyncStatus());
+        metadata.put("graphErrorMessage", document.graphErrorMessage());
+        metadata.put("activeVersionNo", document.activeVersionNo());
+        return ApiResponse.success(new DocumentDetailItem(
+                document.id(),
+                document.knowledgeBaseId(),
+                document.knowledgeDomainId(),
+                document.chunkingProfileId(),
+                document.activeVersionNo(),
+                document.title(),
+                document.fileName(),
+                document.fileType(),
+                document.fileSize(),
+                document.status().name(),
+                document.chunkCount(),
+                document.errorMessage(),
+                document.parsedText(),
+                metadata,
+                document.createdAt(),
+                document.updatedAt()
+        ));
     }
 
     @PostMapping("/{documentId}/reprocess")
@@ -163,6 +205,15 @@ public class DocumentController {
     }
 
     public record ReprocessRequest(@Size(max = 500) String reason, Long chunkingProfileId) {
+    }
+
+    public record UpdateDocumentRequest(
+            @Size(max = 255) String title,
+            @Size(max = 128) String category,
+            @Size(max = 1000) String tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId
+    ) {
     }
 
     public record DocumentDetailItem(

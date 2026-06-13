@@ -54,6 +54,7 @@ class AgentRunExecutionServiceTest {
                 toolRegistryService,
                 toolExecutionService,
                 runtimeSettingsService,
+                new AgentAnswerComposer(),
                 new ObjectMapper(),
                 Runnable::run
         );
@@ -100,6 +101,53 @@ class AgentRunExecutionServiceTest {
         verify(toolExecutionService).execute(eq(webSearch), any());
         verify(repository).updateRunProgress(9L, 55L, 3, 1, "success", null);
         verify(streamRegistry, never()).emit(eq(55L), eq("error"), anyMap());
+    }
+
+    @Test
+    void shouldComposeFinalAnswerFromToolObservationOutput() {
+        InternalAgentRunRequest request = new InternalAgentRunRequest(
+                9L,
+                3L,
+                7L,
+                11L,
+                5L,
+                "ADMIN",
+                "请联网查询今天的行业变化",
+                null,
+                "SUMMARY_PLUS_WINDOW",
+                List.of("最近一次消息")
+        );
+        ToolSpec webSearch = new ToolSpec("web.search", 1L, "core-tools", "0.1.0", "web", Map.of(), Map.of(), 10_000, "none", "standard", false);
+
+        when(runtimeSettingsService.resolveExecutionPolicy(9L))
+                .thenReturn(new TenantRuntimeSettingsService.ExecutionPolicy(true, 6, 6, true));
+        when(toolRegistryService.listEnabledTools(9L)).thenReturn(Map.of("web.search", webSearch));
+        when(repository.createStep(anyLong(), anyLong(), anyInt(), anyString(), anyString(), any(), any(), any(), any(), any(), anyString()))
+                .thenReturn(101L, 102L, 103L, 103L, 104L, 105L, 106L);
+        when(repository.createToolCall(anyLong(), anyLong(), any(), anyString(), any(), anyString())).thenReturn(301L);
+        when(toolExecutionService.execute(eq(webSearch), any()))
+                .thenReturn(new ToolResult(
+                        "web.search",
+                        "success",
+                        "返回 1 条网页搜索结果",
+                        Map.of("results", List.of(Map.of(
+                                "title", "行业快讯",
+                                "url", "https://example.com/news",
+                                "summary", "企业 Agent 平台正在强化评测、工具治理和知识库运营。"
+                        ))),
+                        null
+                ));
+
+        executionService.execute(56L, request, false);
+
+        ArgumentCaptor<Map<String, Object>> deltaPayloads = ArgumentCaptor.forClass(Map.class);
+        verify(streamRegistry, atLeastOnce()).emit(eq(56L), eq("delta"), deltaPayloads.capture());
+        String streamedAnswer = deltaPayloads.getAllValues().stream()
+                .map(payload -> String.valueOf(payload.getOrDefault("text", "")))
+                .reduce("", String::concat);
+        assertThat(streamedAnswer).contains("行业快讯");
+        assertThat(streamedAnswer).contains("企业 Agent 平台正在强化评测");
+        assertThat(streamedAnswer).doesNotContain("我已根据联网搜索结果完成回答，并生成了结构化搜索证据摘要。");
     }
 
     @Test

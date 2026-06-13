@@ -30,6 +30,8 @@ public class TraceAdminController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String executionMode,
             @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) Long sessionId,
+            @RequestParam(required = false) String toolId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to
     ) {
@@ -39,6 +41,8 @@ public class TraceAdminController {
                 status,
                 executionMode,
                 userId,
+                sessionId,
+                toolId,
                 from,
                 to
         );

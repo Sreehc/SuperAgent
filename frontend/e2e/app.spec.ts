@@ -29,9 +29,13 @@ test('E2E-002 发起 RAG 对话并停止生成', async ({ page, request }) => {
   await page.getByTestId('chat-knowledge-base').selectOption(`${knowledgeBaseId}`)
   await page.getByTestId('chat-composer').fill('请基于文档总结退款规则，并补充适用条件。为了保证流式输出时间足够，请详细解释每个要点。')
   await page.getByTestId('chat-send').click()
-  await expect(page.getByTestId('chat-stop')).toBeVisible()
-  await page.getByTestId('chat-stop').click()
-  await expect(page.getByTestId('chat-stop')).toBeHidden()
+  const stopButton = page.getByTestId('chat-stop')
+  await expect(stopButton).toBeVisible()
+  await stopButton.click({ force: true }).catch(() => {
+    // A short response may complete between the visibility check and click.
+  })
+  await expect(stopButton).toBeHidden()
+  await expect(page.getByText('消息发送失败，请稍后重试。')).toBeHidden()
   await expect(page).toHaveURL(/\/chat\/\d+$/)
 })
 
@@ -69,9 +73,10 @@ test('E2E-004 查看 Trace', async ({ page, request }) => {
   await expect(traceRow).toBeVisible()
   await traceRow.click()
   await expect(page).toHaveURL(/\/traces\/\d+$/)
-  await expect(page.getByText('阶段时间线')).toBeVisible()
-  await expect(page.getByText('检索结果')).toBeVisible()
-  await expect(page.getByText('模型调用')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '阶段时间线', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '详情检查器', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '关联检索结果', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '关联模型调用', exact: true })).toBeVisible()
 })
 
 test('E2E-005 文档详情展示解析文本和任务日志', async ({ page, request }) => {

@@ -16,8 +16,10 @@ import {
   listKnowledgeDocuments,
   rebuildDocumentGraph,
   reprocessKnowledgeDocument,
+  updateKnowledgeDocument,
   updateKnowledgeBase,
   uploadKnowledgeDocument,
+  uploadKnowledgeDocumentsBatch,
 } from '../api'
 import type {
   ChunkingProfileItem,
@@ -57,6 +59,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const deletingDocument = ref(false)
   const deletingKnowledgeBase = ref(false)
   const savingKnowledgeBase = ref(false)
+  const savingDocumentMetadata = ref(false)
   const errorMessage = ref('')
   const keyword = ref('')
   const statusFilter = ref('')
@@ -287,6 +290,63 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
+  async function uploadDocuments(payload: {
+    files: File[]
+    category?: string
+    tags?: string
+    knowledgeDomainId?: number | null
+    chunkingProfileId?: number | null
+  }) {
+    if (!selectedKnowledgeBase.value || payload.files.length === 0) {
+      return
+    }
+    uploadingDocument.value = true
+    errorMessage.value = ''
+    try {
+      if (payload.files.length === 1) {
+        await uploadKnowledgeDocument(selectedKnowledgeBase.value.id, {
+          file: payload.files[0],
+          category: payload.category,
+          tags: payload.tags,
+          knowledgeDomainId: payload.knowledgeDomainId,
+          chunkingProfileId: payload.chunkingProfileId,
+        })
+      } else {
+        await uploadKnowledgeDocumentsBatch(selectedKnowledgeBase.value.id, payload)
+      }
+      await Promise.all([fetchKnowledgeBases(), refreshDocuments(), selectKnowledgeBase(selectedKnowledgeBase.value.id)])
+    } catch {
+      errorMessage.value = '文档上传失败，请检查文件类型和大小。'
+      throw new Error(errorMessage.value)
+    } finally {
+      uploadingDocument.value = false
+    }
+  }
+
+  async function saveDocumentMetadata(payload: {
+    title?: string
+    category?: string
+    tags?: string
+    knowledgeDomainId?: number | null
+    chunkingProfileId?: number | null
+  }) {
+    if (!selectedDocument.value) {
+      return
+    }
+    savingDocumentMetadata.value = true
+    errorMessage.value = ''
+    try {
+      const response = await updateKnowledgeDocument(selectedDocument.value.id, payload)
+      selectedDocument.value = response.data.data
+      await refreshDocuments()
+    } catch {
+      errorMessage.value = '文档元数据保存失败，请稍后重试。'
+      throw new Error(errorMessage.value)
+    } finally {
+      savingDocumentMetadata.value = false
+    }
+  }
+
   async function fetchGovernanceOptions(force = false) {
     if (!force && knowledgeDomains.value.length > 0 && chunkingProfiles.value.length > 0) {
       return
@@ -365,6 +425,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     deletingDocument,
     deletingKnowledgeBase,
     savingKnowledgeBase,
+    savingDocumentMetadata,
     errorMessage,
     keyword,
     statusFilter,
@@ -382,6 +443,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     saveKnowledgeBase,
     removeKnowledgeBase,
     uploadDocument,
+    uploadDocuments,
+    saveDocumentMetadata,
     reprocessDocument,
     removeCurrentDocument,
     fetchGovernanceOptions,

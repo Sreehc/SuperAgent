@@ -37,6 +37,14 @@
         <span>用户 ID</span>
         <input v-model="traceStore.userIdFilter" type="search" placeholder="按用户 ID 筛选" @keyup.enter="traceStore.fetchTraces" />
       </label>
+      <label class="field trace-filter">
+        <span>会话 ID</span>
+        <input v-model="traceStore.sessionIdFilter" type="search" placeholder="按会话 ID 筛选" @keyup.enter="traceStore.fetchTraces" />
+      </label>
+      <label class="field trace-filter">
+        <span>工具 ID</span>
+        <input v-model="traceStore.toolIdFilter" type="search" placeholder="knowledge.search" @keyup.enter="traceStore.fetchTraces" />
+      </label>
       <button class="btn btn-secondary" data-testid="trace-refresh" type="button" @click="traceStore.fetchTraces">刷新</button>
     </section>
 

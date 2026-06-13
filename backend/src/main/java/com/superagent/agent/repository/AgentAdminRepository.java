@@ -275,6 +275,92 @@ public class AgentAdminRepository {
         );
     }
 
+    public List<PluginToolCapabilityRow> listPluginToolCapabilityRows(long tenantId) {
+        return jdbcTemplate.query("""
+                        SELECT
+                            pr.id AS plugin_id,
+                            pr.plugin_key,
+                            pr.manifest_json::text AS manifest_json,
+                            COALESCE(pi.enabled, FALSE) AS plugin_enabled,
+                            ttb.tool_id,
+                            COALESCE(ttb.enabled, FALSE) AS tool_enabled
+                        FROM plugin_registry pr
+                        LEFT JOIN plugin_installation pi
+                          ON pi.plugin_id = pr.id
+                         AND pi.tenant_id = :tenantId
+                        LEFT JOIN tenant_tool_binding ttb
+                          ON ttb.plugin_id = pr.id
+                         AND ttb.tenant_id = :tenantId
+                        WHERE pr.status = 'active'
+                        ORDER BY pr.plugin_key ASC, ttb.tool_id ASC
+                        """,
+                Map.of("tenantId", tenantId),
+                (rs, rowNum) -> new PluginToolCapabilityRow(
+                        rs.getLong("plugin_id"),
+                        rs.getString("plugin_key"),
+                        rs.getString("manifest_json"),
+                        rs.getBoolean("plugin_enabled"),
+                        rs.getString("tool_id"),
+                        rs.getBoolean("tool_enabled")
+                )
+        );
+    }
+
+    public List<String> findConfiguredSecretKeys(long tenantId, String toolId) {
+        return jdbcTemplate.query("""
+                        SELECT secret_key
+                        FROM tenant_tool_secret
+                        WHERE tenant_id = :tenantId
+                          AND tool_id = :toolId
+                        ORDER BY secret_key ASC
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("toolId", toolId),
+                (rs, rowNum) -> rs.getString("secret_key")
+        );
+    }
+
+    public boolean upsertToolSecret(long tenantId, String toolId, String secretKey, String secretValue) {
+        return jdbcTemplate.update("""
+                        INSERT INTO tenant_tool_secret (tenant_id, tool_id, secret_key, secret_value)
+                        VALUES (:tenantId, :toolId, :secretKey, :secretValue)
+                        ON CONFLICT (tenant_id, tool_id, secret_key)
+                        DO UPDATE SET secret_value = EXCLUDED.secret_value,
+                                      updated_at = NOW()
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("toolId", toolId)
+                        .addValue("secretKey", secretKey)
+                        .addValue("secretValue", secretValue)
+        ) > 0;
+    }
+
+    public boolean deleteToolSecret(long tenantId, String toolId, String secretKey) {
+        return jdbcTemplate.update("""
+                        DELETE FROM tenant_tool_secret
+                        WHERE tenant_id = :tenantId
+                          AND tool_id = :toolId
+                          AND secret_key = :secretKey
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("toolId", toolId)
+                        .addValue("secretKey", secretKey)
+        ) > 0;
+    }
+
+    public record PluginToolCapabilityRow(
+            long pluginId,
+            String pluginKey,
+            String manifestJson,
+            boolean pluginEnabled,
+            String toolId,
+            boolean toolEnabled
+    ) {
+    }
+
     private Map<String, Object> parseMap(String json) {
         try {
             return objectMapper.readValue(json, MAP_TYPE);

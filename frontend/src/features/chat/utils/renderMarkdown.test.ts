@@ -10,4 +10,13 @@ describe('renderMarkdown', () => {
     expect(html).not.toContain('onerror=')
     expect(html).not.toContain('javascript:alert')
   })
+
+  it('wraps fenced code blocks with safe copy controls', () => {
+    const html = renderMarkdown('```ts\nconst answer = 42\n```')
+
+    expect(html).toContain('markdown-codeblock')
+    expect(html).toContain('ts')
+    expect(html).toContain('复制代码')
+    expect(html).toContain('const answer = 42')
+  })
 })

@@ -1,5 +1,7 @@
 export type MemoryStrategy = 'NONE' | 'SLIDING_WINDOW' | 'SUMMARY_WINDOW' | 'SUMMARY_PLUS_WINDOW'
 
+export type RequestedExecutionMode = 'AUTO' | 'RAG_QA' | 'REACT_AGENT'
+
 export type ConversationStatus = 'active' | 'archived' | 'deleted'
 
 export type MessageRole = 'user' | 'assistant' | 'system'
@@ -27,6 +29,63 @@ export interface ConversationMessage {
   content: string
   status: string
   createdAt: string
+}
+
+export type FeedbackRating = 'up' | 'down' | 'correction'
+
+export interface ConversationFeedback {
+  id: number
+  sessionId: number
+  exchangeId: number | null
+  messageId: number
+  actorUserId: number
+  rating: FeedbackRating
+  comment: string | null
+  correction: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FeedbackRequest {
+  rating: FeedbackRating
+  comment?: string | null
+  correction?: string | null
+}
+
+export interface DeleteFeedbackResponse {
+  deleted: boolean
+  messageId: number
+}
+
+export interface DisplayReference {
+  ordinal: number
+  documentId: number
+  chunkId: number
+  title: string
+  quote: string
+  score: number | null
+}
+
+export interface DisplayMessage extends ConversationMessage {
+  references: DisplayReference[]
+  feedback: ConversationFeedback | null
+}
+
+export interface RunTimelineItem {
+  type: 'agent_step' | 'tool_start' | 'tool_result' | 'checkpoint' | 'resume'
+  title: string
+  summary: string
+}
+
+export interface StreamState {
+  exchangeId: number | null
+  runId: number | null
+  stage: string | null
+  recommendations: string[]
+  error: string
+  stopped: boolean
+  timeline: RunTimelineItem[]
 }
 
 export interface PagedResult<T> {
@@ -59,6 +118,7 @@ export interface StreamMessageRequest {
   message: string
   knowledgeBaseId?: number | null
   memoryStrategy?: MemoryStrategy
+  executionMode?: RequestedExecutionMode
 }
 
 export interface StreamStartEvent {

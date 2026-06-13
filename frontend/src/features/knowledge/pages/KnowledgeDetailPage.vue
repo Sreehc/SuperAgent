@@ -112,11 +112,11 @@
         <form class="upload-form" @submit.prevent="submitUpload">
           <label class="upload-drop">
             <span>文件</span>
-            <input ref="fileInput" data-testid="document-upload-file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
-            <strong>{{ selectedFile?.name ?? '选择文档文件' }}</strong>
-            <small>{{ selectedFile ? formatFileSize(selectedFile.size) : 'PDF / Word / Markdown / HTML / TXT' }}</small>
+            <input ref="fileInput" data-testid="document-upload-file" type="file" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,.md,.html,.txt" @change="onFileChange" />
+            <strong>{{ selectedFilesLabel }}</strong>
+            <small>{{ selectedFiles.length ? `${selectedFiles.length} 个文件，合计 ${formatFileSize(selectedFilesSize)}` : 'PDF / Word / Markdown / HTML / TXT，支持一次最多 20 个文件' }}</small>
           </label>
-          <label class="field"><span>标题</span><input v-model="uploadTitle" type="text" placeholder="可选" /></label>
+          <label class="field"><span>标题</span><input v-model="uploadTitle" type="text" placeholder="单文件上传时可选" :disabled="selectedFiles.length > 1" /></label>
           <label class="field"><span>分类</span><input v-model="uploadCategory" type="text" placeholder="可选" /></label>
           <label class="field"><span>标签</span><input v-model="uploadTags" type="text" placeholder="逗号分隔" /></label>
           <label class="field">
@@ -133,8 +133,8 @@
               <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">{{ profile.name }} / {{ profile.strategy }}</option>
             </select>
           </label>
-          <button class="btn btn-primary upload-submit" data-testid="document-upload-submit" type="submit" :disabled="knowledgeStore.uploadingDocument || !selectedFile">
-            {{ knowledgeStore.uploadingDocument ? '上传中...' : '上传文档' }}
+          <button class="btn btn-primary upload-submit" data-testid="document-upload-submit" type="submit" :disabled="knowledgeStore.uploadingDocument || selectedFiles.length === 0">
+            {{ knowledgeStore.uploadingDocument ? '上传中...' : (selectedFiles.length > 1 ? '批量上传' : '上传文档') }}
           </button>
         </form>
         <div class="governance-metrics">
@@ -158,7 +158,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const knowledgeStore = useKnowledgeStore()
 const fileInput = ref<HTMLInputElement | null>(null)
-const selectedFile = ref<File | null>(null)
+const selectedFiles = ref<File[]>([])
 const uploadTitle = ref('')
 const uploadCategory = ref('')
 const uploadTags = ref('')
@@ -169,6 +169,16 @@ const editName = ref('')
 const editDescription = ref('')
 
 const isAdmin = computed(() => ['OWNER', 'ADMIN'].includes(authStore.currentRole ?? ''))
+const selectedFilesSize = computed(() => selectedFiles.value.reduce((total, file) => total + file.size, 0))
+const selectedFilesLabel = computed(() => {
+  if (selectedFiles.value.length === 0) {
+    return '选择文档文件'
+  }
+  if (selectedFiles.value.length === 1) {
+    return selectedFiles.value[0].name
+  }
+  return selectedFiles.value.map((file) => file.name).slice(0, 2).join(', ') + (selectedFiles.value.length > 2 ? ` 等 ${selectedFiles.value.length} 个` : '')
+})
 
 onMounted(async () => {
   await Promise.all([loadCurrentKnowledgeBase(), loadGovernanceOptions()])
@@ -193,22 +203,32 @@ async function loadCurrentKnowledgeBase() {
 
 function onFileChange(event: Event) {
   const target = event.target as HTMLInputElement
-  selectedFile.value = target.files?.[0] ?? null
+  selectedFiles.value = Array.from(target.files ?? [])
 }
 
 async function submitUpload() {
-  if (!selectedFile.value) {
+  if (selectedFiles.value.length === 0) {
     return
   }
-  await knowledgeStore.uploadDocument({
-    file: selectedFile.value,
-    title: uploadTitle.value,
-    category: uploadCategory.value,
-    tags: uploadTags.value,
-    knowledgeDomainId: parseSelectedId(uploadKnowledgeDomainId.value),
-    chunkingProfileId: parseSelectedId(uploadChunkingProfileId.value),
-  })
-  selectedFile.value = null
+  if (selectedFiles.value.length === 1) {
+    await knowledgeStore.uploadDocument({
+      file: selectedFiles.value[0],
+      title: uploadTitle.value,
+      category: uploadCategory.value,
+      tags: uploadTags.value,
+      knowledgeDomainId: parseSelectedId(uploadKnowledgeDomainId.value),
+      chunkingProfileId: parseSelectedId(uploadChunkingProfileId.value),
+    })
+  } else {
+    await knowledgeStore.uploadDocuments({
+      files: selectedFiles.value,
+      category: uploadCategory.value,
+      tags: uploadTags.value,
+      knowledgeDomainId: parseSelectedId(uploadKnowledgeDomainId.value),
+      chunkingProfileId: parseSelectedId(uploadChunkingProfileId.value),
+    })
+  }
+  selectedFiles.value = []
   uploadTitle.value = ''
   uploadCategory.value = ''
   uploadTags.value = ''

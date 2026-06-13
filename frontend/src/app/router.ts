@@ -2,14 +2,21 @@ import type { Pinia } from 'pinia'
 import { createRouter as createVueRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import AppShell from './shells/AppShell.vue'
 import { useAuthStore } from '../features/auth/store/auth'
-import { LoginPage } from '../features/auth/pages'
-import { ToolsConsolePage } from '../features/agent/pages'
-import { ChatWorkspacePage } from '../features/chat/pages'
-import { GovernanceConsolePage } from '../features/governance/pages'
-import { DocumentDetailPage, KnowledgeDetailPage, KnowledgeListPage } from '../features/knowledge/pages'
-import { PermissionDeniedPage } from '../features/placeholders/pages'
-import { SettingsPage } from '../features/settings/pages'
-import { TraceDetailPage, TraceListPage } from '../features/traces/pages'
+
+const LoginPage = () => import('../features/auth/pages/LoginPage.vue')
+const AuditLogPage = () => import('../features/audit/pages/AuditLogPage.vue')
+const ToolsConsolePage = () => import('../features/agent/pages/ToolsConsolePage.vue')
+const ChatWorkspacePage = () => import('../features/chat/pages/ChatWorkspacePage.vue')
+const EvaluationConsolePage = () => import('../features/evaluation/pages/EvaluationConsolePage.vue')
+const FeedbackConsolePage = () => import('../features/feedback/pages/FeedbackConsolePage.vue')
+const GovernanceConsolePage = () => import('../features/governance/pages/GovernanceConsolePage.vue')
+const DocumentDetailPage = () => import('../features/knowledge/pages/DocumentDetailPage.vue')
+const KnowledgeDetailPage = () => import('../features/knowledge/pages/KnowledgeDetailPage.vue')
+const KnowledgeListPage = () => import('../features/knowledge/pages/KnowledgeListPage.vue')
+const PermissionDeniedPage = () => import('../features/placeholders/pages/PermissionDeniedPage.vue')
+const SettingsPage = () => import('../features/settings/pages/SettingsPage.vue')
+const TraceDetailPage = () => import('../features/traces/pages/TraceDetailPage.vue')
+const TraceListPage = () => import('../features/traces/pages/TraceListPage.vue')
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -136,6 +143,36 @@ export function createRouter(pinia: Pinia) {
               requiresAuth: true,
               roles: ['OWNER', 'ADMIN'],
               menuLabel: '治理',
+            },
+          },
+          {
+            path: '/feedback',
+            name: 'feedback',
+            component: FeedbackConsolePage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: '反馈',
+            },
+          },
+          {
+            path: '/evaluations',
+            name: 'evaluations',
+            component: EvaluationConsolePage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: '评测',
+            },
+          },
+          {
+            path: '/audit-logs',
+            name: 'audit-logs',
+            component: AuditLogPage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: '审计',
             },
           },
           {

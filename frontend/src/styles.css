@@ -713,7 +713,73 @@ pre {
 }
 
 .markdown-body pre {
-  white-space: pre-wrap;
+  margin: 0;
+  overflow: auto;
+  white-space: pre;
+}
+
+.markdown-body code {
+  padding: 2px 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.markdown-body pre code {
+  display: block;
+  min-width: max-content;
+  padding: 12px;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-main);
+  background: transparent;
+  line-height: 1.6;
+}
+
+.markdown-codeblock {
+  overflow: hidden;
+  margin: 12px 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  background: color-mix(in srgb, var(--bg-inset), #000 10%);
+}
+
+.markdown-codeblock__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--bg-surface), transparent 20%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.markdown-codeblock__copy,
+.message-copy-button {
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.markdown-codeblock__copy {
+  min-height: 24px;
+  padding: 0 8px;
+}
+
+.markdown-codeblock__copy:hover,
+.message-copy-button:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent), transparent 35%);
+  background: var(--accent-soft);
 }
 
 @keyframes spin {

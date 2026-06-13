@@ -477,6 +477,53 @@ public class KnowledgeRepository {
         ) > 0;
     }
 
+    public KnowledgeDocument updateDocumentMetadata(
+            long tenantId,
+            long documentId,
+            String title,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            String category,
+            List<String> tags
+    ) {
+        KnowledgeDocument existing = getKnowledgeDocument(tenantId, documentId).orElseThrow();
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("category", category == null ? "" : category);
+        metadata.put("tags", tags == null ? List.of() : tags);
+        if (existing.parsedText() != null && !existing.parsedText().isBlank()) {
+            metadata.put("parsedText", existing.parsedText());
+        }
+        jdbcTemplate.update(connection -> {
+            var statement = connection.prepareStatement("""
+                    UPDATE knowledge_document
+                    SET title = ?,
+                        knowledge_domain_id = ?,
+                        chunking_profile_id = ?,
+                        metadata = ?::jsonb,
+                        updated_at = NOW()
+                    WHERE tenant_id = ?
+                      AND id = ?
+                      AND deleted_at IS NULL
+                    """);
+            statement.setString(1, title);
+            if (knowledgeDomainId == null) {
+                statement.setNull(2, Types.BIGINT);
+            } else {
+                statement.setLong(2, knowledgeDomainId);
+            }
+            if (chunkingProfileId == null) {
+                statement.setNull(3, Types.BIGINT);
+            } else {
+                statement.setLong(3, chunkingProfileId);
+            }
+            statement.setString(4, writeMetadata(metadata));
+            statement.setLong(5, tenantId);
+            statement.setLong(6, documentId);
+            return statement;
+        });
+        return getKnowledgeDocument(tenantId, documentId).orElseThrow();
+    }
+
     public KnowledgeDocument createKnowledgeDocument(
             long tenantId,
             long knowledgeBaseId,

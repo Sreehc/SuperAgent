@@ -122,6 +122,56 @@ class TraceAdminIntegrationTest {
         assertThat(listJson.path("data").path("items").isArray()).isTrue();
         assertThat(listJson.path("data").path("total").asInt()).isGreaterThanOrEqualTo(1);
 
+        MvcResult sessionFilteredResult = mockMvc.perform(get("/api/v1/admin/traces")
+                        .param("sessionId", String.valueOf(sessionId))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andReturn();
+        assertThat(sessionFilteredResult.getResolvedException()).isNull();
+        assertThat(sessionFilteredResult.getResponse().getStatus()).isEqualTo(200);
+        JsonNode sessionFiltered = objectMapper.readTree(sessionFilteredResult
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(sessionFiltered.path("data").path("total").asInt()).isGreaterThanOrEqualTo(1);
+
+        long agentRunId = jdbcTemplate.queryForObject("""
+                        INSERT INTO agent_run (
+                            tenant_id, session_id, exchange_id, status, memory_strategy, question, route_reason
+                        ) VALUES (?, ?, ?, 'completed', 'SUMMARY_PLUS_WINDOW', '退款规则是什么？', 'trace filter test')
+                        RETURNING id
+                        """,
+                Long.class,
+                tenantId,
+                sessionId,
+                exchangeId
+        );
+        jdbcTemplate.update("""
+                        INSERT INTO tool_call_trace (
+                            tenant_id, agent_run_id, tool_id, request_summary, response_summary, status, latency_ms
+                        ) VALUES (?, ?, 'knowledge.search', 'query=退款规则', 'found evidence', 'success', 12)
+                        """,
+                tenantId,
+                agentRunId
+        );
+        JsonNode toolFiltered = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/traces")
+                        .param("toolId", "knowledge.search")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(toolFiltered.path("data").path("total").asInt()).isGreaterThanOrEqualTo(1);
+        JsonNode unmatchedToolFiltered = objectMapper.readTree(mockMvc.perform(get("/api/v1/admin/traces")
+                        .param("toolId", "web.fetch")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(unmatchedToolFiltered.path("data").path("total").asInt()).isZero();
+
         MvcResult detailResponse = mockMvc.perform(get("/api/v1/admin/traces/{exchangeId}", exchangeId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .header("X-Tenant-Id", tenantId))

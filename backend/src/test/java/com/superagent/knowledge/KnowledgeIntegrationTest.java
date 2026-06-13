@@ -209,6 +209,63 @@ class KnowledgeIntegrationTest {
     }
 
     @Test
+    void shouldBatchUploadDocumentsAndUpdateDocumentMetadata() throws Exception {
+        LoginSession owner = login("admin", "password123");
+        long knowledgeBaseId = createKnowledgeBase(owner, "批量上传测试", "published");
+
+        MockMultipartFile fileOne = new MockMultipartFile(
+                "files",
+                "policy-one.txt",
+                "text/plain",
+                "first policy".getBytes(StandardCharsets.UTF_8)
+        );
+        MockMultipartFile fileTwo = new MockMultipartFile(
+                "files",
+                "policy-two.txt",
+                "text/plain",
+                "second policy".getBytes(StandardCharsets.UTF_8)
+        );
+
+        JsonNode batch = objectMapper.readTree(mockMvc.perform(multipart("/api/v1/knowledge-bases/{knowledgeBaseId}/documents/batch", knowledgeBaseId)
+                        .file(fileOne)
+                        .file(fileTwo)
+                        .param("category", "售后")
+                        .param("tags", "refund,batch")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(batch.path("data").path("uploadedCount").asInt()).isEqualTo(2);
+        long documentId = batch.path("data").path("items").get(0).path("id").asLong();
+
+        JsonNode patched = objectMapper.readTree(mockMvc.perform(patch("/api/v1/documents/{documentId}", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken())
+                        .header("X-Tenant-Id", owner.tenantId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "title", "更新后的政策",
+                                "category", "运营",
+                                "tags", "ops,review"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8));
+        assertThat(patched.path("data").path("title").asText()).isEqualTo("更新后的政策");
+        assertThat(patched.path("data").path("metadata").path("category").asText()).isEqualTo("运营");
+        assertThat(patched.path("data").path("metadata").path("tags").toString()).contains("ops", "review");
+
+        Integer documentCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM knowledge_document WHERE knowledge_base_id = ? AND status = 'uploaded'",
+                Integer.class,
+                knowledgeBaseId
+        );
+        assertThat(documentCount).isEqualTo(2);
+    }
+
+    @Test
     void shouldDeleteDocumentAndHideItFromApis() throws Exception {
         LoginSession owner = login("admin", "password123");
         LoginSession member = login("member", "password123");

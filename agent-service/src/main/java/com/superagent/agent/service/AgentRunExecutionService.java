@@ -27,6 +27,7 @@ public class AgentRunExecutionService {
     private final ToolRegistryService toolRegistryService;
     private final ToolExecutionService toolExecutionService;
     private final TenantRuntimeSettingsService runtimeSettingsService;
+    private final AgentAnswerComposer answerComposer;
     private final ObjectMapper objectMapper;
     private final Executor executor;
 
@@ -37,6 +38,7 @@ public class AgentRunExecutionService {
             ToolRegistryService toolRegistryService,
             ToolExecutionService toolExecutionService,
             TenantRuntimeSettingsService runtimeSettingsService,
+            AgentAnswerComposer answerComposer,
             ObjectMapper objectMapper
     ) {
         this(
@@ -45,6 +47,7 @@ public class AgentRunExecutionService {
                 toolRegistryService,
                 toolExecutionService,
                 runtimeSettingsService,
+                answerComposer,
                 objectMapper,
                 new SimpleAsyncTaskExecutor("agent-run-")
         );
@@ -56,6 +59,7 @@ public class AgentRunExecutionService {
             ToolRegistryService toolRegistryService,
             ToolExecutionService toolExecutionService,
             TenantRuntimeSettingsService runtimeSettingsService,
+            AgentAnswerComposer answerComposer,
             ObjectMapper objectMapper,
             Executor executor
     ) {
@@ -64,6 +68,7 @@ public class AgentRunExecutionService {
         this.toolRegistryService = toolRegistryService;
         this.toolExecutionService = toolExecutionService;
         this.runtimeSettingsService = runtimeSettingsService;
+        this.answerComposer = answerComposer;
         this.objectMapper = objectMapper;
         this.executor = executor;
     }
@@ -660,29 +665,7 @@ public class AgentRunExecutionService {
         if (!"success".equalsIgnoreCase(context.toolResult.status())) {
             return "工具执行失败，但已返回结构化错误信息：" + context.toolResult.summary();
         }
-        return buildAnswer(context.selectedToolId, context.toolResult);
-    }
-
-    private String buildAnswer(String toolId, ToolResult toolResult) {
-        if ("knowledge.search".equals(toolId)) {
-            return "我已根据知识库证据完成回答，并保留了后续多工具编排扩展位。";
-        }
-        if ("web.search".equals(toolId)) {
-            return "我已根据联网搜索结果完成回答，并生成了结构化搜索证据摘要。";
-        }
-        if ("web.fetch".equals(toolId)) {
-            return "我已根据网页抓取结果完成回答，并保留了引用上下文。";
-        }
-        if ("http.request".equals(toolId)) {
-            return "我已根据受控 HTTP 请求结果完成回答。";
-        }
-        if ("graph.query".equals(toolId)) {
-            return "我已根据图谱证据完成回答，并提取了实体与关联关系。";
-        }
-        if ("python.sandbox".equals(toolId)) {
-            return "我已根据受控 Python Sandbox 的执行结果完成回答。";
-        }
-        return toolResult.summary().isBlank() ? "我已完成当前 Agent 工具执行。" : toolResult.summary();
+        return answerComposer.compose(context.request, context.selectedToolId, context.toolResult);
     }
 
     private Map<String, Object> buildToolMetadata(ToolSpec toolSpec, Map<String, Object> toolInput, ToolResult toolResult) {

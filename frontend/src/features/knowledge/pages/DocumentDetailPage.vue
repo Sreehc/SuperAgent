@@ -15,6 +15,7 @@
         </div>
       </div>
       <div v-if="isAdmin" class="action-row document-actions">
+        <button class="btn btn-ghost btn-sm" type="button" @click="editingMetadata = !editingMetadata">{{ editingMetadata ? '取消编辑' : '编辑元数据' }}</button>
         <select v-model="reprocessChunkingProfileId">
           <option value="">沿用当前切块策略</option>
           <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">{{ profile.name }} / {{ profile.strategy }}</option>
@@ -67,10 +68,39 @@
         </main>
 
         <aside class="document-inspector inspector-box">
+          <article v-if="isAdmin && editingMetadata" class="inspector-section">
+            <p class="section-label">Metadata editor</p>
+            <h3>编辑元数据</h3>
+            <form class="metadata-form" @submit.prevent="saveMetadata">
+              <label class="field"><span>标题</span><input v-model="metadataForm.title" type="text" /></label>
+              <label class="field"><span>分类</span><input v-model="metadataForm.category" type="text" /></label>
+              <label class="field"><span>标签</span><input v-model="metadataForm.tags" type="text" placeholder="逗号分隔" /></label>
+              <label class="field">
+                <span>知识域</span>
+                <select v-model="metadataForm.knowledgeDomainId">
+                  <option value="">不绑定知识域</option>
+                  <option v-for="domain in knowledgeStore.knowledgeDomains" :key="domain.id" :value="`${domain.id}`">{{ domain.name }} / {{ domain.code }}</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>切块策略</span>
+                <select v-model="metadataForm.chunkingProfileId">
+                  <option value="">默认策略</option>
+                  <option v-for="profile in knowledgeStore.chunkingProfiles" :key="profile.id" :value="`${profile.id}`">{{ profile.name }} / {{ profile.strategy }}</option>
+                </select>
+              </label>
+              <button class="btn btn-primary btn-sm" type="submit" :disabled="knowledgeStore.savingDocumentMetadata || !metadataForm.title.trim()">
+                {{ knowledgeStore.savingDocumentMetadata ? '保存中...' : '保存元数据' }}
+              </button>
+            </form>
+          </article>
+
           <article class="inspector-section">
             <p class="section-label">Metadata</p>
             <h3>元数据</h3>
             <dl class="meta-list">
+              <div><dt>分类</dt><dd>{{ metadataValue('category') }}</dd></div>
+              <div><dt>标签</dt><dd>{{ metadataTagsLabel }}</dd></div>
               <div><dt>知识域</dt><dd>{{ knowledgeDomainLabel }}</dd></div>
               <div><dt>切块策略</dt><dd>{{ chunkingProfileLabel }}</dd></div>
               <div><dt>当前版本</dt><dd>v{{ knowledgeStore.selectedDocument.activeVersionNo }}</dd></div>
@@ -161,6 +191,14 @@ const authStore = useAuthStore()
 const knowledgeStore = useKnowledgeStore()
 const isAdmin = computed(() => ['OWNER', 'ADMIN'].includes(authStore.currentRole ?? ''))
 const reprocessChunkingProfileId = ref('')
+const editingMetadata = ref(false)
+const metadataForm = ref({
+  title: '',
+  category: '',
+  tags: '',
+  knowledgeDomainId: '',
+  chunkingProfileId: '',
+})
 
 const knowledgeDomainLabel = computed(() => {
   const domainId = knowledgeStore.selectedDocument?.knowledgeDomainId ?? null
@@ -178,6 +216,10 @@ const graphNodeCount = computed(() => knowledgeStore.documentGraph?.nodes.length
 const graphEdgeCount = computed(() => knowledgeStore.documentGraph?.edges.length ?? 0)
 const nodeTypeSummary = computed(() => summarizeTypes(knowledgeStore.documentGraph?.nodes.map((node) => node.type) ?? []))
 const edgeTypeSummary = computed(() => summarizeTypes(knowledgeStore.documentGraph?.edges.map((edge) => edge.type) ?? []))
+const metadataTagsLabel = computed(() => {
+  const value = knowledgeStore.selectedDocument?.metadata.tags
+  return Array.isArray(value) && value.length > 0 ? value.join(', ') : '-'
+})
 
 onMounted(async () => {
   await loadDocument()
@@ -200,6 +242,7 @@ async function loadDocument() {
     isAdmin.value ? knowledgeStore.fetchGovernanceOptions() : Promise.resolve(),
   ])
   reprocessChunkingProfileId.value = ''
+  applyMetadataForm()
 }
 
 async function triggerReprocess() {
@@ -217,6 +260,33 @@ async function deleteDocument() {
   const deleted = await knowledgeStore.removeCurrentDocument()
   if (deleted) {
     await router.push(`/knowledge/${knowledgeBaseId}`)
+  }
+}
+
+async function saveMetadata() {
+  await knowledgeStore.saveDocumentMetadata({
+    title: metadataForm.value.title.trim(),
+    category: metadataForm.value.category.trim(),
+    tags: metadataForm.value.tags.trim(),
+    knowledgeDomainId: parseSelectedId(metadataForm.value.knowledgeDomainId),
+    chunkingProfileId: parseSelectedId(metadataForm.value.chunkingProfileId),
+  })
+  applyMetadataForm()
+  editingMetadata.value = false
+}
+
+function applyMetadataForm() {
+  const document = knowledgeStore.selectedDocument
+  if (!document) {
+    return
+  }
+  const tags = document.metadata.tags
+  metadataForm.value = {
+    title: document.title,
+    category: typeof document.metadata.category === 'string' ? document.metadata.category : '',
+    tags: Array.isArray(tags) ? tags.join(', ') : '',
+    knowledgeDomainId: document.knowledgeDomainId ? `${document.knowledgeDomainId}` : '',
+    chunkingProfileId: document.chunkingProfileId ? `${document.chunkingProfileId}` : '',
   }
 }
 
@@ -373,6 +443,11 @@ function fileTypeLabel(type?: string) {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-2);
   background: var(--bg-surface);
+}
+
+.metadata-form {
+  display: grid;
+  gap: 10px;
 }
 
 .pane-heading,

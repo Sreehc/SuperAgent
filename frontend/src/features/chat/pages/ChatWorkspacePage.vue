@@ -1,246 +1,26 @@
 <template>
   <section class="chat-workspace">
-    <aside class="session-rail" aria-label="会话列表">
-      <div class="session-rail__top">
-        <div>
-          <p class="section-label">Sessions</p>
-          <h2>会话</h2>
-        </div>
-        <button
-          class="btn btn-primary btn-sm"
-          data-testid="chat-new-conversation"
-          :class="{ 'btn-loading': chatStore.creatingConversation }"
-          :disabled="chatStore.creatingConversation"
-          type="button"
-          @click="newConversation"
-        >
-          <PhPlus :size="14" weight="bold" aria-hidden="true" />
-          {{ chatStore.creatingConversation ? '创建中' : '新建' }}
-        </button>
-      </div>
-
-      <label class="field session-search">
-        <span>搜索会话</span>
-        <input v-model="chatStore.keyword" type="search" placeholder="输入标题" />
-      </label>
-
-      <LoadingSpinner v-if="chatStore.loadingConversations" text="正在加载会话列表..." />
-      <EmptyState v-else-if="chatStore.filteredConversations.length === 0" variant="chat" title="暂无会话" description="创建会话后开始提问。" />
-      <nav v-else class="conversation-list" aria-label="会话列表">
-        <article
-          v-for="conversation in chatStore.filteredConversations"
-          :key="conversation.id"
-          class="conversation-row"
-          :class="{ 'conversation-row--active': chatStore.selectedSessionId === conversation.id }"
-        >
-          <button type="button" class="conversation-row__main" @click="selectConversation(conversation.id)">
-            <strong v-if="chatStore.editingConversationId !== conversation.id">{{ conversation.title }}</strong>
-            <input
-              v-else
-              :value="conversation.title"
-              class="conversation-row__rename"
-              type="text"
-              @keyup.enter="renameConversation(conversation.id, ($event.target as HTMLInputElement).value)"
-              @blur="renameConversation(conversation.id, ($event.target as HTMLInputElement).value)"
-            />
-            <small>{{ formatTime(conversation.lastMessageAt) }}</small>
-          </button>
-          <div class="conversation-row__actions">
-            <button class="btn-text" type="button" @click="chatStore.editingConversationId = conversation.id">重命名</button>
-            <button class="btn-text" type="button" @click="archiveConversation(conversation.id)">归档</button>
-            <button class="btn-text danger-text" type="button" @click="removeConversation(conversation.id)">删除</button>
-          </div>
-        </article>
-      </nav>
-    </aside>
-
-    <main class="conversation-surface">
-      <header class="conversation-header">
-        <div>
-          <p class="section-label">Conversation</p>
-          <h1>{{ chatStore.selectedConversation?.title ?? '新会话' }}</h1>
-        </div>
-        <div class="runtime-meta">
-          <span class="metric-chip">{{ chatStore.memoryStrategy }}</span>
-          <span v-if="chatStore.streamState.stage" class="badge badge--accent">{{ chatStore.streamState.stage }}</span>
-          <button
-            v-if="chatStore.selectedSessionId && chatStore.streamState.runId && !chatStore.streaming"
-            class="btn btn-ghost btn-sm"
-            type="button"
-            @click="chatStore.resumeConversationRun"
-          >
-            恢复 Agent
-          </button>
-        </div>
-      </header>
-
-      <section class="message-region" aria-live="polite">
-        <LoadingSpinner v-if="chatStore.loadingMessages" text="正在加载消息..." />
-        <EmptyState
-          v-else-if="!chatStore.hasMessages"
-          variant="chat"
-          title="先发出第一个问题"
-          description="选择知识库和记忆策略后发送消息，系统会展示回答、引用和运行状态。"
-        />
-        <div v-else class="message-list">
-          <article
-            v-for="message in chatStore.messages"
-            :key="message.id"
-            class="message-block"
-            :class="`message-block--${message.role}`"
-          >
-            <header class="message-block__header">
-              <strong>{{ roleLabel(message.role) }}</strong>
-              <span>{{ formatTime(message.createdAt) }}</span>
-            </header>
-            <div class="message-block__content markdown-body" v-html="renderMessage(message.content || '...')" />
-            <p v-if="message.status === 'stopped'" class="message-block__status">已停止生成</p>
-            <p v-if="message.status === 'error'" class="message-block__status message-block__status--error">生成失败</p>
-            <div v-if="message.references.length" class="chip-row">
-              <button
-                v-for="reference in message.references"
-                :key="`${message.id}-${reference.ordinal}`"
-                class="reference-chip"
-                data-testid="chat-reference-chip"
-                type="button"
-                @click="chatStore.selectedReference = reference"
-              >
-                [{{ reference.ordinal }}] {{ reference.title }}
-              </button>
-            </div>
-            <div v-if="isAdmin && message.role === 'assistant' && chatStore.streamState.exchangeId" class="chip-row">
-              <button class="reference-chip" type="button" @click="openTrace(chatStore.streamState.exchangeId)">查看 Trace</button>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <footer class="composer-dock">
-        <div class="composer-chips">
-          <label class="composer-chip">
-            <span>记忆</span>
-            <select v-model="chatStore.memoryStrategy">
-              <option value="NONE">不启用记忆</option>
-              <option value="SLIDING_WINDOW">滑动窗口</option>
-              <option value="SUMMARY_WINDOW">摘要窗口</option>
-              <option value="SUMMARY_PLUS_WINDOW">摘要 + 最近消息</option>
-            </select>
-          </label>
-          <label class="composer-chip composer-chip--wide">
-            <span>知识库</span>
-            <select :value="chatStore.selectedKnowledgeBaseId ?? ''" data-testid="chat-knowledge-base" @change="updateKnowledgeBase">
-              <option value="">不指定</option>
-              <option v-for="knowledgeBase in chatStore.availableKnowledgeBases" :key="knowledgeBase.id" :value="knowledgeBase.id">
-                {{ knowledgeBase.name }}
-              </option>
-            </select>
-          </label>
-        </div>
-
-        <textarea
-          v-model="chatStore.composerMessage"
-          data-testid="chat-composer"
-          class="composer-input"
-          placeholder="输入问题"
-          rows="4"
-          :disabled="chatStore.streaming"
-        />
-
-        <div class="composer-actions">
-          <p v-if="chatStore.streamState.error" class="composer-error">{{ chatStore.streamState.error }}</p>
-          <div class="composer-buttons">
-            <button v-if="chatStore.streaming" class="btn btn-ghost" data-testid="chat-stop" type="button" @click="chatStore.stopStreaming">
-              <PhStop :size="15" weight="bold" aria-hidden="true" />
-              停止
-            </button>
-            <button
-              class="btn btn-primary"
-              :class="{ 'btn-loading': chatStore.streaming }"
-              data-testid="chat-send"
-              type="button"
-              :disabled="chatStore.streaming || !chatStore.composerMessage.trim()"
-              @click="sendMessage"
-            >
-              <PhPaperPlaneTilt v-if="!chatStore.streaming" :size="15" weight="bold" aria-hidden="true" />
-              {{ chatStore.streaming ? '生成中...' : '发送' }}
-            </button>
-          </div>
-        </div>
-
-        <div v-if="chatStore.streamState.recommendations.length" class="recommendations">
-          <span>推荐追问</span>
-          <div class="chip-row">
-            <button v-for="question in chatStore.streamState.recommendations" :key="question" class="reference-chip" type="button" @click="chatStore.composerMessage = question">
-              {{ question }}
-            </button>
-          </div>
-        </div>
-      </footer>
-    </main>
-
-    <aside class="evidence-inspector reference-panel" aria-label="引用来源">
-      <header class="evidence-inspector__header">
-        <div>
-          <p class="section-label">Evidence</p>
-          <h2>引用来源</h2>
-        </div>
-      </header>
-
-      <template v-if="chatStore.selectedReference">
-        <article class="reference-detail">
-          <h3>{{ chatStore.selectedReference.title }}</h3>
-          <blockquote>{{ chatStore.selectedReference.quote }}</blockquote>
-          <div class="score-meter">
-            <span>score</span>
-            <strong>{{ chatStore.selectedReference.score ?? '-' }}</strong>
-            <div><i :style="{ width: scoreWidth(chatStore.selectedReference.score) }"></i></div>
-          </div>
-          <dl>
-            <div><dt>chunk</dt><dd>#{{ chatStore.selectedReference.chunkId }}</dd></div>
-            <div><dt>document</dt><dd>#{{ chatStore.selectedReference.documentId }}</dd></div>
-          </dl>
-          <div class="action-row">
-            <button class="btn btn-secondary btn-sm" type="button" @click="openDocument(chatStore.selectedReference.documentId)">查看文档</button>
-            <button v-if="isAdmin && chatStore.streamState.exchangeId" class="btn btn-secondary btn-sm" type="button" @click="openTrace(chatStore.streamState.exchangeId)">
-              查看 Trace
-            </button>
-          </div>
-        </article>
-      </template>
-      <EmptyState v-else variant="search" title="等待引用来源" description="收到 reference 事件后，这里会展示文档摘录和 score。" />
-
-      <section v-if="chatStore.streamState.timeline.length" class="run-timeline">
-        <header>
-          <h3>Run timeline</h3>
-          <span class="metric-chip">run #{{ chatStore.streamState.runId }}</span>
-        </header>
-        <article v-for="(item, index) in chatStore.streamState.timeline" :key="`${item.type}-${index}`" class="run-step">
-          <span></span>
-          <div>
-            <strong>{{ item.title }}</strong>
-            <p>{{ item.summary }}</p>
-          </div>
-        </article>
-      </section>
-    </aside>
+    <SessionRail
+      @create="newConversation"
+      @select="selectConversation"
+      @rename="chatStore.renameConversation"
+      @archive="archiveConversation"
+      @remove="removeConversation"
+    />
+    <ConversationSurface @send="sendMessage" @open-trace="openTrace" />
+    <EvidenceInspector @open-document="openDocument" @open-trace="openTrace" />
   </section>
 </template>
 
 <script setup lang="ts">
-import { PhPaperPlaneTilt, PhPlus, PhStop } from '@phosphor-icons/vue'
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LoadingSpinner, EmptyState } from '../../../components'
-import { useAuthStore } from '../../auth/store/auth'
+import { ConversationSurface, EvidenceInspector, SessionRail } from '../components'
 import { useChatStore } from '../store/chat'
-import type { MessageRole } from '../types'
-import { renderMarkdown } from '../utils/renderMarkdown'
 
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
-const authStore = useAuthStore()
-const isAdmin = computed(() => ['OWNER', 'ADMIN'].includes(authStore.currentRole ?? ''))
 
 onMounted(async () => {
   await chatStore.bootstrap(readSessionId())
@@ -289,10 +69,6 @@ async function sendMessage() {
   }
 }
 
-async function renameConversation(sessionId: number, title: string) {
-  await chatStore.renameConversation(sessionId, title)
-}
-
 async function archiveConversation(sessionId: number) {
   await chatStore.archiveConversation(sessionId)
   await syncRouteWithStore()
@@ -332,49 +108,6 @@ async function syncRouteWithStore() {
   }
 }
 
-function roleLabel(role: MessageRole) {
-  if (role === 'assistant') {
-    return 'AI'
-  }
-  if (role === 'system') {
-    return '系统'
-  }
-  return '用户'
-}
-
-function formatTime(value: string | null) {
-  if (!value) {
-    return '刚刚'
-  }
-  return new Date(value).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function updateKnowledgeBase(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  if (!value) {
-    chatStore.setSelectedKnowledgeBaseId(null)
-    return
-  }
-  const parsed = Number(value)
-  chatStore.setSelectedKnowledgeBaseId(Number.isInteger(parsed) && parsed > 0 ? parsed : null)
-}
-
-function renderMessage(content: string) {
-  return renderMarkdown(content)
-}
-
-function scoreWidth(score: number | null) {
-  if (score == null) {
-    return '0%'
-  }
-  return `${Math.max(0, Math.min(1, score)) * 100}%`
-}
-
 async function openDocument(documentId: number) {
   await router.push(`/documents/${documentId}`)
 }
@@ -384,7 +117,7 @@ async function openTrace(exchangeId: number) {
 }
 </script>
 
-<style scoped>
+<style>
 .chat-workspace {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr) 332px;
@@ -558,6 +291,8 @@ async function openTrace(exchangeId: number) {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-2);
   background: var(--bg-surface);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
 }
 
 .message-block--user {
@@ -583,6 +318,18 @@ async function openTrace(exchangeId: number) {
 .message-block__header strong {
   color: var(--text-main);
   font-family: var(--font-mono);
+}
+
+.message-block__meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.message-copy-button {
+  min-height: 24px;
+  padding: 0 8px;
 }
 
 .message-block__content {
@@ -618,6 +365,73 @@ async function openTrace(exchangeId: number) {
   background: var(--accent-soft);
 }
 
+.message-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.feedback-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  color: var(--text-muted);
+  background: var(--bg-inset);
+  font-size: 12px;
+  font-weight: 760;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.feedback-chip:hover:not(:disabled),
+.feedback-chip:focus-visible {
+  color: var(--text-main);
+  border-color: color-mix(in srgb, var(--accent), transparent 40%);
+  background: var(--accent-soft);
+}
+
+.feedback-chip--active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent), transparent 35%);
+  background: var(--accent-soft);
+}
+
+.feedback-chip--down {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning), transparent 35%);
+  background: color-mix(in srgb, var(--warning), transparent 90%);
+}
+
+.feedback-chip--correction {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success), transparent 35%);
+  background: color-mix(in srgb, var(--success), transparent 90%);
+}
+
+.feedback-chip--ghost {
+  color: var(--text-subtle);
+  background: transparent;
+}
+
+.message-feedback__note {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius-1);
+  background: var(--bg-inset);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .composer-dock {
   display: grid;
   gap: 10px;
@@ -628,7 +442,7 @@ async function openTrace(exchangeId: number) {
 
 .composer-chips {
   display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 150px) minmax(0, 220px) minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -653,6 +467,50 @@ async function openTrace(exchangeId: number) {
 .composer-input {
   min-height: 88px;
   background: color-mix(in srgb, var(--bg-surface), var(--bg-inset) 18%);
+}
+
+.tool-capability-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.tool-capability-strip > span {
+  font-weight: 720;
+}
+
+.tool-capability {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  color: var(--text-strong);
+  background: var(--bg-inset);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.tool-capability small {
+  color: var(--success);
+  font-size: 11px;
+}
+
+.tool-capability--risk {
+  border-color: color-mix(in srgb, var(--warning), transparent 35%);
+}
+
+.tool-capability--blocked {
+  color: var(--text-muted);
+}
+
+.tool-capability--blocked small {
+  color: var(--danger);
 }
 
 .composer-actions {

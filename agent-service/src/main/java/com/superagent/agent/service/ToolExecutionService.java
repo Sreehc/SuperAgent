@@ -36,6 +36,7 @@ public class ToolExecutionService {
     private static final Pattern TAG_PATTERN = Pattern.compile("(?is)<[^>]+>");
 
     private final SandboxRunnerClient sandboxRunnerClient;
+    private final KnowledgeSearchService knowledgeSearchService;
     private final GraphQueryService graphQueryService;
     private final ToolAccessPolicyService toolAccessPolicyService;
     private final AgentServiceProperties properties;
@@ -45,6 +46,7 @@ public class ToolExecutionService {
     @Autowired
     public ToolExecutionService(
             SandboxRunnerClient sandboxRunnerClient,
+            KnowledgeSearchService knowledgeSearchService,
             GraphQueryService graphQueryService,
             ToolAccessPolicyService toolAccessPolicyService,
             AgentServiceProperties properties,
@@ -52,6 +54,7 @@ public class ToolExecutionService {
     ) {
         this(
                 sandboxRunnerClient,
+                knowledgeSearchService,
                 graphQueryService,
                 toolAccessPolicyService,
                 properties,
@@ -68,7 +71,28 @@ public class ToolExecutionService {
             ObjectMapper objectMapper,
             HttpClient httpClient
     ) {
+        this(
+                sandboxRunnerClient,
+                null,
+                graphQueryService,
+                toolAccessPolicyService,
+                properties,
+                objectMapper,
+                httpClient
+        );
+    }
+
+    ToolExecutionService(
+            SandboxRunnerClient sandboxRunnerClient,
+            KnowledgeSearchService knowledgeSearchService,
+            GraphQueryService graphQueryService,
+            ToolAccessPolicyService toolAccessPolicyService,
+            AgentServiceProperties properties,
+            ObjectMapper objectMapper,
+            HttpClient httpClient
+    ) {
         this.sandboxRunnerClient = sandboxRunnerClient;
+        this.knowledgeSearchService = knowledgeSearchService;
         this.graphQueryService = graphQueryService;
         this.toolAccessPolicyService = toolAccessPolicyService;
         this.properties = properties;
@@ -103,15 +127,17 @@ public class ToolExecutionService {
 
     private ToolResult executeKnowledgeSearch(ToolInvocation invocation) {
         String question = String.valueOf(invocation.input().getOrDefault("question", ""));
-        List<Map<String, Object>> evidence = List.of(
-                Map.of("title", "知识库命中 1", "quote", "这是针对问题的知识库证据摘要。", "score", 0.92),
-                Map.of("title", "知识库命中 2", "quote", "这是第二条知识库证据摘要。", "score", 0.88)
-        );
+        Long knowledgeBaseId = toLong(invocation.input().get("knowledgeBaseId"));
+        int limit = Math.max(1, toInt(invocation.input().get("limit"), 5));
+        if (knowledgeSearchService == null) {
+            return new ToolResult(invocation.toolId(), "failed", "知识库检索服务未配置", Map.of("question", question), "knowledge_search_unavailable");
+        }
+        List<Map<String, Object>> evidence = knowledgeSearchService.search(invocation.tenantId(), question, knowledgeBaseId, limit);
         return new ToolResult(
                 invocation.toolId(),
                 "success",
-                "返回 2 条知识库证据",
-                Map.of("question", question, "evidence", evidence),
+                "返回 " + evidence.size() + " 条知识库证据",
+                Map.of("question", question, "knowledgeBaseId", knowledgeBaseId, "evidence", evidence),
                 null
         );
     }

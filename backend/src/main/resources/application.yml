@@ -116,6 +116,8 @@ super-agent:
       - ${FRONTEND_ORIGIN_SECONDARY:http://127.0.0.1:5173}
       - ${FRONTEND_ORIGIN_TERTIARY:http://localhost:4173}
       - ${FRONTEND_ORIGIN_QUATERNARY:http://127.0.0.1:4173}
+      - http://localhost:5174
+      - http://127.0.0.1:5174
   document-processing:
     chunk-size: ${DOCUMENT_CHUNK_SIZE:1000}
     chunk-overlap: ${DOCUMENT_CHUNK_OVERLAP:120}

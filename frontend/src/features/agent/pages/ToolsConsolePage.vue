@@ -101,6 +101,25 @@
           <p>权限：{{ permissionsLabel(selectedPlugin.manifest.permissions) }}</p>
           <p>启用工具：{{ listLabel(selectedPlugin.enabledTools) }}</p>
           <p>密钥引用：{{ listLabel(selectedPlugin.secretKeys) }}</p>
+          <form class="secret-form" @submit.prevent="saveToolSecret">
+            <h3>Secret 配置</h3>
+            <label class="field">
+              <span>工具 ID</span>
+              <input v-model="secretForm.toolId" type="text" placeholder="web.search" />
+            </label>
+            <label class="field">
+              <span>密钥名</span>
+              <input v-model="secretForm.secretKey" type="text" placeholder="tavilyApiKey" />
+            </label>
+            <label class="field">
+              <span>密钥值</span>
+              <input v-model="secretForm.value" type="password" autocomplete="off" placeholder="保存后不会回显" />
+            </label>
+            <div class="secret-actions">
+              <button class="btn btn-primary btn-sm" :class="{ 'btn-loading': savingSecret }" :disabled="savingSecret" type="submit">保存 Secret</button>
+              <button class="btn btn-ghost btn-sm" :disabled="savingSecret || !secretForm.toolId || !secretForm.secretKey" type="button" @click="removeToolSecret">删除</button>
+            </div>
+          </form>
           <details><summary>installation config</summary><pre class="metadata">{{ formatMetadata(selectedPlugin.installationConfig) }}</pre></details>
         </template>
         <EmptyState v-else variant="search" title="选择一条记录" description="点击工具调用或插件后在这里查看详情。" />
@@ -112,7 +131,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { EmptyState, LoadingSpinner } from '../../../components'
-import { listPlugins, listToolCalls, updatePlugin } from '../api'
+import { deleteToolSecret, listPlugins, listToolCalls, updatePlugin, updateToolSecret } from '../api'
 import type { PluginItem, ToolCallDetail } from '../types'
 
 const toolCalls = ref<ToolCallDetail[]>([])
@@ -123,6 +142,12 @@ const loadingToolCalls = ref(false)
 const loadingPlugins = ref(false)
 const errorMessage = ref('')
 const toolIdFilter = ref('')
+const savingSecret = ref(false)
+const secretForm = ref({
+  toolId: 'web.search',
+  secretKey: 'tavilyApiKey',
+  value: '',
+})
 
 onMounted(async () => {
   await loadAll()
@@ -172,6 +197,47 @@ async function togglePlugin(pluginId: number, enabled: boolean) {
     await loadPlugins()
   } catch {
     errorMessage.value = '插件状态更新失败，请稍后重试。'
+  }
+}
+
+async function saveToolSecret() {
+  const toolId = secretForm.value.toolId.trim()
+  const secretKey = secretForm.value.secretKey.trim()
+  const value = secretForm.value.value.trim()
+  if (!toolId || !secretKey || !value) {
+    errorMessage.value = '请填写工具 ID、密钥名和密钥值。'
+    return
+  }
+  savingSecret.value = true
+  errorMessage.value = ''
+  try {
+    await updateToolSecret(toolId, secretKey, value)
+    secretForm.value.value = ''
+    await loadPlugins()
+  } catch {
+    errorMessage.value = 'Secret 保存失败，请确认当前角色和输入。'
+  } finally {
+    savingSecret.value = false
+  }
+}
+
+async function removeToolSecret() {
+  const toolId = secretForm.value.toolId.trim()
+  const secretKey = secretForm.value.secretKey.trim()
+  if (!toolId || !secretKey) {
+    errorMessage.value = '请填写工具 ID 和密钥名。'
+    return
+  }
+  savingSecret.value = true
+  errorMessage.value = ''
+  try {
+    await deleteToolSecret(toolId, secretKey)
+    secretForm.value.value = ''
+    await loadPlugins()
+  } catch {
+    errorMessage.value = 'Secret 删除失败，请确认当前角色和输入。'
+  } finally {
+    savingSecret.value = false
   }
 }
 
@@ -291,6 +357,26 @@ function statusClass(status: string) {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-1);
   background: var(--bg-inset);
+}
+
+.secret-form {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-1);
+  background: var(--bg-inset);
+}
+
+.secret-form h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.secret-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .tool-inspector dt {

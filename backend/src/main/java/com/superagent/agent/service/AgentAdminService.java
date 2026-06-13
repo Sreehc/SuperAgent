@@ -15,7 +15,9 @@ import com.superagent.auth.security.TenantContextHolder;
 import com.superagent.chat.service.ConversationService;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
+import com.superagent.settings.repository.AuditLogRepository;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -24,10 +26,16 @@ public class AgentAdminService {
 
     private final CurrentAuthenticatedUser currentAuthenticatedUser;
     private final AgentAdminRepository repository;
+    private final AuditLogRepository auditLogRepository;
 
-    public AgentAdminService(CurrentAuthenticatedUser currentAuthenticatedUser, AgentAdminRepository repository) {
+    public AgentAdminService(
+            CurrentAuthenticatedUser currentAuthenticatedUser,
+            AgentAdminRepository repository,
+            AuditLogRepository auditLogRepository
+    ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.repository = repository;
+        this.auditLogRepository = auditLogRepository;
     }
 
     public ConversationService.PagedResult<AdminAgentRunSummary> listRuns(Integer page, Integer pageSize, String status) {
@@ -92,11 +100,69 @@ public class AgentAdminService {
         return true;
     }
 
+    public SecretUpdateResult updateToolSecret(String toolId, String secretKey, String secretValue) {
+        AuthenticatedUserPrincipal principal = requireOwner();
+        TenantContext tenantContext = requireTenantContext();
+        String normalizedToolId = normalizeRequired(toolId, "toolId is required");
+        String normalizedSecretKey = normalizeRequired(secretKey, "secretKey is required");
+        String normalizedSecretValue = normalizeRequired(secretValue, "secretValue is required");
+        repository.upsertToolSecret(tenantContext.tenantId(), normalizedToolId, normalizedSecretKey, normalizedSecretValue);
+        auditLogRepository.append(
+                tenantContext.tenantId(),
+                principal.userId(),
+                "tools.secret.updated",
+                "tool_secret",
+                null,
+                Map.of(
+                        "toolId", normalizedToolId,
+                        "secretKey", normalizedSecretKey,
+                        "configured", true
+                )
+        );
+        return new SecretUpdateResult(normalizedToolId, normalizedSecretKey, true);
+    }
+
+    public SecretUpdateResult deleteToolSecret(String toolId, String secretKey) {
+        AuthenticatedUserPrincipal principal = requireOwner();
+        TenantContext tenantContext = requireTenantContext();
+        String normalizedToolId = normalizeRequired(toolId, "toolId is required");
+        String normalizedSecretKey = normalizeRequired(secretKey, "secretKey is required");
+        repository.deleteToolSecret(tenantContext.tenantId(), normalizedToolId, normalizedSecretKey);
+        auditLogRepository.append(
+                tenantContext.tenantId(),
+                principal.userId(),
+                "tools.secret.deleted",
+                "tool_secret",
+                null,
+                Map.of(
+                        "toolId", normalizedToolId,
+                        "secretKey", normalizedSecretKey,
+                        "configured", false
+                )
+        );
+        return new SecretUpdateResult(normalizedToolId, normalizedSecretKey, false);
+    }
+
     private void requireAdminRole() {
         AuthenticatedUserPrincipal principal = currentAuthenticatedUser.get();
         if (principal.currentRole() != TenantRole.OWNER && principal.currentRole() != TenantRole.ADMIN) {
             throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "Agent admin permission required");
         }
+    }
+
+    private AuthenticatedUserPrincipal requireOwner() {
+        AuthenticatedUserPrincipal principal = currentAuthenticatedUser.get();
+        if (principal.currentRole() != TenantRole.OWNER) {
+            throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "Owner permission required");
+        }
+        return principal;
+    }
+
+    private String normalizeRequired(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, message);
+        }
+        return value.trim();
     }
 
     private TenantContext requireTenantContext() {
@@ -105,5 +171,8 @@ public class AgentAdminService {
             throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "Tenant context required");
         }
         return tenantContext;
+    }
+
+    public record SecretUpdateResult(String toolId, String secretKey, boolean configured) {
     }
 }

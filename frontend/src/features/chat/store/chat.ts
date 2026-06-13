@@ -2,76 +2,31 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   createConversation,
-  defaultMemoryStrategy,
+  deleteMessageFeedback,
   deleteConversation,
   getConversation,
+  listConversationFeedbacks,
   listConversations,
   listMessages,
   openMessageStream,
   resumeConversation,
   stopConversation,
+  upsertMessageFeedback,
   updateConversation,
 } from '../api'
 import type {
   ConversationDetail,
-  ConversationMessage,
   ConversationSummary,
-  MemoryStrategy,
-  StreamAgentStepEvent,
-  StreamCheckpointEvent,
-  StreamDeltaEvent,
-  StreamDoneEvent,
-  StreamErrorEvent,
-  StreamRecommendationEvent,
-  StreamReferenceEvent,
-  StreamResumeEvent,
-  StreamStartEvent,
-  StreamToolResultEvent,
-  StreamToolStartEvent,
-  StreamTraceStageEvent,
+  DisplayMessage,
+  DisplayReference,
+  FeedbackRating,
+  StreamState,
 } from '../types'
-import { listKnowledgeBases } from '../../knowledge/api'
-
-interface DisplayReference {
-  ordinal: number
-  documentId: number
-  chunkId: number
-  title: string
-  quote: string
-  score: number | null
-}
-
-interface DisplayMessage extends ConversationMessage {
-  references: DisplayReference[]
-}
-
-interface StreamState {
-  exchangeId: number | null
-  runId: number | null
-  stage: string | null
-  recommendations: string[]
-  error: string
-  stopped: boolean
-  timeline: Array<{
-    type: 'agent_step' | 'tool_start' | 'tool_result' | 'checkpoint' | 'resume'
-    title: string
-    summary: string
-  }>
-}
-
-function createEmptyStreamState(): StreamState {
-  return {
-    exchangeId: null,
-    runId: null,
-    stage: null,
-    recommendations: [],
-    error: '',
-    stopped: false,
-    timeline: [],
-  }
-}
+import { useChatComposerStore } from './composer'
+import { applyStreamEvent, consumeSseText, createEmptyStreamState, type SseParserState } from './streamRuntime'
 
 export const useChatStore = defineStore('chat', () => {
+  const composerStore = useChatComposerStore()
   const conversations = ref<ConversationSummary[]>([])
   const selectedSessionId = ref<number | null>(null)
   const selectedConversation = ref<ConversationDetail | null>(null)
@@ -80,20 +35,15 @@ export const useChatStore = defineStore('chat', () => {
   const loadingMessages = ref(false)
   const creatingConversation = ref(false)
   const streaming = ref(false)
-  const composerMessage = ref('')
-  const memoryStrategy = ref<MemoryStrategy>(defaultMemoryStrategy())
   const streamState = ref<StreamState>(createEmptyStreamState())
   const activeAbortController = ref<AbortController | null>(null)
-  const streamedResponse = ref('')
-  const parserOffset = ref(0)
-  const parserBuffer = ref('')
+  const parserState: SseParserState = { offset: 0, buffer: '' }
   const selectedReference = ref<DisplayReference | null>(null)
-  const availableKnowledgeBases = ref<Array<{ id: number; name: string }>>([])
-  const selectedKnowledgeBaseId = ref<number | null>(null)
   const keyword = ref('')
   const editingConversationId = ref<number | null>(null)
   const updatingConversation = ref(false)
   const deletingConversation = ref(false)
+  const updatingFeedbackMessageId = ref<number | null>(null)
 
   const hasMessages = computed(() => messages.value.length > 0)
   const filteredConversations = computed(() => {
@@ -105,7 +55,10 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   async function bootstrap(sessionId?: number | null) {
-    await fetchKnowledgeBaseOptions()
+    await Promise.all([
+      composerStore.fetchKnowledgeBaseOptions(),
+      composerStore.fetchToolCapabilities(),
+    ])
     await fetchConversations()
     const preferredSessionId = sessionId ?? selectedSessionId.value
     if (preferredSessionId) {
@@ -134,25 +87,13 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function fetchKnowledgeBaseOptions() {
-    try {
-      const response = await listKnowledgeBases({ pageSize: 100, status: 'published' })
-      availableKnowledgeBases.value = response.data.items.map((item) => ({
-        id: item.id,
-        name: item.name,
-      }))
-    } catch {
-      availableKnowledgeBases.value = []
-    }
-  }
-
   async function createAndSelectConversation(title?: string) {
     creatingConversation.value = true
     try {
       const response = await createConversation({
         title,
-        knowledgeBaseId: selectedKnowledgeBaseId.value,
-        memoryStrategy: memoryStrategy.value,
+        knowledgeBaseId: composerStore.selectedKnowledgeBaseId,
+        memoryStrategy: composerStore.memoryStrategy,
       })
       await fetchConversations()
       await selectConversation(response.data.id)
@@ -172,12 +113,14 @@ export const useChatStore = defineStore('chat', () => {
         getConversation(sessionId),
         listMessages(sessionId),
       ])
+      const feedbacksResponse = await listConversationFeedbacks(sessionId)
+      const feedbackByMessageId = new Map(feedbacksResponse.data.map((feedback) => [feedback.messageId, feedback]))
       selectedConversation.value = conversationResponse.data
-      memoryStrategy.value = conversationResponse.data.memoryStrategy
-      selectedKnowledgeBaseId.value = conversationResponse.data.knowledgeBaseId
+      composerStore.applyConversationConfig(conversationResponse.data)
       messages.value = messagesResponse.data.items.map((message) => ({
         ...message,
         references: [],
+        feedback: feedbackByMessageId.get(message.id) ?? null,
       }))
       selectedReference.value = null
       streamState.value = createEmptyStreamState()
@@ -204,154 +147,24 @@ export const useChatStore = defineStore('chat', () => {
       status: 'streaming',
       createdAt: new Date().toISOString(),
       references: [],
+      feedback: null,
     }
     messages.value = [...messages.value, assistantMessage]
     return assistantMessage
   }
 
-  function applyEventLine(eventName: string | null, dataLine: string) {
-    if (!eventName) {
-      return
-    }
-
-    const parsed = JSON.parse(dataLine)
-    switch (eventName) {
-      case 'start': {
-        const event = parsed as StreamStartEvent
-        streamState.value.exchangeId = event.exchangeId
-        break
-      }
-      case 'trace_stage': {
-        const event = parsed as StreamTraceStageEvent
-        streamState.value.stage = `${event.stage} · ${event.status}`
-        break
-      }
-      case 'delta': {
-        const event = parsed as StreamDeltaEvent
-        const assistantMessage = ensureAssistantMessage()
-        assistantMessage.content += event.text
-        break
-      }
-      case 'reference': {
-        const event = parsed as StreamReferenceEvent
-        attachReference({
-          ordinal: event.ordinal,
-          documentId: event.documentId,
-          chunkId: event.chunkId,
-          title: event.title,
-          quote: event.quote,
-          score: event.score,
-        })
-        break
-      }
-      case 'recommendation': {
-        const event = parsed as StreamRecommendationEvent
-        streamState.value.recommendations = event.questions
-        break
-      }
-      case 'agent_step': {
-        const event = parsed as StreamAgentStepEvent
-        streamState.value.runId = event.runId
-        streamState.value.timeline = [
-          ...streamState.value.timeline,
-          { type: 'agent_step', title: `${event.phase} #${event.stepNo}`, summary: event.summary },
-        ]
-        streamState.value.stage = `${event.phase} · ${event.status}`
-        break
-      }
-      case 'tool_start': {
-        const event = parsed as StreamToolStartEvent
-        streamState.value.runId = event.runId
-        streamState.value.timeline = [
-          ...streamState.value.timeline,
-          { type: 'tool_start', title: event.toolId, summary: event.summary },
-        ]
-        break
-      }
-      case 'tool_result': {
-        const event = parsed as StreamToolResultEvent
-        streamState.value.runId = event.runId
-        streamState.value.timeline = [
-          ...streamState.value.timeline,
-          { type: 'tool_result', title: `${event.toolId} · ${event.status}`, summary: event.summary },
-        ]
-        break
-      }
-      case 'checkpoint': {
-        const event = parsed as StreamCheckpointEvent
-        streamState.value.runId = event.runId
-        streamState.value.timeline = [
-          ...streamState.value.timeline,
-          { type: 'checkpoint', title: `Checkpoint #${event.checkpointNo}`, summary: `${event.phase} · ${event.stable ? 'stable' : 'pending'}` },
-        ]
-        break
-      }
-      case 'resume': {
-        const event = parsed as StreamResumeEvent
-        streamState.value.runId = event.runId
-        streamState.value.timeline = [
-          ...streamState.value.timeline,
-          { type: 'resume', title: '恢复执行', summary: event.status },
-        ]
-        break
-      }
-      case 'done': {
-        const event = parsed as StreamDoneEvent
-        if (event.runId) {
-          streamState.value.runId = event.runId
-        }
-        const assistantMessage = [...messages.value].reverse().find((message) => message.role === 'assistant')
-        if (assistantMessage) {
-          assistantMessage.status = event.stopped ? 'stopped' : 'success'
-        }
-        streamState.value.stopped = event.stopped
-        break
-      }
-      case 'error': {
-        const event = parsed as StreamErrorEvent
-        streamState.value.error = event.message
-        if (event.runId) {
-          streamState.value.runId = event.runId
-        }
-        const assistantMessage = [...messages.value].reverse().find((message) => message.role === 'assistant')
-        if (assistantMessage) {
-          assistantMessage.status = 'error'
-        }
-        break
-      }
-      default:
-        break
-    }
-  }
-
   function consumeSseChunk(rawText: string) {
-    const incremental = rawText.slice(parserOffset.value)
-    parserOffset.value = rawText.length
-    streamedResponse.value = rawText
-
-    parserBuffer.value += incremental
-    const blocks = parserBuffer.value.split('\n\n')
-    parserBuffer.value = blocks.pop() ?? ''
-    for (const block of blocks) {
-      const lines = block.split('\n')
-      let eventName: string | null = null
-      let dataValue = ''
-      for (const line of lines) {
-        if (line.startsWith('event:')) {
-          eventName = line.replace('event:', '').trim()
-        }
-        if (line.startsWith('data:')) {
-          dataValue = line.replace('data:', '').trim()
-        }
-      }
-      if (eventName && dataValue) {
-        applyEventLine(eventName, dataValue)
-      }
-    }
+    consumeSseText(rawText, parserState, (eventName, data) => {
+      applyStreamEvent(streamState.value, eventName, data, {
+        ensureAssistantMessage,
+        attachReference,
+        findLatestAssistantMessage,
+      })
+    })
   }
 
   async function sendMessage() {
-    const text = composerMessage.value.trim()
+    const text = composerStore.message.trim()
     if (!text) {
       return
     }
@@ -365,9 +178,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     streamState.value = createEmptyStreamState()
-    parserOffset.value = 0
-    streamedResponse.value = ''
-    parserBuffer.value = ''
+    resetParser()
     selectedReference.value = null
     streaming.value = true
 
@@ -378,10 +189,10 @@ export const useChatStore = defineStore('chat', () => {
       status: 'success',
       createdAt: new Date().toISOString(),
       references: [],
+      feedback: null,
     }
     messages.value = [...messages.value, userMessage]
-    composerMessage.value = ''
-
+    composerStore.clearMessage()
     const controller = new AbortController()
     activeAbortController.value = controller
 
@@ -390,8 +201,9 @@ export const useChatStore = defineStore('chat', () => {
         selectedSessionId.value,
         {
           message: text,
-          knowledgeBaseId: selectedKnowledgeBaseId.value,
-          memoryStrategy: memoryStrategy.value,
+          knowledgeBaseId: composerStore.selectedKnowledgeBaseId,
+          memoryStrategy: composerStore.memoryStrategy,
+          executionMode: composerStore.executionMode,
         },
         consumeSseChunk,
         controller.signal,
@@ -399,12 +211,14 @@ export const useChatStore = defineStore('chat', () => {
       await fetchConversations()
       const conversationResponse = await getConversation(selectedSessionId.value)
       selectedConversation.value = conversationResponse.data
-      memoryStrategy.value = conversationResponse.data.memoryStrategy
-      selectedKnowledgeBaseId.value = conversationResponse.data.knowledgeBaseId
+      composerStore.applyConversationConfig(conversationResponse.data)
     } catch (error) {
       const assistantMessage = [...messages.value].reverse().find((message) => message.role === 'assistant')
       if (assistantMessage) {
         assistantMessage.status = streamState.value.stopped ? 'stopped' : 'error'
+      }
+      if (streamState.value.stopped) {
+        return
       }
       if (!streamState.value.error) {
         streamState.value.error = '消息发送失败，请稍后重试。'
@@ -447,13 +261,16 @@ export const useChatStore = defineStore('chat', () => {
     activeAbortController.value?.abort()
     activeAbortController.value = null
     streaming.value = false
-    parserOffset.value = 0
-    parserBuffer.value = ''
-    streamedResponse.value = ''
+    resetParser()
   }
 
-  function setSelectedKnowledgeBaseId(value: number | null) {
-    selectedKnowledgeBaseId.value = value
+  function resetParser() {
+    parserState.offset = 0
+    parserState.buffer = ''
+  }
+
+  function findLatestAssistantMessage() {
+    return [...messages.value].reverse().find((message) => message.role === 'assistant')
   }
 
   async function renameConversation(sessionId: number, title: string) {
@@ -506,6 +323,74 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function setMessageFeedback(message: DisplayMessage, rating: FeedbackRating) {
+    if (message.role !== 'assistant' || message.id <= 0) {
+      return
+    }
+
+    if (message.feedback?.rating === rating) {
+      await clearMessageFeedback(message)
+      return
+    }
+
+    updatingFeedbackMessageId.value = message.id
+    try {
+      const response = await upsertMessageFeedback(message.id, { rating })
+      patchMessageFeedback(message.id, response.data.data)
+    } finally {
+      updatingFeedbackMessageId.value = null
+    }
+  }
+
+  async function correctMessageFeedback(message: DisplayMessage) {
+    if (message.role !== 'assistant' || message.id <= 0) {
+      return
+    }
+
+    const correction = window.prompt('请输入更正建议，将用于后续评测和质量改进。', message.feedback?.correction ?? '')
+    if (correction === null) {
+      return
+    }
+
+    const trimmedCorrection = correction.trim()
+    if (!trimmedCorrection) {
+      return
+    }
+
+    updatingFeedbackMessageId.value = message.id
+    try {
+      const response = await upsertMessageFeedback(message.id, {
+        rating: 'correction',
+        correction: trimmedCorrection,
+      })
+      patchMessageFeedback(message.id, response.data.data)
+    } finally {
+      updatingFeedbackMessageId.value = null
+    }
+  }
+
+  async function clearMessageFeedback(message: DisplayMessage) {
+    if (message.role !== 'assistant' || message.id <= 0) {
+      return
+    }
+
+    updatingFeedbackMessageId.value = message.id
+    try {
+      await deleteMessageFeedback(message.id)
+      patchMessageFeedback(message.id, null)
+    } finally {
+      updatingFeedbackMessageId.value = null
+    }
+  }
+
+  function patchMessageFeedback(messageId: number, feedback: DisplayMessage['feedback']) {
+    messages.value = messages.value.map((message) => (
+      message.id === messageId
+        ? { ...message, feedback }
+        : message
+    ))
+  }
+
   return {
     conversations,
     filteredConversations,
@@ -516,29 +401,27 @@ export const useChatStore = defineStore('chat', () => {
     loadingMessages,
     creatingConversation,
     streaming,
-    composerMessage,
-    memoryStrategy,
     streamState,
     selectedReference,
-    availableKnowledgeBases,
-    selectedKnowledgeBaseId,
     keyword,
     editingConversationId,
     updatingConversation,
     deletingConversation,
+    updatingFeedbackMessageId,
     hasMessages,
     bootstrap,
     fetchConversations,
-    fetchKnowledgeBaseOptions,
     createAndSelectConversation,
     selectConversation,
     sendMessage,
     stopStreaming,
     resumeConversationRun,
     clearOnRouteLeave,
-    setSelectedKnowledgeBaseId,
     renameConversation,
     archiveConversation,
     removeConversation,
+    setMessageFeedback,
+    correctMessageFeedback,
+    clearMessageFeedback,
   }
 })

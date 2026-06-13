@@ -12,6 +12,8 @@ export const useTraceStore = defineStore('traces', () => {
   const statusFilter = ref('')
   const modeFilter = ref('')
   const userIdFilter = ref('')
+  const sessionIdFilter = ref('')
+  const toolIdFilter = ref('')
   const page = ref(1)
   const pageSize = ref(20)
   const total = ref(0)
@@ -26,6 +28,8 @@ export const useTraceStore = defineStore('traces', () => {
         status: statusFilter.value || undefined,
         executionMode: modeFilter.value || undefined,
         userId: userIdFilter.value || undefined,
+        sessionId: sessionIdFilter.value || undefined,
+        toolId: toolIdFilter.value || undefined,
       })
       traces.value = response.data.items
       total.value = response.data.total
@@ -66,6 +70,8 @@ export const useTraceStore = defineStore('traces', () => {
     statusFilter,
     modeFilter,
     userIdFilter,
+    sessionIdFilter,
+    toolIdFilter,
     page,
     pageSize,
     total,
