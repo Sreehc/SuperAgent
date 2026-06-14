@@ -4,10 +4,36 @@ import com.superagent.agent.domain.InternalAgentRunRequest;
 import com.superagent.agent.domain.ToolResult;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+/**
+ * Composes the final assistant answer for an Agent run.
+ *
+ * <p>When a {@link AgentPlanner.ChatModelClient} bean is available, this component asks the
+ * model to synthesize a coherent answer from the structured tool observation. Otherwise it
+ * falls back to per-tool templated rendering, which keeps tests and offline dev working
+ * without an LLM.</p>
+ */
 @Component
 public class AgentAnswerComposer {
+
+    private final ObjectProvider<AgentPlanner.ChatModelClient> chatModelClientProvider;
+    private final boolean modelAnswerEnabled;
+
+    public AgentAnswerComposer() {
+        this.chatModelClientProvider = null;
+        this.modelAnswerEnabled = false;
+    }
+
+    public AgentAnswerComposer(
+            ObjectProvider<AgentPlanner.ChatModelClient> chatModelClientProvider,
+            @Value("${super-agent.agent.model-answer-enabled:true}") boolean modelAnswerEnabled
+    ) {
+        this.chatModelClientProvider = chatModelClientProvider;
+        this.modelAnswerEnabled = modelAnswerEnabled;
+    }
 
     public String compose(InternalAgentRunRequest request, String toolId, ToolResult toolResult) {
         if (toolResult == null) {
@@ -19,6 +45,40 @@ public class AgentAnswerComposer {
                     + "- 摘要：" + safeText(toolResult.summary()) + "\n"
                     + "- 错误：" + safeText(toolResult.errorMessage());
         }
+        AgentPlanner.ChatModelClient client = resolveClient();
+        if (client != null) {
+            try {
+                String answer = client.generate(buildPrompt(request, toolId, toolResult));
+                if (answer != null && !answer.isBlank()) {
+                    return answer.trim();
+                }
+            } catch (Exception ignored) {
+                // fall through to template
+            }
+        }
+        return composeFromTemplate(request, toolId, toolResult);
+    }
+
+    private AgentPlanner.ChatModelClient resolveClient() {
+        if (!modelAnswerEnabled || chatModelClientProvider == null) {
+            return null;
+        }
+        return chatModelClientProvider.getIfAvailable();
+    }
+
+    private String buildPrompt(InternalAgentRunRequest request, String toolId, ToolResult toolResult) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Synthesize a concise, faithful answer for the user using ONLY the tool observation below.\n\n");
+        builder.append("User question: ").append(request.question()).append("\n");
+        builder.append("Tool: ").append(safeToolId(toolId, toolResult)).append("\n");
+        builder.append("Tool status: ").append(toolResult.status()).append("\n");
+        builder.append("Tool summary: ").append(safeText(toolResult.summary())).append("\n");
+        builder.append("Tool output (JSON-like): ").append(toolResult.output()).append("\n\n");
+        builder.append("Cite source titles or URLs where possible. Reply in the user's language.");
+        return builder.toString();
+    }
+
+    private String composeFromTemplate(InternalAgentRunRequest request, String toolId, ToolResult toolResult) {
         return switch (safeToolId(toolId, toolResult)) {
             case "knowledge.search" -> composeKnowledgeAnswer(request, toolResult);
             case "web.search" -> composeWebSearchAnswer(request, toolResult);

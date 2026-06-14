@@ -48,6 +48,17 @@ public class UserAccountRepository {
         ).stream().findFirst();
     }
 
+    public Optional<UserAccount> findByEmail(String email) {
+        return jdbcTemplate.query("""
+                        SELECT id, username, password_hash, display_name, email, status, default_tenant_id
+                        FROM user_account
+                        WHERE LOWER(email) = LOWER(:email) AND deleted_at IS NULL
+                        """,
+                Map.of("email", email),
+                USER_ROW_MAPPER
+        ).stream().findFirst();
+    }
+
     public long create(String username, String passwordHash, String displayName, String email, String status) {
         return jdbcTemplate.queryForObject("""
                         INSERT INTO user_account (username, password_hash, display_name, email, status)

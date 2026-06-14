@@ -1,5 +1,5 @@
 import { apiGet, http } from '../../api/http'
-import type { EvalCase, EvalPagedResult, EvalRun, EvalRunStatus, EvalSuite, EvalSuiteDetail } from './types'
+import type { EvalCase, EvalPagedResult, EvalRun, EvalRunCase, EvalRunStatus, EvalSuite, EvalSuiteDetail } from './types'
 
 function buildQuery(params?: Record<string, string | number | undefined>) {
   if (!params) {
@@ -37,6 +37,14 @@ export function deleteEvalCase(caseId: number) {
 
 export function listEvalRuns(params?: { page?: number; pageSize?: number; suiteId?: number; status?: EvalRunStatus | '' }) {
   return apiGet<EvalPagedResult<EvalRun>>(`/admin/evals/runs${buildQuery(params)}`)
+}
+
+export function getEvalRun(runId: number) {
+  return apiGet<EvalRun>(`/admin/evals/runs/${runId}`)
+}
+
+export function listEvalRunCases(runId: number, status?: string) {
+  return apiGet<EvalRunCase[]>(`/admin/evals/runs/${runId}/cases${buildQuery({ status })}`)
 }
 
 export function createEvalRun(

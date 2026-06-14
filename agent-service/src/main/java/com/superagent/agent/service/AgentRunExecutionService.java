@@ -2,6 +2,7 @@ package com.superagent.agent.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.superagent.agent.domain.AgentDecision;
 import com.superagent.agent.domain.InternalAgentRunRequest;
 import com.superagent.agent.domain.ToolInvocation;
 import com.superagent.agent.domain.ToolResult;
@@ -28,6 +29,7 @@ public class AgentRunExecutionService {
     private final ToolExecutionService toolExecutionService;
     private final TenantRuntimeSettingsService runtimeSettingsService;
     private final AgentAnswerComposer answerComposer;
+    private final AgentPlanner agentPlanner;
     private final ObjectMapper objectMapper;
     private final Executor executor;
 
@@ -39,6 +41,7 @@ public class AgentRunExecutionService {
             ToolExecutionService toolExecutionService,
             TenantRuntimeSettingsService runtimeSettingsService,
             AgentAnswerComposer answerComposer,
+            AgentPlanner agentPlanner,
             ObjectMapper objectMapper
     ) {
         this(
@@ -48,6 +51,7 @@ public class AgentRunExecutionService {
                 toolExecutionService,
                 runtimeSettingsService,
                 answerComposer,
+                agentPlanner,
                 objectMapper,
                 new SimpleAsyncTaskExecutor("agent-run-")
         );
@@ -60,6 +64,7 @@ public class AgentRunExecutionService {
             ToolExecutionService toolExecutionService,
             TenantRuntimeSettingsService runtimeSettingsService,
             AgentAnswerComposer answerComposer,
+            AgentPlanner agentPlanner,
             ObjectMapper objectMapper,
             Executor executor
     ) {
@@ -69,6 +74,7 @@ public class AgentRunExecutionService {
         this.toolExecutionService = toolExecutionService;
         this.runtimeSettingsService = runtimeSettingsService;
         this.answerComposer = answerComposer;
+        this.agentPlanner = agentPlanner;
         this.objectMapper = objectMapper;
         this.executor = executor;
     }
@@ -194,8 +200,58 @@ public class AgentRunExecutionService {
         if (!incrementModelSteps(context, policy, AgentPhase.SELECT_TOOL, "达到最大模型步数限制，已提前结束。")) {
             return;
         }
-        context.selectedToolId = selectTool(context.request);
-        context.selectedToolReason = describeToolReason(context.request, context.selectedToolId, enabledTools.containsKey(context.selectedToolId));
+
+        AgentDecision decision;
+        if (context.toolCalls == 0) {
+            decision = agentPlanner.decideInitial(context.request, enabledTools);
+        } else {
+            decision = agentPlanner.decideNext(context.request, enabledTools, context.selectedToolId, context.toolResult, context.toolCalls);
+        }
+        context.lastDecision = decision;
+
+        if (decision.action() == AgentDecision.Action.FINAL_ANSWER) {
+            context.answer = decision.finalAnswer() == null || decision.finalAnswer().isBlank()
+                    ? "我已根据当前观察给出回答。"
+                    : decision.finalAnswer();
+            persistStep(
+                    context,
+                    2,
+                    AgentPhase.SELECT_TOOL,
+                    "success",
+                    "decision_final_answer",
+                    decision.thoughtSummary(),
+                    null,
+                    null,
+                    null,
+                    Map.of("action", "FINAL_ANSWER", "thought", decision.thoughtSummary())
+            );
+            saveCheckpoint(context, 0L, "answer_ready", Map.of("answer", context.answer), AgentPhase.COMPLETE);
+            context.phase = AgentPhase.COMPLETE;
+            return;
+        }
+        if (decision.action() == AgentDecision.Action.STOP_WITH_ERROR) {
+            context.errorMessage = decision.finalAnswer() == null ? "Agent stopped" : decision.finalAnswer();
+            context.phase = AgentPhase.FAILED;
+            return;
+        }
+        if (decision.action() != AgentDecision.Action.CALL_TOOL || decision.toolId() == null) {
+            context.errorMessage = "Invalid agent decision";
+            context.phase = AgentPhase.FAILED;
+            return;
+        }
+
+        context.selectedToolId = decision.toolId();
+        context.selectedToolReason = decision.thoughtSummary() == null ? "model_decision" : decision.thoughtSummary();
+        Map<String, Object> input = decision.toolInput() == null || decision.toolInput().isEmpty()
+                ? buildToolInput(context.request, decision.toolId())
+                : new LinkedHashMap<>(decision.toolInput());
+        if (!input.containsKey("question")) {
+            input.put("question", context.request.question());
+        }
+        if (context.request.knowledgeBaseId() != null && !input.containsKey("knowledgeBaseId") && "knowledge.search".equals(decision.toolId())) {
+            input.put("knowledgeBaseId", context.request.knowledgeBaseId());
+        }
+        context.toolInput = input;
 
         long stepId = persistStep(
                 context,
@@ -207,7 +263,7 @@ public class AgentRunExecutionService {
                 context.selectedToolId,
                 context.selectedToolReason,
                 null,
-                Map.of("enabledToolCount", enabledTools.size())
+                Map.of("enabledToolCount", enabledTools.size(), "modelDriven", true)
         );
         emitAgentStep(context, 2, AgentPhase.SELECT_TOOL, "success", "选择工具 " + context.selectedToolId);
         saveCheckpoint(
@@ -231,9 +287,9 @@ public class AgentRunExecutionService {
         }
 
         ToolSpec toolSpec = enabledTools.get(context.selectedToolId);
-        context.toolInput = context.toolInput == null || context.toolInput.isEmpty()
-                ? buildToolInput(context.request, context.selectedToolId)
-                : context.toolInput;
+        if (context.toolInput == null || context.toolInput.isEmpty()) {
+            context.toolInput = buildToolInput(context.request, context.selectedToolId);
+        }
 
         long stepId = persistStep(
                 context,
@@ -248,17 +304,15 @@ public class AgentRunExecutionService {
                 Map.of("input", context.toolInput)
         );
         context.currentStepId = stepId;
-        context.currentToolCallId = context.currentToolCallId != null
-                ? context.currentToolCallId
-                : agentRunRepository.findLatestToolCallId(context.tenantId, context.runId, stepId)
-                        .orElseGet(() -> agentRunRepository.createToolCall(
-                                context.tenantId,
-                                context.runId,
-                                stepId,
-                                context.selectedToolId,
-                                toolSpec == null ? null : toolSpec.pluginId(),
-                                context.request.question()
-                        ));
+        context.currentToolCallId = agentRunRepository.findLatestToolCallId(context.tenantId, context.runId, stepId)
+                .orElseGet(() -> agentRunRepository.createToolCall(
+                        context.tenantId,
+                        context.runId,
+                        stepId,
+                        context.selectedToolId,
+                        toolSpec == null ? null : toolSpec.pluginId(),
+                        context.request.question()
+                ));
 
         streamRegistry.emit(context.runId, "tool_start", Map.of(
                 "runId", context.runId,
@@ -353,7 +407,60 @@ public class AgentRunExecutionService {
         if (!incrementModelSteps(context, policy, AgentPhase.DECIDE_NEXT, "达到最大模型步数限制，已返回部分结果。")) {
             return;
         }
-        String answer = buildDecisionAnswer(context);
+        if (context.toolCalls >= policy.maxToolCalls()) {
+            // Already at tool budget; finalize.
+            String finalAnswer = buildDecisionAnswer(context);
+            context.answer = finalAnswer;
+            persistStep(context, 5, AgentPhase.DECIDE_NEXT, "success", "tool_budget_reached_final_answer",
+                    context.observationSummary, context.selectedToolId, context.selectedToolReason, null,
+                    Map.of("toolCalls", context.toolCalls));
+            saveCheckpoint(context, 0L, "answer_ready", Map.of("answer", finalAnswer), AgentPhase.COMPLETE);
+            context.phase = AgentPhase.COMPLETE;
+            return;
+        }
+
+        Map<String, ToolSpec> enabledTools = toolRegistryService.listEnabledTools(context.tenantId);
+        AgentDecision decision = agentPlanner.decideNext(
+                context.request,
+                enabledTools,
+                context.selectedToolId,
+                context.toolResult,
+                context.toolCalls
+        );
+        context.lastDecision = decision;
+
+        if (decision.action() == AgentDecision.Action.CALL_TOOL && decision.toolId() != null && enabledTools.containsKey(decision.toolId())) {
+            // True multi-tool loop: route back to SELECT_TOOL with new selection
+            persistStep(context, 5, AgentPhase.DECIDE_NEXT, "success", "decide_next_call_tool",
+                    decision.thoughtSummary(), decision.toolId(), decision.thoughtSummary(), null,
+                    Map.of("nextTool", decision.toolId()));
+            emitAgentStep(context, 5, AgentPhase.DECIDE_NEXT, "success", "继续调用工具：" + decision.toolId());
+            // Pre-set decision for handleSelectTool to consume.
+            context.selectedToolId = decision.toolId();
+            context.selectedToolReason = decision.thoughtSummary() == null ? "model_decision" : decision.thoughtSummary();
+            Map<String, Object> nextInput = decision.toolInput() == null || decision.toolInput().isEmpty()
+                    ? buildToolInput(context.request, decision.toolId())
+                    : new LinkedHashMap<>(decision.toolInput());
+            if (!nextInput.containsKey("question")) {
+                nextInput.put("question", context.request.question());
+            }
+            context.toolInput = nextInput;
+            context.toolResult = null;
+            saveCheckpoint(
+                    context,
+                    0L,
+                    "tool_selected",
+                    Map.of("selectedToolId", decision.toolId(), "selectedToolReason", context.selectedToolReason),
+                    AgentPhase.EXECUTE_TOOL
+            );
+            context.phase = AgentPhase.EXECUTE_TOOL;
+            return;
+        }
+
+        // Default to finalization.
+        String answer = decision.finalAnswer() == null || decision.finalAnswer().isBlank()
+                ? buildDecisionAnswer(context)
+                : decision.finalAnswer();
         context.answer = answer;
         long stepId = persistStep(
                 context,
@@ -887,6 +994,7 @@ public class AgentRunExecutionService {
         private ToolResult toolResult;
         private Long currentStepId;
         private Long currentToolCallId;
+        private com.superagent.agent.domain.AgentDecision lastDecision;
 
         private ExecutionContext(long runId, long tenantId, InternalAgentRunRequest request) {
             this.runId = runId;

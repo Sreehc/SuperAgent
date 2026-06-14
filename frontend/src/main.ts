@@ -4,6 +4,7 @@ import { createRouter } from './app/router'
 import App from './app/App.vue'
 import { setRefreshHandler, setUnauthorizedHandler } from './api/http'
 import { useAuthStore } from './features/auth/store/auth'
+import 'highlight.js/styles/github-dark.css'
 import './styles.css'
 
 document.title = import.meta.env.VITE_APP_NAME || 'SuperAgent'

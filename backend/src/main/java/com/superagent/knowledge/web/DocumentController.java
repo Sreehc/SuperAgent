@@ -36,32 +36,7 @@ public class DocumentController {
     @GetMapping("/{documentId}")
     public ApiResponse<DocumentDetailItem> getDocument(@PathVariable long documentId) {
         var document = knowledgeService.getDocument(documentId);
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("category", document.category());
-        metadata.put("tags", document.tags());
-        metadata.put("knowledgeDomainId", document.knowledgeDomainId());
-        metadata.put("chunkingProfileId", document.chunkingProfileId());
-        metadata.put("graphSyncStatus", document.graphSyncStatus());
-        metadata.put("graphErrorMessage", document.graphErrorMessage());
-        metadata.put("activeVersionNo", document.activeVersionNo());
-        return ApiResponse.success(new DocumentDetailItem(
-                document.id(),
-                document.knowledgeBaseId(),
-                document.knowledgeDomainId(),
-                document.chunkingProfileId(),
-                document.activeVersionNo(),
-                document.title(),
-                document.fileName(),
-                document.fileType(),
-                document.fileSize(),
-                document.status().name(),
-                document.chunkCount(),
-                document.errorMessage(),
-                document.parsedText(),
-                metadata,
-                document.createdAt(),
-                document.updatedAt()
-        ));
+        return ApiResponse.success(buildDetailItem(document));
     }
 
     @DeleteMapping("/{documentId}")
@@ -82,6 +57,29 @@ public class DocumentController {
                 request.knowledgeDomainId(),
                 request.chunkingProfileId()
         );
+        return ApiResponse.success(buildDetailItem(document));
+    }
+
+    @PatchMapping("/{documentId}/metadata")
+    public ApiResponse<DocumentDetailItem> updateDocumentGovernanceMetadata(
+            @PathVariable long documentId,
+            @Valid @RequestBody UpdateDocumentMetadataRequest request
+    ) {
+        var document = knowledgeService.updateDocumentGovernance(
+                documentId,
+                request.ownerUserId(),
+                request.expiresAt(),
+                request.reviewStatus(),
+                request.title(),
+                request.category(),
+                request.tags(),
+                request.knowledgeDomainId(),
+                request.chunkingProfileId()
+        );
+        return ApiResponse.success(buildDetailItem(document));
+    }
+
+    private DocumentDetailItem buildDetailItem(com.superagent.knowledge.domain.KnowledgeDocument document) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("category", document.category());
         metadata.put("tags", document.tags());
@@ -90,7 +88,12 @@ public class DocumentController {
         metadata.put("graphSyncStatus", document.graphSyncStatus());
         metadata.put("graphErrorMessage", document.graphErrorMessage());
         metadata.put("activeVersionNo", document.activeVersionNo());
-        return ApiResponse.success(new DocumentDetailItem(
+        metadata.put("ownerUserId", document.ownerUserId());
+        metadata.put("expiresAt", document.expiresAt());
+        metadata.put("reviewStatus", document.reviewStatus());
+        metadata.put("reviewedBy", document.reviewedBy());
+        metadata.put("reviewedAt", document.reviewedAt());
+        return new DocumentDetailItem(
                 document.id(),
                 document.knowledgeBaseId(),
                 document.knowledgeDomainId(),
@@ -104,10 +107,15 @@ public class DocumentController {
                 document.chunkCount(),
                 document.errorMessage(),
                 document.parsedText(),
+                document.ownerUserId(),
+                document.expiresAt(),
+                document.reviewStatus(),
+                document.reviewedBy(),
+                document.reviewedAt(),
                 metadata,
                 document.createdAt(),
                 document.updatedAt()
-        ));
+        );
     }
 
     @PostMapping("/{documentId}/reprocess")
@@ -216,6 +224,18 @@ public class DocumentController {
     ) {
     }
 
+    public record UpdateDocumentMetadataRequest(
+            @Size(max = 255) String title,
+            @Size(max = 128) String category,
+            @Size(max = 1000) String tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            Long ownerUserId,
+            OffsetDateTime expiresAt,
+            String reviewStatus
+    ) {
+    }
+
     public record DocumentDetailItem(
             long id,
             long knowledgeBaseId,
@@ -230,6 +250,11 @@ public class DocumentController {
             int chunkCount,
             String errorMessage,
             String parsedText,
+            Long ownerUserId,
+            OffsetDateTime expiresAt,
+            String reviewStatus,
+            Long reviewedBy,
+            OffsetDateTime reviewedAt,
             Map<String, Object> metadata,
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt

@@ -6,10 +6,12 @@ import com.superagent.evaluation.domain.AgentEvalCase;
 import com.superagent.evaluation.domain.AgentEvalRun;
 import com.superagent.evaluation.domain.AgentEvalSuite;
 import com.superagent.evaluation.domain.AgentEvalSuiteDetail;
+import com.superagent.evaluation.repository.AgentEvalRepository;
 import com.superagent.evaluation.service.AgentEvalService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -93,6 +95,29 @@ public class AgentEvalAdminController {
         return ApiResponse.success(evalService.getRun(runId));
     }
 
+    @GetMapping("/runs/{runId}/cases")
+    public ApiResponse<List<RunCaseItem>> listRunCases(
+            @PathVariable long runId,
+            @RequestParam(required = false) String status
+    ) {
+        return ApiResponse.success(evalService.listRunCases(runId, status).stream()
+                .map(item -> new RunCaseItem(
+                        item.id(),
+                        item.runId(),
+                        item.caseId(),
+                        item.caseKey(),
+                        item.status(),
+                        item.score(),
+                        item.actual(),
+                        item.expected(),
+                        item.diff(),
+                        item.latencyMs(),
+                        item.errorMessage(),
+                        item.createdAt()
+                ))
+                .toList());
+    }
+
     public record SuiteRequest(
             @NotBlank @Size(max = 128) String suiteKey,
             @NotBlank @Size(max = 255) String name,
@@ -132,5 +157,21 @@ public class AgentEvalAdminController {
     }
 
     public record PagedResponse<T>(List<T> items, int page, int pageSize, long total) {
+    }
+
+    public record RunCaseItem(
+            long id,
+            long runId,
+            long caseId,
+            String caseKey,
+            String status,
+            Double score,
+            Map<String, Object> actual,
+            Map<String, Object> expected,
+            Map<String, Object> diff,
+            Integer latencyMs,
+            String errorMessage,
+            OffsetDateTime createdAt
+    ) {
     }
 }

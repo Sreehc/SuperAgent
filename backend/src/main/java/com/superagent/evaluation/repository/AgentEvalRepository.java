@@ -257,6 +257,96 @@ public class AgentEvalRepository {
         return findRun(tenantId, id).orElseThrow();
     }
 
+    public long insertRunCase(
+            Long tenantId,
+            long runId,
+            long caseId,
+            String status,
+            Double score,
+            Map<String, Object> actual,
+            Map<String, Object> expected,
+            Map<String, Object> diff,
+            Integer latencyMs,
+            String errorMessage
+    ) {
+        return jdbcTemplate.queryForObject("""
+                        INSERT INTO agent_eval_run_case
+                            (tenant_id, run_id, case_id, status, score, actual_json, expected_json, diff_json, latency_ms, error_message)
+                        VALUES
+                            (:tenantId, :runId, :caseId, :status, :score, CAST(:actualJson AS jsonb),
+                             CAST(:expectedJson AS jsonb), CAST(:diffJson AS jsonb), :latencyMs, :errorMessage)
+                        RETURNING id
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("runId", runId)
+                        .addValue("caseId", caseId)
+                        .addValue("status", status)
+                        .addValue("score", score)
+                        .addValue("actualJson", writeJson(actual))
+                        .addValue("expectedJson", writeJson(expected))
+                        .addValue("diffJson", writeJson(diff))
+                        .addValue("latencyMs", latencyMs)
+                        .addValue("errorMessage", errorMessage),
+                Long.class
+        );
+    }
+
+    public List<RunCaseResult> listRunCases(long tenantId, long runId, String status) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT rc.id, rc.run_id, rc.case_id, c.case_key, rc.status, rc.score,
+                       rc.actual_json::text AS actual_json,
+                       rc.expected_json::text AS expected_json,
+                       rc.diff_json::text AS diff_json,
+                       rc.latency_ms, rc.error_message, rc.created_at
+                FROM agent_eval_run_case rc
+                LEFT JOIN agent_eval_case c ON c.id = rc.case_id
+                JOIN agent_eval_run r ON r.id = rc.run_id
+                JOIN agent_eval_suite s ON s.id = r.suite_id
+                WHERE rc.run_id = :runId
+                  AND (s.tenant_id = :tenantId OR s.tenant_id IS NULL)
+                """);
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("runId", runId);
+        String normalizedStatus = blankToNull(status);
+        if (normalizedStatus != null) {
+            sql.append(" AND rc.status = :status ");
+            params.addValue("status", normalizedStatus);
+        }
+        sql.append(" ORDER BY rc.id ASC");
+        return jdbcTemplate.query(sql.toString(), params, (rs, rowNum) -> new RunCaseResult(
+                rs.getLong("id"),
+                rs.getLong("run_id"),
+                rs.getLong("case_id"),
+                rs.getString("case_key"),
+                rs.getString("status"),
+                (Double) rs.getObject("score"),
+                parseMap(rs.getString("actual_json")),
+                parseMap(rs.getString("expected_json")),
+                parseMap(rs.getString("diff_json")),
+                (Integer) rs.getObject("latency_ms"),
+                rs.getString("error_message"),
+                rs.getObject("created_at", OffsetDateTime.class)
+        ));
+    }
+
+    public record RunCaseResult(
+            long id,
+            long runId,
+            long caseId,
+            String caseKey,
+            String status,
+            Double score,
+            Map<String, Object> actual,
+            Map<String, Object> expected,
+            Map<String, Object> diff,
+            Integer latencyMs,
+            String errorMessage,
+            OffsetDateTime createdAt
+    ) {
+    }
+
     private StringBuilder suiteSelectSql(String whereClause) {
         return new StringBuilder("""
                 SELECT aes.id,

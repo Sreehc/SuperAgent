@@ -524,6 +524,171 @@ public class KnowledgeRepository {
         return getKnowledgeDocument(tenantId, documentId).orElseThrow();
     }
 
+    public KnowledgeDocument updateDocumentGovernance(
+            long tenantId,
+            long documentId,
+            Long ownerUserId,
+            OffsetDateTime expiresAt,
+            String reviewStatus,
+            Long reviewedBy,
+            OffsetDateTime reviewedAt
+    ) {
+        getKnowledgeDocument(tenantId, documentId).orElseThrow();
+        jdbcTemplate.update(connection -> {
+            var statement = connection.prepareStatement("""
+                    UPDATE knowledge_document
+                    SET owner_user_id = ?,
+                        expires_at = ?,
+                        review_status = ?,
+                        reviewed_by = ?,
+                        reviewed_at = ?,
+                        updated_at = NOW()
+                    WHERE tenant_id = ?
+                      AND id = ?
+                      AND deleted_at IS NULL
+                    """);
+            if (ownerUserId == null) {
+                statement.setNull(1, Types.BIGINT);
+            } else {
+                statement.setLong(1, ownerUserId);
+            }
+            if (expiresAt == null) {
+                statement.setNull(2, Types.TIMESTAMP_WITH_TIMEZONE);
+            } else {
+                statement.setObject(2, expiresAt);
+            }
+            statement.setString(3, reviewStatus);
+            if (reviewedBy == null) {
+                statement.setNull(4, Types.BIGINT);
+            } else {
+                statement.setLong(4, reviewedBy);
+            }
+            if (reviewedAt == null) {
+                statement.setNull(5, Types.TIMESTAMP_WITH_TIMEZONE);
+            } else {
+                statement.setObject(5, reviewedAt);
+            }
+            statement.setLong(6, tenantId);
+            statement.setLong(7, documentId);
+            return statement;
+        });
+        return getKnowledgeDocument(tenantId, documentId).orElseThrow();
+    }
+
+    public List<KnowledgeDocument> findExpiringDocuments(long tenantId, int withinDays) {
+        return jdbcTemplate.query("""
+                        SELECT id,
+                               tenant_id,
+                               knowledge_base_id,
+                               knowledge_domain_id,
+                               chunking_profile_id,
+                               graph_sync_status,
+                               graph_error_message,
+                               active_version_no,
+                               title,
+                               file_name,
+                               file_type,
+                               file_size,
+                               object_key,
+                               content_hash,
+                               status,
+                               chunk_count,
+                               error_message,
+                               metadata,
+                               created_by,
+                               owner_user_id,
+                               expires_at,
+                               review_status,
+                               reviewed_by,
+                               reviewed_at,
+                               created_at,
+                               updated_at
+                        FROM knowledge_document
+                        WHERE tenant_id = ?
+                          AND deleted_at IS NULL
+                          AND expires_at IS NOT NULL
+                          AND expires_at <= NOW() + (? || ' days')::interval
+                        ORDER BY expires_at ASC
+                        LIMIT 200
+                        """,
+                knowledgeDocumentRowMapper,
+                tenantId,
+                withinDays
+        );
+    }
+
+    public List<DuplicateDocumentGroup> findDuplicateDocuments(long tenantId) {
+        return jdbcTemplate.query("""
+                        SELECT content_hash,
+                               COUNT(*) AS duplicate_count,
+                               array_agg(id ORDER BY created_at) AS document_ids,
+                               array_agg(title ORDER BY created_at) AS titles,
+                               array_agg(knowledge_base_id ORDER BY created_at) AS knowledge_base_ids,
+                               MIN(created_at) AS first_created_at,
+                               MAX(updated_at) AS last_updated_at
+                        FROM knowledge_document
+                        WHERE tenant_id = ?
+                          AND deleted_at IS NULL
+                          AND content_hash IS NOT NULL
+                        GROUP BY content_hash
+                        HAVING COUNT(*) > 1
+                        ORDER BY duplicate_count DESC, last_updated_at DESC
+                        LIMIT 100
+                        """,
+                (rs, rowNum) -> {
+                    java.sql.Array idArray = rs.getArray("document_ids");
+                    java.sql.Array titleArray = rs.getArray("titles");
+                    java.sql.Array kbArray = rs.getArray("knowledge_base_ids");
+                    return new DuplicateDocumentGroup(
+                            rs.getString("content_hash"),
+                            rs.getInt("duplicate_count"),
+                            toLongList(idArray),
+                            toStringList(titleArray),
+                            toLongList(kbArray),
+                            readOffsetDateTime(rs, "first_created_at"),
+                            readOffsetDateTime(rs, "last_updated_at")
+                    );
+                },
+                tenantId
+        );
+    }
+
+    public record DuplicateDocumentGroup(
+            String contentHash,
+            int duplicateCount,
+            List<Long> documentIds,
+            List<String> titles,
+            List<Long> knowledgeBaseIds,
+            OffsetDateTime firstCreatedAt,
+            OffsetDateTime lastUpdatedAt
+    ) {
+    }
+
+    private List<Long> toLongList(java.sql.Array array) throws SQLException {
+        if (array == null) {
+            return List.of();
+        }
+        Object[] objects = (Object[]) array.getArray();
+        java.util.ArrayList<Long> values = new java.util.ArrayList<>(objects.length);
+        for (Object o : objects) {
+            if (o == null) continue;
+            if (o instanceof Number n) values.add(n.longValue());
+        }
+        return values;
+    }
+
+    private List<String> toStringList(java.sql.Array array) throws SQLException {
+        if (array == null) {
+            return List.of();
+        }
+        Object[] objects = (Object[]) array.getArray();
+        java.util.ArrayList<String> values = new java.util.ArrayList<>(objects.length);
+        for (Object o : objects) {
+            if (o != null) values.add(String.valueOf(o));
+        }
+        return values;
+    }
+
     public KnowledgeDocument createKnowledgeDocument(
             long tenantId,
             long knowledgeBaseId,
@@ -1538,9 +1703,39 @@ public class KnowledgeRepository {
                 metadata.get("category") instanceof String category && !category.isBlank() ? category : null,
                 metadata.get("tags") instanceof List<?> tags ? tags.stream().map(String::valueOf).toList() : List.of(),
                 rs.getLong("created_by"),
+                getOptionalNullableLong(rs, "owner_user_id"),
+                getOptionalOffsetDateTime(rs, "expires_at"),
+                getOptionalString(rs, "review_status", "approved"),
+                getOptionalNullableLong(rs, "reviewed_by"),
+                getOptionalOffsetDateTime(rs, "reviewed_at"),
                 readOffsetDateTime(rs, "created_at"),
                 readOffsetDateTime(rs, "updated_at")
         );
+    }
+
+    private Long getOptionalNullableLong(ResultSet rs, String column) throws SQLException {
+        try {
+            return getNullableLong(rs, column);
+        } catch (SQLException ignored) {
+            return null;
+        }
+    }
+
+    private OffsetDateTime getOptionalOffsetDateTime(ResultSet rs, String column) throws SQLException {
+        try {
+            return readOffsetDateTime(rs, column);
+        } catch (SQLException ignored) {
+            return null;
+        }
+    }
+
+    private String getOptionalString(ResultSet rs, String column, String defaultValue) throws SQLException {
+        try {
+            String value = rs.getString(column);
+            return value == null ? defaultValue : value;
+        } catch (SQLException ignored) {
+            return defaultValue;
+        }
     }
 
     private KnowledgeDocumentVersion mapDocumentVersion(ResultSet rs) throws SQLException {

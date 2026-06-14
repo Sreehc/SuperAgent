@@ -208,6 +208,116 @@ public class AgentAdminRepository {
         ));
     }
 
+    public Optional<AdminPluginItem> findPlugin(long tenantId, long pluginId) {
+        return jdbcTemplate.query("""
+                        SELECT pr.id, pr.plugin_key, pr.version, pr.display_name, pr.status, pr.manifest_json, pr.updated_at,
+                               COALESCE(pi.config_json::text, '{}'::text) AS installation_config_json,
+                               COALESCE((
+                                   SELECT json_agg(ttb.tool_id ORDER BY ttb.tool_id)
+                                   FROM tenant_tool_binding ttb
+                                   WHERE ttb.tenant_id = :tenantId
+                                     AND ttb.plugin_id = pr.id
+                                     AND ttb.enabled = TRUE
+                               )::text, '[]') AS enabled_tools_json,
+                               COALESCE((
+                                   SELECT json_agg(DISTINCT tts.secret_key ORDER BY tts.secret_key)
+                                   FROM tenant_tool_secret tts
+                                   JOIN tenant_tool_binding ttb
+                                     ON ttb.tenant_id = tts.tenant_id
+                                    AND ttb.tool_id = tts.tool_id
+                                   WHERE tts.tenant_id = :tenantId
+                                     AND ttb.plugin_id = pr.id
+                               )::text, '[]') AS secret_keys_json,
+                               COALESCE((
+                                   SELECT COUNT(*)
+                                   FROM tool_call_trace tct
+                                   WHERE tct.tenant_id = :tenantId
+                                     AND tct.plugin_id = pr.id
+                                     AND tct.status = 'failed'
+                               ), 0) AS recent_error_count,
+                               COALESCE(pi.enabled, FALSE) AS enabled
+                        FROM plugin_registry pr
+                        LEFT JOIN plugin_installation pi
+                          ON pi.plugin_id = pr.id
+                         AND pi.tenant_id = :tenantId
+                        WHERE pr.id = :pluginId
+                        """,
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("pluginId", pluginId),
+                (rs, rowNum) -> new AdminPluginItem(
+                        rs.getLong("id"),
+                        rs.getString("plugin_key"),
+                        rs.getString("version"),
+                        rs.getString("display_name"),
+                        rs.getBoolean("enabled"),
+                        rs.getString("status"),
+                        parseMap(rs.getString("manifest_json")),
+                        parseMap(rs.getString("installation_config_json")),
+                        parseStringList(rs.getString("enabled_tools_json")),
+                        parseStringList(rs.getString("secret_keys_json")),
+                        rs.getInt("recent_error_count"),
+                        rs.getObject("updated_at", OffsetDateTime.class)
+                )
+        ).stream().findFirst();
+    }
+
+    public long installPlugin(long tenantId, String pluginKey, String version, String displayName, String manifestJson) {
+        Long pluginId = jdbcTemplate.queryForObject("""
+                        INSERT INTO plugin_registry (plugin_key, version, display_name, manifest_json, status)
+                        VALUES (:pluginKey, :version, :displayName, CAST(:manifest AS jsonb), 'active')
+                        ON CONFLICT (plugin_key)
+                        DO UPDATE SET version = EXCLUDED.version,
+                                      display_name = EXCLUDED.display_name,
+                                      manifest_json = EXCLUDED.manifest_json,
+                                      status = 'active',
+                                      updated_at = NOW()
+                        RETURNING id
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("pluginKey", pluginKey)
+                        .addValue("version", version)
+                        .addValue("displayName", displayName)
+                        .addValue("manifest", manifestJson),
+                Long.class
+        );
+        if (pluginId == null) {
+            throw new IllegalStateException("Failed to install plugin");
+        }
+        jdbcTemplate.update("""
+                        INSERT INTO plugin_installation (tenant_id, plugin_id, enabled, config_json)
+                        VALUES (:tenantId, :pluginId, TRUE, '{}'::jsonb)
+                        ON CONFLICT (tenant_id, plugin_id)
+                        DO UPDATE SET enabled = TRUE,
+                                      updated_at = NOW()
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("pluginId", pluginId)
+        );
+        return pluginId;
+    }
+
+    public boolean uninstallPlugin(long tenantId, long pluginId) {
+        int updated = jdbcTemplate.update("""
+                        UPDATE plugin_installation
+                        SET enabled = FALSE, updated_at = NOW()
+                        WHERE tenant_id = :tenantId AND plugin_id = :pluginId
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("pluginId", pluginId)
+        );
+        jdbcTemplate.update("""
+                        UPDATE tenant_tool_binding
+                        SET enabled = FALSE, updated_at = NOW()
+                        WHERE tenant_id = :tenantId AND plugin_id = :pluginId
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("pluginId", pluginId)
+        );
+        return updated > 0;
+    }
+
     public List<AdminPluginItem> listPlugins(long tenantId) {
         return jdbcTemplate.query("""
                         SELECT pr.id, pr.plugin_key, pr.version, pr.display_name, pr.status, pr.manifest_json, pr.updated_at,
@@ -349,6 +459,98 @@ public class AgentAdminRepository {
                         .addValue("toolId", toolId)
                         .addValue("secretKey", secretKey)
         ) > 0;
+    }
+
+    public List<ToolBindingRecord> listToolBindings(long tenantId) {
+        return jdbcTemplate.query("""
+                        SELECT ttb.id, ttb.tool_id, ttb.plugin_id, pr.plugin_key, pr.display_name AS plugin_display_name,
+                               ttb.enabled, ttb.risk_level, COALESCE(ttb.config_json::text, '{}'::text) AS config_json,
+                               ttb.created_at, ttb.updated_at
+                        FROM tenant_tool_binding ttb
+                        LEFT JOIN plugin_registry pr ON pr.id = ttb.plugin_id
+                        WHERE ttb.tenant_id = :tenantId
+                        ORDER BY ttb.tool_id ASC
+                        """,
+                Map.of("tenantId", tenantId),
+                (rs, rowNum) -> new ToolBindingRecord(
+                        rs.getLong("id"),
+                        rs.getString("tool_id"),
+                        getNullableLong(rs, "plugin_id"),
+                        rs.getString("plugin_key"),
+                        rs.getString("plugin_display_name"),
+                        rs.getBoolean("enabled"),
+                        rs.getString("risk_level"),
+                        parseMap(rs.getString("config_json")),
+                        rs.getObject("created_at", OffsetDateTime.class),
+                        rs.getObject("updated_at", OffsetDateTime.class)
+                )
+        );
+    }
+
+    public Optional<ToolBindingRecord> findToolBinding(long tenantId, long bindingId) {
+        return jdbcTemplate.query("""
+                        SELECT ttb.id, ttb.tool_id, ttb.plugin_id, pr.plugin_key, pr.display_name AS plugin_display_name,
+                               ttb.enabled, ttb.risk_level, COALESCE(ttb.config_json::text, '{}'::text) AS config_json,
+                               ttb.created_at, ttb.updated_at
+                        FROM tenant_tool_binding ttb
+                        LEFT JOIN plugin_registry pr ON pr.id = ttb.plugin_id
+                        WHERE ttb.tenant_id = :tenantId AND ttb.id = :bindingId
+                        """,
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("bindingId", bindingId),
+                (rs, rowNum) -> new ToolBindingRecord(
+                        rs.getLong("id"),
+                        rs.getString("tool_id"),
+                        getNullableLong(rs, "plugin_id"),
+                        rs.getString("plugin_key"),
+                        rs.getString("plugin_display_name"),
+                        rs.getBoolean("enabled"),
+                        rs.getString("risk_level"),
+                        parseMap(rs.getString("config_json")),
+                        rs.getObject("created_at", OffsetDateTime.class),
+                        rs.getObject("updated_at", OffsetDateTime.class)
+                )
+        ).stream().findFirst();
+    }
+
+    public boolean updateToolBinding(
+            long tenantId,
+            long bindingId,
+            Boolean enabled,
+            String riskLevel,
+            String configJson
+    ) {
+        StringBuilder sql = new StringBuilder("UPDATE tenant_tool_binding SET updated_at = NOW()");
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("bindingId", bindingId);
+        if (enabled != null) {
+            sql.append(", enabled = :enabled");
+            params.addValue("enabled", enabled);
+        }
+        if (riskLevel != null && !riskLevel.isBlank()) {
+            sql.append(", risk_level = :riskLevel");
+            params.addValue("riskLevel", riskLevel.trim());
+        }
+        if (configJson != null) {
+            sql.append(", config_json = CAST(:configJson AS jsonb)");
+            params.addValue("configJson", configJson);
+        }
+        sql.append(" WHERE tenant_id = :tenantId AND id = :bindingId");
+        return jdbcTemplate.update(sql.toString(), params) > 0;
+    }
+
+    public record ToolBindingRecord(
+            long id,
+            String toolId,
+            Long pluginId,
+            String pluginKey,
+            String pluginDisplayName,
+            boolean enabled,
+            String riskLevel,
+            Map<String, Object> config,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt
+    ) {
     }
 
     public record PluginToolCapabilityRow(

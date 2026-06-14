@@ -156,6 +156,11 @@ class DocumentGraphServiceTest {
                 "ops",
                 List.of("refund"),
                 5001L,
+                null,
+                null,
+                "approved",
+                null,
+                null,
                 OffsetDateTime.now(),
                 OffsetDateTime.now()
         );

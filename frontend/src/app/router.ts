@@ -8,11 +8,14 @@ const AuditLogPage = () => import('../features/audit/pages/AuditLogPage.vue')
 const ToolsConsolePage = () => import('../features/agent/pages/ToolsConsolePage.vue')
 const ChatWorkspacePage = () => import('../features/chat/pages/ChatWorkspacePage.vue')
 const EvaluationConsolePage = () => import('../features/evaluation/pages/EvaluationConsolePage.vue')
+const EvalSuiteDetailPage = () => import('../features/evaluation/pages/EvalSuiteDetailPage.vue')
+const EvalRunDetailPage = () => import('../features/evaluation/pages/EvalRunDetailPage.vue')
 const FeedbackConsolePage = () => import('../features/feedback/pages/FeedbackConsolePage.vue')
 const GovernanceConsolePage = () => import('../features/governance/pages/GovernanceConsolePage.vue')
 const DocumentDetailPage = () => import('../features/knowledge/pages/DocumentDetailPage.vue')
 const KnowledgeDetailPage = () => import('../features/knowledge/pages/KnowledgeDetailPage.vue')
 const KnowledgeListPage = () => import('../features/knowledge/pages/KnowledgeListPage.vue')
+const MembersConsolePage = () => import('../features/members/pages/MembersConsolePage.vue')
 const PermissionDeniedPage = () => import('../features/placeholders/pages/PermissionDeniedPage.vue')
 const SettingsPage = () => import('../features/settings/pages/SettingsPage.vue')
 const TraceDetailPage = () => import('../features/traces/pages/TraceDetailPage.vue')
@@ -157,12 +160,46 @@ export function createRouter(pinia: Pinia) {
           },
           {
             path: '/evaluations',
-            name: 'evaluations',
+            redirect: '/evals',
+          },
+          {
+            path: '/evals',
+            name: 'evals',
             component: EvaluationConsolePage,
             meta: {
               requiresAuth: true,
               roles: ['OWNER', 'ADMIN'],
               menuLabel: '评测',
+            },
+          },
+          {
+            path: '/evals/:suiteId',
+            name: 'eval-suite-detail',
+            component: EvalSuiteDetailPage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: '评测',
+            },
+          },
+          {
+            path: '/evals/runs/:runId',
+            name: 'eval-run-detail',
+            component: EvalRunDetailPage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: '评测',
+            },
+          },
+          {
+            path: '/members',
+            name: 'members',
+            component: MembersConsolePage,
+            meta: {
+              requiresAuth: true,
+              roles: ['OWNER', 'ADMIN'],
+              menuLabel: '成员',
             },
           },
           {

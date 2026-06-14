@@ -47,3 +47,18 @@ export interface EvalPagedResult<T> {
   pageSize: number
   total: number
 }
+
+export interface EvalRunCase {
+  id: number
+  runId: number
+  caseId: number
+  caseKey: string | null
+  status: 'passed' | 'failed' | 'error' | 'skipped'
+  score: number | null
+  actual: Record<string, unknown>
+  expected: Record<string, unknown>
+  diff: Record<string, unknown>
+  latencyMs: number | null
+  errorMessage: string | null
+  createdAt: string
+}

@@ -6,15 +6,20 @@ import com.superagent.agent.domain.AdminAgentRunSummary;
 import com.superagent.agent.domain.AdminAgentRunStep;
 import com.superagent.agent.domain.AdminPluginItem;
 import com.superagent.agent.domain.AdminToolCallDetail;
+import com.superagent.agent.repository.AgentAdminRepository;
 import com.superagent.agent.service.AgentAdminService;
 import com.superagent.chat.service.ConversationService;
 import com.superagent.common.api.ApiResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -104,6 +109,64 @@ public class AgentAdminController {
         return ApiResponse.success(agentAdminService.deleteToolSecret(toolId, secretKey));
     }
 
+    @GetMapping("/tool-bindings")
+    public ApiResponse<List<ToolBindingResponse>> listToolBindings() {
+        return ApiResponse.success(agentAdminService.listToolBindings().stream()
+                .map(record -> new ToolBindingResponse(
+                        record.id(),
+                        record.toolId(),
+                        record.pluginId(),
+                        record.pluginKey(),
+                        record.pluginDisplayName(),
+                        record.enabled(),
+                        record.riskLevel(),
+                        record.config(),
+                        record.createdAt(),
+                        record.updatedAt()
+                ))
+                .toList());
+    }
+
+    @PatchMapping("/tool-bindings/{bindingId}")
+    public ApiResponse<ToolBindingResponse> updateToolBinding(
+            @PathVariable long bindingId,
+            @Valid @RequestBody UpdateToolBindingRequest request
+    ) {
+        AgentAdminRepository.ToolBindingRecord record = agentAdminService.updateToolBinding(
+                bindingId,
+                request.enabled(),
+                request.riskLevel(),
+                request.config()
+        );
+        return ApiResponse.success(new ToolBindingResponse(
+                record.id(),
+                record.toolId(),
+                record.pluginId(),
+                record.pluginKey(),
+                record.pluginDisplayName(),
+                record.enabled(),
+                record.riskLevel(),
+                record.config(),
+                record.createdAt(),
+                record.updatedAt()
+        ));
+    }
+
+    @PostMapping("/plugins/install")
+    public ApiResponse<AdminPluginItem> installPlugin(@Valid @RequestBody InstallPluginRequest request) {
+        return ApiResponse.success(agentAdminService.installPlugin(
+                request.pluginKey(),
+                request.version(),
+                request.displayName(),
+                request.manifest()
+        ));
+    }
+
+    @DeleteMapping("/plugins/{pluginId}")
+    public ApiResponse<UninstallPluginResponse> uninstallPlugin(@PathVariable long pluginId) {
+        return ApiResponse.success(new UninstallPluginResponse(pluginId, agentAdminService.uninstallPlugin(pluginId)));
+    }
+
     public record PagedResponse<T>(List<T> items, int page, int pageSize, long total) {
     }
 
@@ -114,5 +177,37 @@ public class AgentAdminController {
     }
 
     public record UpdateToolSecretRequest(String value) {
+    }
+
+    public record UpdateToolBindingRequest(
+            Boolean enabled,
+            String riskLevel,
+            Map<String, Object> config
+    ) {
+    }
+
+    public record ToolBindingResponse(
+            long id,
+            String toolId,
+            Long pluginId,
+            String pluginKey,
+            String pluginDisplayName,
+            boolean enabled,
+            String riskLevel,
+            Map<String, Object> config,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt
+    ) {
+    }
+
+    public record InstallPluginRequest(
+            @NotBlank String pluginKey,
+            @NotBlank String version,
+            String displayName,
+            Map<String, Object> manifest
+    ) {
+    }
+
+    public record UninstallPluginResponse(long pluginId, boolean uninstalled) {
     }
 }

@@ -11,7 +11,10 @@ import com.superagent.auth.security.JwtTokenService;
 import com.superagent.auth.security.RefreshTokenService;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
+import com.superagent.settings.repository.AuditLogRepository;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,6 +28,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final PasswordEncoder passwordEncoder;
     private final CurrentAuthenticatedUser currentAuthenticatedUser;
+    private final AuditLogRepository auditLogRepository;
 
     public AuthService(
             UserAccountRepository userAccountRepository,
@@ -32,7 +36,8 @@ public class AuthService {
             JwtTokenService jwtTokenService,
             RefreshTokenService refreshTokenService,
             PasswordEncoder passwordEncoder,
-            CurrentAuthenticatedUser currentAuthenticatedUser
+            CurrentAuthenticatedUser currentAuthenticatedUser,
+            AuditLogRepository auditLogRepository
     ) {
         this.userAccountRepository = userAccountRepository;
         this.tenantRepository = tenantRepository;
@@ -40,14 +45,19 @@ public class AuthService {
         this.refreshTokenService = refreshTokenService;
         this.passwordEncoder = passwordEncoder;
         this.currentAuthenticatedUser = currentAuthenticatedUser;
+        this.auditLogRepository = auditLogRepository;
     }
 
     public LoginResult login(String username, String password) {
         UserAccount userAccount = userAccountRepository.findByUsername(username)
                 .filter(user -> "active".equalsIgnoreCase(user.status()))
-                .orElseThrow(() -> new AppException(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED, "Invalid username or password"));
-
+                .orElse(null);
+        if (userAccount == null) {
+            recordLoginFailure(null, username, "user_not_found_or_disabled");
+            throw new AppException(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED, "Invalid username or password");
+        }
         if (!passwordEncoder.matches(password, userAccount.passwordHash())) {
+            recordLoginFailure(userAccount.id(), username, "invalid_password");
             throw new AppException(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
 
@@ -56,11 +66,17 @@ public class AuthService {
                 .filter(membership -> "active".equalsIgnoreCase(membership.tenantStatus()))
                 .toList();
         if (memberships.isEmpty()) {
+            recordLoginFailure(userAccount.id(), username, "no_active_membership");
             throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "User has no active tenant membership");
         }
 
         TenantMembership defaultMembership = resolveDefaultMembership(userAccount, memberships);
         RefreshTokenService.IssuedRefreshToken refreshToken = refreshTokenService.issue(userAccount.id(), defaultMembership.tenantId());
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("username", username);
+        detail.put("tenantId", defaultMembership.tenantId());
+        auditLogRepository.append(defaultMembership.tenantId(), userAccount.id(), "auth.login.success", "user_account", userAccount.id(), detail);
 
         return new LoginResult(
                 jwtTokenService.issueAccessToken(userAccount.id(), userAccount.username()),
@@ -105,6 +121,12 @@ public class AuthService {
             throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "Refresh token does not belong to current user");
         }
         refreshTokenService.revoke(refreshToken.id());
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("username", principal.username());
+        if (principal.currentTenantId() != null) {
+            detail.put("tenantId", principal.currentTenantId());
+        }
+        auditLogRepository.append(principal.currentTenantId(), principal.userId(), "auth.logout", "user_account", principal.userId(), detail);
         return true;
     }
 
@@ -116,6 +138,17 @@ public class AuthService {
                 principal.displayName(),
                 principal.memberships()
         );
+    }
+
+    private void recordLoginFailure(Long userId, String username, String reason) {
+        try {
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("username", username);
+            detail.put("reason", reason);
+            auditLogRepository.append(null, userId, "auth.login.failed", "user_account", userId, detail);
+        } catch (Exception ignored) {
+            // never block login flow on audit failure
+        }
     }
 
     private TenantMembership resolveDefaultMembership(UserAccount userAccount, List<TenantMembership> memberships) {

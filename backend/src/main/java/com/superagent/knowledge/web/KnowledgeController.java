@@ -138,17 +138,23 @@ public class KnowledgeController {
                 tags,
                 knowledgeDomainId,
                 chunkingProfileId
-        ).stream().map(result -> new UploadDocumentResponse(
-                result.document().id(),
-                result.document().knowledgeBaseId(),
-                result.document().title(),
-                result.document().status().name(),
-                result.task().id(),
-                result.document().knowledgeDomainId(),
-                result.document().chunkingProfileId(),
-                result.document().activeVersionNo()
+        ).stream().map(item -> new BatchUploadItemResponse(
+                item.fileName(),
+                item.status(),
+                item.documentId(),
+                item.taskId(),
+                item.errorCode(),
+                item.errorMessage(),
+                item.result() == null ? null : item.result().document().knowledgeBaseId(),
+                item.result() == null ? null : item.result().document().title(),
+                item.result() == null ? null : item.result().document().status().name(),
+                item.result() == null ? null : item.result().document().knowledgeDomainId(),
+                item.result() == null ? null : item.result().document().chunkingProfileId(),
+                item.result() == null ? null : item.result().document().activeVersionNo()
         )).toList();
-        return ApiResponse.success(new UploadBatchDocumentResponse(items, items.size()));
+        long succeeded = items.stream().filter(item -> "accepted".equals(item.status())).count();
+        long failed = items.stream().filter(item -> "failed".equals(item.status())).count();
+        return ApiResponse.success(new UploadBatchDocumentResponse(items, items.size(), (int) succeeded, (int) failed));
     }
 
     @GetMapping("/{knowledgeBaseId}/documents")
@@ -264,8 +270,26 @@ public class KnowledgeController {
     }
 
     public record UploadBatchDocumentResponse(
-            List<UploadDocumentResponse> items,
-            int uploadedCount
+            List<BatchUploadItemResponse> items,
+            int uploadedCount,
+            int succeededCount,
+            int failedCount
+    ) {
+    }
+
+    public record BatchUploadItemResponse(
+            String fileName,
+            String status,
+            Long documentId,
+            Long taskId,
+            String errorCode,
+            String errorMessage,
+            Long knowledgeBaseId,
+            String title,
+            String documentStatus,
+            Long knowledgeDomainId,
+            Long chunkingProfileId,
+            Integer activeVersionNo
     ) {
     }
 

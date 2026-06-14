@@ -24,6 +24,7 @@ import com.superagent.knowledge.domain.KnowledgeDocumentVersion;
 import com.superagent.knowledge.messaging.DocumentTaskMessage;
 import com.superagent.knowledge.messaging.DocumentTaskProducer;
 import com.superagent.knowledge.repository.KnowledgeRepository;
+import com.superagent.settings.repository.AuditLogRepository;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
@@ -49,6 +50,7 @@ public class KnowledgeService {
     private final ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider;
     private final ObjectProvider<DocumentProcessingService> documentProcessingServiceProvider;
     private final DocumentGraphService documentGraphService;
+    private final AuditLogRepository auditLogRepository;
     private final Tika tika = new Tika();
 
     public KnowledgeService(
@@ -58,7 +60,8 @@ public class KnowledgeService {
             SuperAgentProperties properties,
             ObjectProvider<DocumentTaskProducer> documentTaskProducerProvider,
             ObjectProvider<DocumentProcessingService> documentProcessingServiceProvider,
-            DocumentGraphService documentGraphService
+            DocumentGraphService documentGraphService,
+            AuditLogRepository auditLogRepository
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.knowledgeRepository = knowledgeRepository;
@@ -67,6 +70,7 @@ public class KnowledgeService {
         this.documentTaskProducerProvider = documentTaskProducerProvider;
         this.documentProcessingServiceProvider = documentProcessingServiceProvider;
         this.documentGraphService = documentGraphService;
+        this.auditLogRepository = auditLogRepository;
     }
 
     public KnowledgeBase createKnowledgeBase(String name, String description, KnowledgeBaseVisibility visibility) {
@@ -74,7 +78,7 @@ public class KnowledgeService {
         TenantContext tenantContext = requireTenantContext();
         AuthenticatedUserPrincipal principal = currentAuthenticatedUser.get();
         try {
-            return knowledgeRepository.createKnowledgeBase(
+            KnowledgeBase knowledgeBase = knowledgeRepository.createKnowledgeBase(
                     tenantContext.tenantId(),
                     requireName(name),
                     normalizeNullable(description),
@@ -82,6 +86,11 @@ public class KnowledgeService {
                     KnowledgeBaseStatus.draft,
                     principal.userId()
             );
+            auditLogRepository.append(tenantContext.tenantId(), principal.userId(), "knowledge_base.created", "knowledge_base", knowledgeBase.id(), Map.of(
+                    "name", knowledgeBase.name(),
+                    "visibility", knowledgeBase.visibility().name()
+            ));
+            return knowledgeBase;
         } catch (DuplicateKeyException exception) {
             throw new AppException(ErrorCode.CONFLICT, HttpStatus.CONFLICT, "Knowledge base name already exists");
         }
@@ -117,7 +126,7 @@ public class KnowledgeService {
         requireAdminRole();
         KnowledgeBase existing = requireKnowledgeBase(knowledgeBaseId);
         TenantContext tenantContext = requireTenantContext();
-        return knowledgeRepository.updateKnowledgeBase(
+        KnowledgeBase updated = knowledgeRepository.updateKnowledgeBase(
                 tenantContext.tenantId(),
                 existing.id(),
                 name == null || name.isBlank() ? existing.name() : name.trim(),
@@ -125,20 +134,36 @@ public class KnowledgeService {
                 visibility == null ? existing.visibility() : visibility,
                 status == null ? existing.status() : status
         );
+        auditLogRepository.append(tenantContext.tenantId(), currentAuthenticatedUser.get().userId(), "knowledge_base.updated", "knowledge_base", updated.id(), Map.of(
+                "status", updated.status().name(),
+                "visibility", updated.visibility().name()
+        ));
+        return updated;
     }
 
     public boolean deleteKnowledgeBase(long knowledgeBaseId) {
         requireAdminRole();
         KnowledgeBase knowledgeBase = requireKnowledgeBase(knowledgeBaseId);
         TenantContext tenantContext = requireTenantContext();
-        return knowledgeRepository.softDeleteKnowledgeBase(tenantContext.tenantId(), knowledgeBase.id());
+        boolean deleted = knowledgeRepository.softDeleteKnowledgeBase(tenantContext.tenantId(), knowledgeBase.id());
+        if (deleted) {
+            auditLogRepository.append(tenantContext.tenantId(), currentAuthenticatedUser.get().userId(), "knowledge_base.deleted", "knowledge_base", knowledgeBase.id(), Map.of("name", knowledgeBase.name()));
+        }
+        return deleted;
     }
 
     public boolean deleteDocument(long documentId) {
         requireAdminRole();
         KnowledgeDocument document = requireKnowledgeDocument(documentId);
         TenantContext tenantContext = requireTenantContext();
-        return knowledgeRepository.softDeleteDocument(tenantContext.tenantId(), document.id());
+        boolean deleted = knowledgeRepository.softDeleteDocument(tenantContext.tenantId(), document.id());
+        if (deleted) {
+            auditLogRepository.append(tenantContext.tenantId(), currentAuthenticatedUser.get().userId(), "knowledge_document.deleted", "knowledge_document", document.id(), Map.of(
+                    "title", document.title(),
+                    "knowledgeBaseId", document.knowledgeBaseId()
+            ));
+        }
+        return deleted;
     }
 
     public KnowledgeDocument updateDocumentMetadata(
@@ -170,6 +195,61 @@ public class KnowledgeService {
                 category == null ? existing.category() : normalizeNullable(category),
                 tags == null ? existing.tags() : parseTags(tags)
         );
+    }
+
+    public KnowledgeDocument updateDocumentGovernance(
+            long documentId,
+            Long ownerUserId,
+            OffsetDateTime expiresAt,
+            String reviewStatus,
+            String title,
+            String category,
+            String tags,
+            Long knowledgeDomainId,
+            Long chunkingProfileId
+    ) {
+        requireAdminRole();
+        KnowledgeDocument existing = requireKnowledgeDocument(documentId);
+        TenantContext tenantContext = requireTenantContext();
+        AuthenticatedUserPrincipal principal = currentAuthenticatedUser.get();
+
+        if (title != null || category != null || tags != null || knowledgeDomainId != null || chunkingProfileId != null) {
+            existing = updateDocumentMetadata(documentId, title, category, tags, knowledgeDomainId, chunkingProfileId);
+        }
+
+        String normalizedReviewStatus = existing.reviewStatus() == null ? "approved" : existing.reviewStatus();
+        Long reviewedBy = existing.reviewedBy();
+        OffsetDateTime reviewedAt = existing.reviewedAt();
+        if (reviewStatus != null && !reviewStatus.isBlank()) {
+            String requested = reviewStatus.trim();
+            if (!java.util.Set.of("draft", "pending_review", "approved", "rejected").contains(requested)) {
+                throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "invalid review status");
+            }
+            normalizedReviewStatus = requested;
+            if ("approved".equals(requested) || "rejected".equals(requested)) {
+                reviewedBy = principal.userId();
+                reviewedAt = OffsetDateTime.now();
+            } else {
+                reviewedBy = null;
+                reviewedAt = null;
+            }
+        }
+
+        KnowledgeDocument updated = knowledgeRepository.updateDocumentGovernance(
+                tenantContext.tenantId(),
+                existing.id(),
+                ownerUserId == null ? existing.ownerUserId() : ownerUserId,
+                expiresAt == null ? existing.expiresAt() : expiresAt,
+                normalizedReviewStatus,
+                reviewedBy,
+                reviewedAt
+        );
+        java.util.HashMap<String, Object> auditDetail = new java.util.HashMap<>();
+        auditDetail.put("ownerUserId", updated.ownerUserId());
+        auditDetail.put("expiresAt", updated.expiresAt() == null ? null : updated.expiresAt().toString());
+        auditDetail.put("reviewStatus", updated.reviewStatus());
+        auditLogRepository.append(tenantContext.tenantId(), principal.userId(), "knowledge_document.metadata_updated", "knowledge_document", updated.id(), auditDetail);
+        return updated;
     }
 
     public UploadedDocumentResult uploadDocument(
@@ -245,10 +325,16 @@ public class KnowledgeService {
                 "Document uploaded to MinIO at " + OffsetDateTime.now()
         );
         publishTaskIfEnabled(new DocumentTaskMessage(tenantContext.tenantId(), document.id(), task.id(), "upload"));
+        auditLogRepository.append(tenantContext.tenantId(), principal.userId(), "knowledge_document.uploaded", "knowledge_document", document.id(), Map.of(
+                "knowledgeBaseId", knowledgeBase.id(),
+                "fileName", fileName,
+                "fileType", fileType,
+                "fileSize", file.getSize()
+        ));
         return new UploadedDocumentResult(document, task);
     }
 
-    public List<UploadedDocumentResult> uploadDocuments(
+    public List<BatchUploadItem> uploadDocuments(
             long knowledgeBaseId,
             List<MultipartFile> files,
             String category,
@@ -262,9 +348,19 @@ public class KnowledgeService {
         if (files.size() > 20) {
             throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "batch upload supports at most 20 files");
         }
-        return files.stream()
-                .map(file -> uploadDocument(knowledgeBaseId, file, null, category, tags, knowledgeDomainId, chunkingProfileId))
-                .toList();
+        java.util.ArrayList<BatchUploadItem> items = new java.util.ArrayList<>(files.size());
+        for (MultipartFile file : files) {
+            String fileName = file == null || file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename();
+            try {
+                UploadedDocumentResult result = uploadDocument(knowledgeBaseId, file, null, category, tags, knowledgeDomainId, chunkingProfileId);
+                items.add(BatchUploadItem.success(fileName, result));
+            } catch (AppException exception) {
+                items.add(BatchUploadItem.failure(fileName, exception.getErrorCode().name(), exception.getMessage()));
+            } catch (Exception exception) {
+                items.add(BatchUploadItem.failure(fileName, "INTERNAL_ERROR", exception.getMessage() == null ? "upload failed" : exception.getMessage()));
+            }
+        }
+        return items;
     }
 
     public PagedResult<KnowledgeDocument> listDocuments(
@@ -420,6 +516,10 @@ public class KnowledgeService {
                 (reason == null || reason.isBlank() ? "Manual reprocess requested" : reason.trim()) + " at " + OffsetDateTime.now()
         );
         publishTaskIfEnabled(new DocumentTaskMessage(tenantContext.tenantId(), document.id(), task.id(), "manual_reprocess"));
+        auditLogRepository.append(tenantContext.tenantId(), currentAuthenticatedUser.get().userId(), "knowledge_document.reprocessed", "knowledge_document", document.id(), Map.of(
+                "taskId", task.id(),
+                "reason", reason == null ? "manual_reprocess" : reason
+        ));
         return new ReprocessDocumentResult(document.id(), task.id(), task.status().name());
     }
 
@@ -461,6 +561,19 @@ public class KnowledgeService {
         TenantContext tenantContext = requireTenantContext();
         KnowledgeBase knowledgeBase = requireKnowledgeBase(document.knowledgeBaseId());
         return documentGraphService.synchronizeGraph(tenantContext.tenantId(), knowledgeBase, document);
+    }
+
+    public List<KnowledgeDocument> findExpiringDocuments(int withinDays) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        int normalized = withinDays <= 0 ? 30 : Math.min(withinDays, 365);
+        return knowledgeRepository.findExpiringDocuments(tenantContext.tenantId(), normalized);
+    }
+
+    public List<KnowledgeRepository.DuplicateDocumentGroup> findDuplicateDocuments() {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        return knowledgeRepository.findDuplicateDocuments(tenantContext.tenantId());
     }
 
     private KnowledgeBase requireVisibleKnowledgeBase(long knowledgeBaseId) {
@@ -674,6 +787,24 @@ public class KnowledgeService {
     }
 
     public record UploadedDocumentResult(KnowledgeDocument document, DocumentTask task) {
+    }
+
+    public record BatchUploadItem(
+            String fileName,
+            String status,
+            Long documentId,
+            Long taskId,
+            String errorCode,
+            String errorMessage,
+            UploadedDocumentResult result
+    ) {
+        public static BatchUploadItem success(String fileName, UploadedDocumentResult result) {
+            return new BatchUploadItem(fileName, "accepted", result.document().id(), result.task().id(), null, null, result);
+        }
+
+        public static BatchUploadItem failure(String fileName, String code, String message) {
+            return new BatchUploadItem(fileName, "failed", null, null, code, message, null);
+        }
     }
 
     public record ReprocessDocumentResult(long documentId, long taskId, String status) {

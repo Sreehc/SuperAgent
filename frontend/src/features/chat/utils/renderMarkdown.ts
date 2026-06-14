@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js/lib/common'
 import { marked } from 'marked'
 
 marked.setOptions({
@@ -10,6 +11,7 @@ export function renderMarkdown(content: string) {
   const raw = marked.parse(content || '') as string
   const sanitized = DOMPurify.sanitize(raw, {
     USE_PROFILES: { html: true },
+    ADD_ATTR: ['data-code-copy', 'data-code-language', 'data-highlighted'],
   })
   return enhanceCodeBlocks(sanitized)
 }
@@ -28,8 +30,11 @@ function enhanceCodeBlocks(html: string) {
     }
 
     const language = readCodeLanguage(code.className)
+    applyHighlight(code as HTMLElement, language)
+
     const figure = document.createElement('figure')
     figure.className = 'markdown-codeblock'
+    figure.dataset.codeLanguage = language || 'text'
 
     const header = document.createElement('figcaption')
     header.className = 'markdown-codeblock__header'
@@ -49,6 +54,26 @@ function enhanceCodeBlocks(html: string) {
   })
 
   return template.innerHTML
+}
+
+function applyHighlight(code: HTMLElement, language: string) {
+  try {
+    const text = code.textContent ?? ''
+    if (!text.trim()) {
+      return
+    }
+    let highlighted = ''
+    if (language && hljs.getLanguage(language)) {
+      highlighted = hljs.highlight(text, { language, ignoreIllegals: true }).value
+    } else {
+      highlighted = hljs.highlightAuto(text).value
+    }
+    code.innerHTML = highlighted
+    code.classList.add('hljs')
+    code.dataset.highlighted = 'true'
+  } catch {
+    // fall back to plain text rendering
+  }
 }
 
 function readCodeLanguage(className: string) {

@@ -209,6 +209,7 @@ public class AgentEvalService {
                 counts.failed(),
                 normalizedReport
         );
+        persistRunCases(tenantContext.tenantId(), suiteId, run.id(), normalizedReport);
         auditLogRepository.append(
                 tenantContext.tenantId(),
                 principal.userId(),
@@ -218,6 +219,86 @@ public class AgentEvalService {
                 Map.of("suiteId", suiteId, "status", run.status(), "passedCount", run.passedCount(), "failedCount", run.failedCount())
         );
         return run;
+    }
+
+    public List<AgentEvalRepository.RunCaseResult> listRunCases(long runId, String status) {
+        requireAdminRole();
+        TenantContext tenantContext = requireTenantContext();
+        repository.findRun(tenantContext.tenantId(), runId)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Eval run not found"));
+        return repository.listRunCases(tenantContext.tenantId(), runId, status);
+    }
+
+    private void persistRunCases(long tenantId, long suiteId, long runId, Map<String, Object> report) {
+        Object casesValue = report.get("cases");
+        if (!(casesValue instanceof List<?> cases) || cases.isEmpty()) {
+            return;
+        }
+        List<AgentEvalCase> suiteCases = repository.listCases(tenantId, suiteId);
+        Map<String, Long> caseIdByKey = new java.util.HashMap<>();
+        Map<Long, AgentEvalCase> caseById = new java.util.HashMap<>();
+        for (AgentEvalCase suiteCase : suiteCases) {
+            caseIdByKey.put(suiteCase.caseKey(), suiteCase.id());
+            caseById.put(suiteCase.id(), suiteCase);
+        }
+        for (Object item : cases) {
+            if (!(item instanceof Map<?, ?> map)) continue;
+            Long caseId = null;
+            Object idObj = map.get("caseId");
+            if (idObj instanceof Number n) {
+                caseId = n.longValue();
+            } else {
+                Object keyObj = map.get("caseKey");
+                if (keyObj instanceof String key) {
+                    caseId = caseIdByKey.get(key);
+                }
+            }
+            if (caseId == null || !caseById.containsKey(caseId)) {
+                continue;
+            }
+            String caseStatus;
+            Object statusObj = map.get("status");
+            if (statusObj instanceof String s && !s.isBlank()) {
+                caseStatus = s.trim();
+            } else if (Boolean.TRUE.equals(map.get("passed"))) {
+                caseStatus = "passed";
+            } else if (Boolean.FALSE.equals(map.get("passed"))) {
+                caseStatus = "failed";
+            } else {
+                caseStatus = "skipped";
+            }
+            if (!java.util.Set.of("passed", "failed", "error", "skipped").contains(caseStatus)) {
+                caseStatus = "error";
+            }
+            Double score = null;
+            Object scoreObj = map.get("score");
+            if (scoreObj instanceof Number n) {
+                score = n.doubleValue();
+            }
+            Integer latencyMs = null;
+            Object latencyObj = map.get("latencyMs");
+            if (latencyObj instanceof Number n) {
+                latencyMs = n.intValue();
+            }
+            String errorMessage = map.get("error") instanceof String e ? e : null;
+            Map<String, Object> actual = map.get("actual") instanceof Map<?, ?> a ? toMap(a) : Map.of();
+            Map<String, Object> expected = caseById.get(caseId).expected();
+            Map<String, Object> diff = map.get("diff") instanceof Map<?, ?> d ? toMap(d) : Map.of();
+            try {
+                repository.insertRunCase(tenantId, runId, caseId, caseStatus, score, actual, expected, diff, latencyMs, errorMessage);
+            } catch (Exception ignored) {
+                // do not let one row break the rest of the run
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toMap(Map<?, ?> source) {
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            result.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return result;
     }
 
     private void ensureTenantSuite(long tenantId, long suiteId) {

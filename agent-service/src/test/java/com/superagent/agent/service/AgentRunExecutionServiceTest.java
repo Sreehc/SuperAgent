@@ -48,6 +48,18 @@ class AgentRunExecutionServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.beans.factory.ObjectProvider<AgentPlanner.ChatModelClient> emptyProvider =
+                new org.springframework.beans.factory.ObjectProvider<>() {
+                    @Override
+                    public AgentPlanner.ChatModelClient getObject(Object... args) { return null; }
+                    @Override
+                    public AgentPlanner.ChatModelClient getObject() { return null; }
+                    @Override
+                    public AgentPlanner.ChatModelClient getIfAvailable() { return null; }
+                    @Override
+                    public AgentPlanner.ChatModelClient getIfUnique() { return null; }
+                };
+        AgentPlanner planner = new AgentPlanner(emptyProvider, new ObjectMapper(), false);
         executionService = new AgentRunExecutionService(
                 repository,
                 streamRegistry,
@@ -55,6 +67,7 @@ class AgentRunExecutionServiceTest {
                 toolExecutionService,
                 runtimeSettingsService,
                 new AgentAnswerComposer(),
+                planner,
                 new ObjectMapper(),
                 Runnable::run
         );

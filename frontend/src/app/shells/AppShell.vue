@@ -103,7 +103,8 @@ const menuItems: MenuItem[] = [
   { to: '/tools', label: 'Tools', icon: PhPuzzlePiece, roles: ['OWNER', 'ADMIN'] },
   { to: '/governance', label: '治理', icon: PhShieldCheck, roles: ['OWNER', 'ADMIN'] },
   { to: '/feedback', label: '反馈', icon: PhThumbsUp, roles: ['OWNER', 'ADMIN'] },
-  { to: '/evaluations', label: '评测', icon: PhChartLineUp, roles: ['OWNER', 'ADMIN'] },
+  { to: '/evals', label: '评测', icon: PhChartLineUp, roles: ['OWNER', 'ADMIN'] },
+  { to: '/members', label: '成员', icon: PhShieldCheck, roles: ['OWNER', 'ADMIN'] },
   { to: '/audit-logs', label: '审计', icon: PhShieldCheck, roles: ['OWNER', 'ADMIN'] },
   { to: '/settings', label: '设置', icon: PhGearSix, roles: ['OWNER', 'ADMIN'] },
 ]

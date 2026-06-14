@@ -17,6 +17,10 @@ describe('renderMarkdown', () => {
     expect(html).toContain('markdown-codeblock')
     expect(html).toContain('ts')
     expect(html).toContain('复制代码')
-    expect(html).toContain('const answer = 42')
+    // After highlight.js tokenization, content is wrapped in <span> tags;
+    // assert key tokens are still present.
+    expect(html).toContain('answer')
+    expect(html).toContain('42')
+    expect(html).toContain('hljs')
   })
 })

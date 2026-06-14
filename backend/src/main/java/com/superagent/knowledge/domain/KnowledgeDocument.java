@@ -25,6 +25,11 @@ public record KnowledgeDocument(
         String category,
         List<String> tags,
         long createdBy,
+        Long ownerUserId,
+        OffsetDateTime expiresAt,
+        String reviewStatus,
+        Long reviewedBy,
+        OffsetDateTime reviewedAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {
