@@ -81,6 +81,7 @@ export type ChatStore = ChatState & ChatActions
 
 // Non-reactive stream plumbing.
 let abortController: AbortController | null = null
+let stopRequested = false
 const parser: SseParserState = { offset: 0, buffer: '' }
 function resetParser() {
   parser.offset = 0
@@ -185,6 +186,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!sessionId) return
 
     resetParser()
+    stopRequested = false
     const draft: DisplayMessage[] = [
       ...get().messages,
       {
@@ -252,13 +254,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         selectedKnowledgeBaseId: conversationResponse.data.knowledgeBaseId,
       })
     } catch (error) {
+      const stopped = stopRequested || workingState.stopped
       const assistant = [...draft].reverse().find((m) => m.role === 'assistant')
-      if (assistant) assistant.status = workingState.stopped ? 'stopped' : 'error'
-      if (!workingState.stopped && !workingState.error) {
+      if (assistant) assistant.status = stopped ? 'stopped' : 'error'
+      if (!stopped && !workingState.error) {
         workingState.error = '消息发送失败，请稍后重试。'
       }
       set({ messages: [...draft], streamState: { ...workingState } })
-      if (!workingState.stopped) throw error
+      if (!stopped) throw error
     } finally {
       set({ streaming: false })
       abortController = null
@@ -268,6 +271,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   async stopStreaming() {
     const sessionId = get().selectedSessionId
     if (!sessionId || !get().streaming) return
+    stopRequested = true
     set({ streamState: { ...get().streamState, stopped: true } })
     abortController?.abort()
     try {

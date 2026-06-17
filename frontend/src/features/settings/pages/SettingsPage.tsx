@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { ConsolePage } from '../../../shared/ui/console-page'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../shared/ui/tabs'
 import { Button } from '../../../shared/ui/button'
 import { toast } from '../../../utils/toast'
 import { selectCurrentRole, useAuthStore } from '../../auth/store/auth'
@@ -72,16 +71,22 @@ export function SettingsPage() {
       }
     >
       <div className="settings-layout">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="settings-main">
-          <TabsList>
+        <main className="settings-main">
+          <nav className="tabs-list" aria-label="设置分组">
             {TABS.map((tab) => (
-              <TabsTrigger key={tab.id} value={tab.id}>
+              <button
+                key={tab.id}
+                type="button"
+                className={`tab-button${activeTab === tab.id ? ' tab-button--active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
                 {tab.label}
-              </TabsTrigger>
+              </button>
             ))}
-          </TabsList>
+          </nav>
 
-          <TabsContent value="model" className="settings-section">
+          {activeTab === 'model' && (
+          <section className="settings-section">
             <Field label="接口地址" error={fieldErrors.baseUrl} testid="settings-error-base-url">
               <input
                 data-testid="settings-model-base-url"
@@ -121,9 +126,11 @@ export function SettingsPage() {
                 保存配置
               </Button>
             </div>
-          </TabsContent>
+          </section>
+          )}
 
-          <TabsContent value="rag" className="settings-section">
+          {activeTab === 'rag' && (
+          <section className="settings-section">
             <Field label="最大子问题数">
               <input
                 type="number"
@@ -163,9 +170,11 @@ export function SettingsPage() {
                 保存检索策略
               </Button>
             </div>
-          </TabsContent>
+          </section>
+          )}
 
-          <TabsContent value="rerank" className="settings-section">
+          {activeTab === 'rerank' && (
+          <section className="settings-section">
             <Field label="模型提供方" error={fieldErrors.provider}>
               <input
                 data-testid="settings-rerank-provider"
@@ -205,9 +214,11 @@ export function SettingsPage() {
                 保存配置
               </Button>
             </div>
-          </TabsContent>
+          </section>
+          )}
 
-          <TabsContent value="agent" className="settings-section">
+          {activeTab === 'agent' && (
+          <section className="settings-section">
             <Field label="最大模型步数">
               <input
                 type="number"
@@ -236,9 +247,11 @@ export function SettingsPage() {
                 保存智能体设置
               </Button>
             </div>
-          </TabsContent>
+          </section>
+          )}
 
-          <TabsContent value="tools" className="settings-section">
+          {activeTab === 'tools' && (
+          <section className="settings-section">
             <Field label="搜索提供方">
               <input
                 value={store.toolForm.searchProvider}
@@ -265,8 +278,9 @@ export function SettingsPage() {
                 保存工具权限
               </Button>
             </div>
-          </TabsContent>
-        </Tabs>
+          </section>
+          )}
+        </main>
 
         <aside className="settings-inspector inspector-box">
           <h2>{activeMeta.label}</h2>
