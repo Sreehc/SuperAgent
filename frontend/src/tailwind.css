@@ -1,0 +1,9 @@
+/*
+ * Tailwind v4 entry — theme + utilities only, preflight intentionally omitted.
+ * The project's design system lives in src/styles.css (ported verbatim from the
+ * Vue build); skipping preflight keeps that system authoritative and avoids
+ * clobbering the existing button/input/table resets.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);

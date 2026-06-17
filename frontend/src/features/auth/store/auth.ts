@@ -1,7 +1,22 @@
-import { defineStore } from 'pinia'
-import { apiGet, apiPost } from '../../../api/http'
-import { clearLegacyRefreshToken, readAccessToken, readCurrentTenantId, writeAccessToken, writeCurrentTenantId } from '../../../api/storage'
-import type { LoginRequest, LoginResponse, LogoutResponse, MeResponse, RefreshResponse, TenantListItem, TenantRole, UserSummary } from '../types'
+import { create } from 'zustand'
+import { apiGet, apiPost } from '@/api/http'
+import {
+  clearLegacyRefreshToken,
+  readAccessToken,
+  readCurrentTenantId,
+  writeAccessToken,
+  writeCurrentTenantId,
+} from '@/api/storage'
+import type {
+  LoginRequest,
+  LoginResponse,
+  LogoutResponse,
+  MeResponse,
+  RefreshResponse,
+  TenantListItem,
+  TenantRole,
+  UserSummary,
+} from '../types'
 
 interface AuthState {
   accessToken: string | null
@@ -13,133 +28,157 @@ interface AuthState {
   pendingRedirect: string | null
 }
 
-export const useAuthStore = defineStore('auth', {
-  state: (): AuthState => ({
-    accessToken: null,
-    user: null,
-    tenants: [],
-    currentTenantId: null,
-    initialized: false,
-    loadingProfile: false,
-    pendingRedirect: null,
-  }),
-  getters: {
-    hasToken: (state) => Boolean(state.accessToken),
-    isAuthenticated: (state) => Boolean(state.accessToken && state.user),
-    currentTenant: (state) => state.tenants.find((tenant) => tenant.id === state.currentTenantId) ?? null,
-    currentRole(): TenantRole | null {
-      return this.currentTenant?.role ?? null
-    },
-  },
-  actions: {
-    hydrate() {
-      clearLegacyRefreshToken()
-      this.accessToken = readAccessToken()
-      this.currentTenantId = readCurrentTenantId()
-      this.initialized = true
-    },
-    rememberRedirect(path: string) {
-      this.pendingRedirect = path
-    },
-    consumeRedirect() {
-      const target = this.pendingRedirect ?? '/chat'
-      this.pendingRedirect = null
-      return target
-    },
-    clearSession() {
-      this.accessToken = null
-      this.user = null
-      this.tenants = []
-      this.currentTenantId = null
-      writeAccessToken(null)
-      writeCurrentTenantId(null)
-    },
-    handleUnauthorized(path = '/login') {
-      if (this.accessToken) {
-        this.pendingRedirect = path
-      }
-      this.clearSession()
-    },
-    async login(payload: LoginRequest) {
-      const response = await apiPost<LoginResponse, LoginRequest>('/auth/login', payload)
-      this.accessToken = response.data.accessToken
-      this.user = response.data.user
-      this.currentTenantId = response.data.defaultTenant.id
-      writeAccessToken(response.data.accessToken)
-      writeCurrentTenantId(response.data.defaultTenant.id)
-      await this.loadProfile()
-    },
-    async loadProfile() {
-      this.loadingProfile = true
-      try {
-        const [meResponse, tenantResponse] = await Promise.all([
-          apiGet<MeResponse>('/auth/me'),
-          apiGet<TenantListItem[]>('/tenants'),
-        ])
+interface AuthActions {
+  hydrate: () => void
+  rememberRedirect: (path: string) => void
+  consumeRedirect: () => string
+  clearSession: () => void
+  handleUnauthorized: (path?: string) => void
+  login: (payload: LoginRequest) => Promise<void>
+  loadProfile: () => Promise<void>
+  ensureSession: () => Promise<boolean>
+  switchTenant: (tenantId: number) => Promise<void>
+  logout: () => Promise<void>
+  refresh: () => Promise<boolean>
+}
 
-        this.user = {
+export type AuthStore = AuthState & AuthActions
+
+const initialState: AuthState = {
+  accessToken: null,
+  user: null,
+  tenants: [],
+  currentTenantId: null,
+  initialized: false,
+  loadingProfile: false,
+  pendingRedirect: null,
+}
+
+export const useAuthStore = create<AuthStore>((set, get) => ({
+  ...initialState,
+
+  hydrate() {
+    clearLegacyRefreshToken()
+    set({ accessToken: readAccessToken(), currentTenantId: readCurrentTenantId(), initialized: true })
+  },
+
+  rememberRedirect(path) {
+    set({ pendingRedirect: path })
+  },
+
+  consumeRedirect() {
+    const target = get().pendingRedirect ?? '/chat'
+    set({ pendingRedirect: null })
+    return target
+  },
+
+  clearSession() {
+    writeAccessToken(null)
+    writeCurrentTenantId(null)
+    set({ accessToken: null, user: null, tenants: [], currentTenantId: null })
+  },
+
+  handleUnauthorized(path = '/login') {
+    if (get().accessToken) {
+      set({ pendingRedirect: path })
+    }
+    get().clearSession()
+  },
+
+  async login(payload) {
+    const response = await apiPost<LoginResponse, LoginRequest>('/auth/login', payload)
+    writeAccessToken(response.data.accessToken)
+    writeCurrentTenantId(response.data.defaultTenant.id)
+    set({
+      accessToken: response.data.accessToken,
+      user: response.data.user,
+      currentTenantId: response.data.defaultTenant.id,
+    })
+    await get().loadProfile()
+  },
+
+  async loadProfile() {
+    set({ loadingProfile: true })
+    try {
+      const [meResponse, tenantResponse] = await Promise.all([
+        apiGet<MeResponse>('/auth/me'),
+        apiGet<TenantListItem[]>('/tenants'),
+      ])
+
+      const tenants = tenantResponse.data
+      let currentTenantId = get().currentTenantId
+      if (!currentTenantId && tenants.length > 0) {
+        currentTenantId = tenants[0].id
+      }
+      if (currentTenantId) {
+        writeCurrentTenantId(currentTenantId)
+      }
+
+      set({
+        user: {
           id: meResponse.data.id,
           username: meResponse.data.username,
           displayName: meResponse.data.displayName,
-        }
-        this.tenants = tenantResponse.data
-
-        if (!this.currentTenantId && this.tenants.length > 0) {
-          this.currentTenantId = this.tenants[0].id
-        }
-
-        if (this.currentTenantId) {
-          writeCurrentTenantId(this.currentTenantId)
-        }
-      } finally {
-        this.loadingProfile = false
-      }
-    },
-    async ensureSession() {
-      if (!this.accessToken) {
-        const refreshed = await this.refresh()
-        if (!refreshed) {
-          return false
-        }
-      }
-
-      if (this.user && this.tenants.length > 0) {
-        return true
-      }
-
-      try {
-        await this.loadProfile()
-        return true
-      } catch {
-        this.clearSession()
-        return false
-      }
-    },
-    async switchTenant(tenantId: number) {
-      await apiPost<{ tenantId: number; role: TenantRole }, null>(`/tenants/${tenantId}/switch`)
-      this.currentTenantId = tenantId
-      writeCurrentTenantId(tenantId)
-      await this.loadProfile()
-    },
-    async logout() {
-      try {
-        await apiPost<LogoutResponse, null>('/auth/logout')
-      } catch {
-        // Keep logout idempotent on the client.
-      }
-
-      this.clearSession()
-    },
-    async refresh() {
-      try {
-        const response = await apiPost<RefreshResponse, null>('/auth/refresh')
-        this.accessToken = response.data.accessToken
-        writeAccessToken(response.data.accessToken)
-        return true
-      } catch {
-        this.clearSession()
-        return false
-      }
-    },
+        },
+        tenants,
+        currentTenantId,
+      })
+    } finally {
+      set({ loadingProfile: false })
+    }
   },
-})
+
+  async ensureSession() {
+    if (!get().accessToken) {
+      const refreshed = await get().refresh()
+      if (!refreshed) {
+        return false
+      }
+    }
+
+    if (get().user && get().tenants.length > 0) {
+      return true
+    }
+
+    try {
+      await get().loadProfile()
+      return true
+    } catch {
+      get().clearSession()
+      return false
+    }
+  },
+
+  async switchTenant(tenantId) {
+    await apiPost<{ tenantId: number; role: TenantRole }, null>(`/tenants/${tenantId}/switch`)
+    writeCurrentTenantId(tenantId)
+    set({ currentTenantId: tenantId })
+    await get().loadProfile()
+  },
+
+  async logout() {
+    try {
+      await apiPost<LogoutResponse, null>('/auth/logout')
+    } catch {
+      // Keep logout idempotent on the client.
+    }
+    get().clearSession()
+  },
+
+  async refresh() {
+    try {
+      const response = await apiPost<RefreshResponse, null>('/auth/refresh')
+      writeAccessToken(response.data.accessToken)
+      set({ accessToken: response.data.accessToken })
+      return true
+    } catch {
+      get().clearSession()
+      return false
+    }
+  },
+}))
+
+// Derived selectors (pure functions over state)
+export const selectIsAuthenticated = (s: AuthStore) => Boolean(s.accessToken && s.user)
+export const selectCurrentTenant = (s: AuthStore) => s.tenants.find((t) => t.id === s.currentTenantId) ?? null
+export const selectCurrentRole = (s: AuthStore): TenantRole | null => selectCurrentTenant(s)?.role ?? null

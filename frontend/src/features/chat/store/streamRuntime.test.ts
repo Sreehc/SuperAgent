@@ -10,6 +10,7 @@ function createHarness() {
     status: 'streaming',
     createdAt: '2026-06-13T00:00:00Z',
     references: [],
+    feedback: null,
   }
   const references: DisplayReference[] = []
   return {

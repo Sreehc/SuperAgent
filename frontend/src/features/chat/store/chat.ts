@@ -1,9 +1,8 @@
-import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { create } from 'zustand'
 import {
   createConversation,
-  deleteMessageFeedback,
   deleteConversation,
+  deleteMessageFeedback,
   getConversation,
   listConversationFeedbacks,
   listConversations,
@@ -11,8 +10,9 @@ import {
   openMessageStream,
   resumeConversation,
   stopConversation,
-  upsertMessageFeedback,
   updateConversation,
+  upsertMessageFeedback,
+  defaultMemoryStrategy,
 } from '../api'
 import type {
   ConversationDetail,
@@ -20,94 +20,136 @@ import type {
   DisplayMessage,
   DisplayReference,
   FeedbackRating,
+  MemoryStrategy,
+  RequestedExecutionMode,
   StreamState,
 } from '../types'
-import { useChatComposerStore } from './composer'
 import { applyStreamEvent, consumeSseText, createEmptyStreamState, type SseParserState } from './streamRuntime'
+import { listKnowledgeBases } from '../../knowledge/api'
+import { listToolCapabilities } from '../../agent/api'
+import type { ToolCapabilityItem } from '../../agent/types'
 
-export const useChatStore = defineStore('chat', () => {
-  const composerStore = useChatComposerStore()
-  const conversations = ref<ConversationSummary[]>([])
-  const selectedSessionId = ref<number | null>(null)
-  const selectedConversation = ref<ConversationDetail | null>(null)
-  const messages = ref<DisplayMessage[]>([])
-  const loadingConversations = ref(false)
-  const loadingMessages = ref(false)
-  const creatingConversation = ref(false)
-  const streaming = ref(false)
-  const streamState = ref<StreamState>(createEmptyStreamState())
-  const activeAbortController = ref<AbortController | null>(null)
-  const parserState: SseParserState = { offset: 0, buffer: '' }
-  const selectedReference = ref<DisplayReference | null>(null)
-  const keyword = ref('')
-  const editingConversationId = ref<number | null>(null)
-  const updatingConversation = ref(false)
-  const deletingConversation = ref(false)
-  const updatingFeedbackMessageId = ref<number | null>(null)
+interface KnowledgeOption {
+  id: number
+  name: string
+}
 
-  const hasMessages = computed(() => messages.value.length > 0)
-  const filteredConversations = computed(() => {
-    const search = keyword.value.trim().toLowerCase()
-    if (!search) {
-      return conversations.value
-    }
-    return conversations.value.filter((conversation) => conversation.title.toLowerCase().includes(search))
-  })
+interface ChatState {
+  conversations: ConversationSummary[]
+  selectedSessionId: number | null
+  selectedConversation: ConversationDetail | null
+  messages: DisplayMessage[]
+  loadingConversations: boolean
+  loadingMessages: boolean
+  streaming: boolean
+  streamState: StreamState
+  selectedReference: DisplayReference | null
+  keyword: string
+  updatingFeedbackMessageId: number | null
+  // composer
+  message: string
+  memoryStrategy: MemoryStrategy
+  executionMode: RequestedExecutionMode
+  availableKnowledgeBases: KnowledgeOption[]
+  selectedKnowledgeBaseId: number | null
+  toolCapabilities: ToolCapabilityItem[]
+}
 
-  async function bootstrap(sessionId?: number | null) {
-    await Promise.all([
-      composerStore.fetchKnowledgeBaseOptions(),
-      composerStore.fetchToolCapabilities(),
-    ])
-    await fetchConversations()
-    const preferredSessionId = sessionId ?? selectedSessionId.value
-    if (preferredSessionId) {
-      const matchedConversation = conversations.value.find((conversation) => conversation.id === preferredSessionId)
-      if (matchedConversation) {
-        await selectConversation(preferredSessionId)
-        return
-      }
-    }
-    if (selectedSessionId.value) {
-      await selectConversation(selectedSessionId.value)
+interface ChatActions {
+  bootstrap: (sessionId?: number | null) => Promise<void>
+  fetchConversations: () => Promise<void>
+  createAndSelectConversation: (title?: string) => Promise<number | null>
+  selectConversation: (sessionId: number) => Promise<void>
+  sendMessage: (text?: string) => Promise<void>
+  stopStreaming: () => Promise<void>
+  resumeConversationRun: () => Promise<void>
+  renameConversation: (sessionId: number, title: string) => Promise<void>
+  archiveConversation: (sessionId: number) => Promise<void>
+  removeConversation: (sessionId: number) => Promise<void>
+  setMessageFeedback: (message: DisplayMessage, rating: FeedbackRating) => Promise<void>
+  correctMessageFeedback: (message: DisplayMessage) => Promise<void>
+  clearMessageFeedback: (message: DisplayMessage) => Promise<void>
+  setKeyword: (value: string) => void
+  setMessage: (value: string) => void
+  setSelectedKnowledgeBaseId: (value: number | null) => void
+  setExecutionMode: (value: RequestedExecutionMode) => void
+  useRecommendation: (question: string) => void
+  clearOnRouteLeave: () => void
+}
+
+export type ChatStore = ChatState & ChatActions
+
+// Non-reactive stream plumbing.
+let abortController: AbortController | null = null
+const parser: SseParserState = { offset: 0, buffer: '' }
+function resetParser() {
+  parser.offset = 0
+  parser.buffer = ''
+}
+
+export const useChatStore = create<ChatStore>((set, get) => ({
+  conversations: [],
+  selectedSessionId: null,
+  selectedConversation: null,
+  messages: [],
+  loadingConversations: false,
+  loadingMessages: false,
+  streaming: false,
+  streamState: createEmptyStreamState(),
+  selectedReference: null,
+  keyword: '',
+  updatingFeedbackMessageId: null,
+  message: '',
+  memoryStrategy: defaultMemoryStrategy(),
+  executionMode: 'AUTO',
+  availableKnowledgeBases: [],
+  selectedKnowledgeBaseId: null,
+  toolCapabilities: [],
+
+  async bootstrap(sessionId) {
+    await Promise.all([fetchKnowledgeBaseOptions(set), fetchToolCapabilities(set)])
+    await get().fetchConversations()
+    const conversations = get().conversations
+    const preferred = sessionId ?? get().selectedSessionId
+    if (preferred && conversations.some((c) => c.id === preferred)) {
+      await get().selectConversation(preferred)
       return
     }
-    if (conversations.value.length > 0) {
-      await selectConversation(conversations.value[0].id)
+    if (get().selectedSessionId) {
+      await get().selectConversation(get().selectedSessionId as number)
+      return
     }
-  }
+    if (conversations.length > 0) {
+      await get().selectConversation(conversations[0].id)
+    }
+  },
 
-  async function fetchConversations() {
-    loadingConversations.value = true
+  async fetchConversations() {
+    set({ loadingConversations: true })
     try {
       const response = await listConversations()
-      conversations.value = response.data.items
+      set({ conversations: response.data.items })
     } finally {
-      loadingConversations.value = false
+      set({ loadingConversations: false })
     }
-  }
+  },
 
-  async function createAndSelectConversation(title?: string) {
-    creatingConversation.value = true
-    try {
-      const response = await createConversation({
-        title,
-        knowledgeBaseId: composerStore.selectedKnowledgeBaseId,
-        memoryStrategy: composerStore.memoryStrategy,
-      })
-      await fetchConversations()
-      await selectConversation(response.data.id)
-    } finally {
-      creatingConversation.value = false
-    }
-  }
+  async createAndSelectConversation(title) {
+    const response = await createConversation({
+      title,
+      knowledgeBaseId: get().selectedKnowledgeBaseId,
+      memoryStrategy: get().memoryStrategy,
+    })
+    await get().fetchConversations()
+    await get().selectConversation(response.data.id)
+    return response.data.id
+  },
 
-  async function selectConversation(sessionId: number) {
-    if (streaming.value && selectedSessionId.value !== sessionId) {
-      await stopStreaming()
+  async selectConversation(sessionId) {
+    if (get().streaming && get().selectedSessionId !== sessionId) {
+      await get().stopStreaming()
     }
-    selectedSessionId.value = sessionId
-    loadingMessages.value = true
+    set({ selectedSessionId: sessionId, loadingMessages: true })
     try {
       const [conversationResponse, messagesResponse] = await Promise.all([
         getConversation(sessionId),
@@ -115,313 +157,258 @@ export const useChatStore = defineStore('chat', () => {
       ])
       const feedbacksResponse = await listConversationFeedbacks(sessionId)
       const feedbackByMessageId = new Map(feedbacksResponse.data.map((feedback) => [feedback.messageId, feedback]))
-      selectedConversation.value = conversationResponse.data
-      composerStore.applyConversationConfig(conversationResponse.data)
-      messages.value = messagesResponse.data.items.map((message) => ({
-        ...message,
-        references: [],
-        feedback: feedbackByMessageId.get(message.id) ?? null,
-      }))
-      selectedReference.value = null
-      streamState.value = createEmptyStreamState()
-    } finally {
-      loadingMessages.value = false
-    }
-  }
-
-  function attachReference(reference: DisplayReference) {
-    const assistantMessage = ensureAssistantMessage()
-    assistantMessage.references = [...assistantMessage.references, reference]
-    selectedReference.value = reference
-  }
-
-  function ensureAssistantMessage() {
-    const current = messages.value[messages.value.length - 1]
-    if (current && current.role === 'assistant' && current.status === 'streaming') {
-      return current
-    }
-    const assistantMessage: DisplayMessage = {
-      id: -Date.now(),
-      role: 'assistant',
-      content: '',
-      status: 'streaming',
-      createdAt: new Date().toISOString(),
-      references: [],
-      feedback: null,
-    }
-    messages.value = [...messages.value, assistantMessage]
-    return assistantMessage
-  }
-
-  function consumeSseChunk(rawText: string) {
-    consumeSseText(rawText, parserState, (eventName, data) => {
-      applyStreamEvent(streamState.value, eventName, data, {
-        ensureAssistantMessage,
-        attachReference,
-        findLatestAssistantMessage,
+      set({
+        selectedConversation: conversationResponse.data,
+        memoryStrategy: conversationResponse.data.memoryStrategy,
+        selectedKnowledgeBaseId: conversationResponse.data.knowledgeBaseId,
+        messages: messagesResponse.data.items.map((message) => ({
+          ...message,
+          references: [],
+          feedback: feedbackByMessageId.get(message.id) ?? null,
+        })),
+        selectedReference: null,
+        streamState: createEmptyStreamState(),
       })
-    })
-  }
-
-  async function sendMessage() {
-    const text = composerStore.message.trim()
-    if (!text) {
-      return
+    } finally {
+      set({ loadingMessages: false })
     }
+  },
 
-    if (!selectedSessionId.value) {
-      await createAndSelectConversation(text.slice(0, 24))
+  async sendMessage(text) {
+    const body = (text ?? get().message).trim()
+    if (!body) return
+
+    if (!get().selectedSessionId) {
+      await get().createAndSelectConversation(body.slice(0, 24))
     }
+    const sessionId = get().selectedSessionId
+    if (!sessionId) return
 
-    if (!selectedSessionId.value) {
-      return
-    }
-
-    streamState.value = createEmptyStreamState()
     resetParser()
-    selectedReference.value = null
-    streaming.value = true
+    const draft: DisplayMessage[] = [
+      ...get().messages,
+      {
+        id: -Math.round(Math.random() * 1_000_000),
+        role: 'user',
+        content: body,
+        status: 'success',
+        createdAt: new Date().toISOString(),
+        references: [],
+        feedback: null,
+      },
+    ]
+    const workingState = createEmptyStreamState()
+    set({ messages: draft, message: '', streaming: true, streamState: workingState, selectedReference: null })
 
-    const userMessage: DisplayMessage = {
-      id: -Math.round(Math.random() * 100000),
-      role: 'user',
-      content: text,
-      status: 'success',
-      createdAt: new Date().toISOString(),
-      references: [],
-      feedback: null,
+    function ensureAssistantMessage(): DisplayMessage {
+      const last = draft[draft.length - 1]
+      if (last && last.role === 'assistant' && last.status === 'streaming') return last
+      const assistant: DisplayMessage = {
+        id: -Date.now(),
+        role: 'assistant',
+        content: '',
+        status: 'streaming',
+        createdAt: new Date().toISOString(),
+        references: [],
+        feedback: null,
+      }
+      draft.push(assistant)
+      return assistant
     }
-    messages.value = [...messages.value, userMessage]
-    composerStore.clearMessage()
+
     const controller = new AbortController()
-    activeAbortController.value = controller
+    abortController = controller
 
     try {
       await openMessageStream(
-        selectedSessionId.value,
+        sessionId,
         {
-          message: text,
-          knowledgeBaseId: composerStore.selectedKnowledgeBaseId,
-          memoryStrategy: composerStore.memoryStrategy,
-          executionMode: composerStore.executionMode,
+          message: body,
+          knowledgeBaseId: get().selectedKnowledgeBaseId,
+          memoryStrategy: get().memoryStrategy,
+          executionMode: get().executionMode,
         },
-        consumeSseChunk,
+        (raw) => {
+          consumeSseText(raw, parser, (eventName, data) => {
+            applyStreamEvent(workingState, eventName, data, {
+              ensureAssistantMessage,
+              attachReference: (reference) => {
+                const assistant = ensureAssistantMessage()
+                assistant.references = [...assistant.references, reference]
+                set({ selectedReference: reference })
+              },
+              findLatestAssistantMessage: () => [...draft].reverse().find((m) => m.role === 'assistant'),
+            })
+          })
+          set({ messages: [...draft], streamState: { ...workingState } })
+        },
         controller.signal,
       )
-      await fetchConversations()
-      const conversationResponse = await getConversation(selectedSessionId.value)
-      selectedConversation.value = conversationResponse.data
-      composerStore.applyConversationConfig(conversationResponse.data)
+      await get().fetchConversations()
+      const conversationResponse = await getConversation(sessionId)
+      set({
+        selectedConversation: conversationResponse.data,
+        memoryStrategy: conversationResponse.data.memoryStrategy,
+        selectedKnowledgeBaseId: conversationResponse.data.knowledgeBaseId,
+      })
     } catch (error) {
-      const assistantMessage = [...messages.value].reverse().find((message) => message.role === 'assistant')
-      if (assistantMessage) {
-        assistantMessage.status = streamState.value.stopped ? 'stopped' : 'error'
+      const assistant = [...draft].reverse().find((m) => m.role === 'assistant')
+      if (assistant) assistant.status = workingState.stopped ? 'stopped' : 'error'
+      if (!workingState.stopped && !workingState.error) {
+        workingState.error = '消息发送失败，请稍后重试。'
       }
-      if (streamState.value.stopped) {
-        return
-      }
-      if (!streamState.value.error) {
-        streamState.value.error = '消息发送失败，请稍后重试。'
-      }
-      throw error
+      set({ messages: [...draft], streamState: { ...workingState } })
+      if (!workingState.stopped) throw error
     } finally {
-      streaming.value = false
-      activeAbortController.value = null
+      set({ streaming: false })
+      abortController = null
     }
-  }
+  },
 
-  async function stopStreaming() {
-    if (!selectedSessionId.value || !streaming.value) {
-      return
-    }
-    streamState.value.stopped = true
-    activeAbortController.value?.abort()
+  async stopStreaming() {
+    const sessionId = get().selectedSessionId
+    if (!sessionId || !get().streaming) return
+    set({ streamState: { ...get().streamState, stopped: true } })
+    abortController?.abort()
     try {
-      await stopConversation(selectedSessionId.value)
+      await stopConversation(sessionId)
     } catch {
-      if (!streamState.value.error) {
-        streamState.value.error = '停止生成失败，请稍后重试。'
-      }
+      const current = get().streamState
+      if (!current.error) set({ streamState: { ...current, error: '停止生成失败，请稍后重试。' } })
     }
-  }
+  },
 
-  async function resumeConversationRun() {
-    if (!selectedSessionId.value) {
-      return
-    }
-    const response = await resumeConversation(selectedSessionId.value)
-    streamState.value.runId = response.data.runId
-    streamState.value.timeline = [
-      ...streamState.value.timeline,
-      { type: 'resume', title: '恢复请求', summary: response.data.resumed ? '已提交恢复请求' : '恢复请求未接受' },
-    ]
-  }
+  async resumeConversationRun() {
+    const sessionId = get().selectedSessionId
+    if (!sessionId) return
+    const response = await resumeConversation(sessionId)
+    const current = get().streamState
+    set({
+      streamState: {
+        ...current,
+        runId: response.data.runId,
+        timeline: [
+          ...current.timeline,
+          { type: 'resume', title: '恢复请求', summary: response.data.resumed ? '已提交恢复请求' : '恢复请求未接受' },
+        ],
+      },
+    })
+  },
 
-  function clearOnRouteLeave() {
-    activeAbortController.value?.abort()
-    activeAbortController.value = null
-    streaming.value = false
-    resetParser()
-  }
-
-  function resetParser() {
-    parserState.offset = 0
-    parserState.buffer = ''
-  }
-
-  function findLatestAssistantMessage() {
-    return [...messages.value].reverse().find((message) => message.role === 'assistant')
-  }
-
-  async function renameConversation(sessionId: number, title: string) {
+  async renameConversation(sessionId, title) {
     const value = title.trim()
-    if (!value) {
-      return
-    }
-    updatingConversation.value = true
-    try {
-      await updateConversation(sessionId, { title: value })
-      await fetchConversations()
-      if (selectedSessionId.value === sessionId) {
-        await selectConversation(sessionId)
-      }
-    } finally {
-      updatingConversation.value = false
-      editingConversationId.value = null
-    }
-  }
+    if (!value) return
+    await updateConversation(sessionId, { title: value })
+    await get().fetchConversations()
+    if (get().selectedSessionId === sessionId) await get().selectConversation(sessionId)
+  },
 
-  async function archiveConversation(sessionId: number) {
-    updatingConversation.value = true
-    try {
-      await updateConversation(sessionId, { status: 'archived' })
-      await fetchConversations()
-      if (selectedSessionId.value === sessionId && conversations.value.length > 0) {
-        await selectConversation(conversations.value[0].id)
-      }
-    } finally {
-      updatingConversation.value = false
+  async archiveConversation(sessionId) {
+    await updateConversation(sessionId, { status: 'archived' })
+    await get().fetchConversations()
+    if (get().selectedSessionId === sessionId && get().conversations.length > 0) {
+      await get().selectConversation(get().conversations[0].id)
     }
-  }
+  },
 
-  async function removeConversation(sessionId: number) {
-    deletingConversation.value = true
-    try {
-      await deleteConversation(sessionId)
-      if (selectedSessionId.value === sessionId) {
-        clearOnRouteLeave()
-        selectedSessionId.value = null
-        selectedConversation.value = null
-        messages.value = []
-      }
-      await fetchConversations()
-      if (!selectedSessionId.value && conversations.value.length > 0) {
-        await selectConversation(conversations.value[0].id)
-      }
-    } finally {
-      deletingConversation.value = false
+  async removeConversation(sessionId) {
+    await deleteConversation(sessionId)
+    if (get().selectedSessionId === sessionId) {
+      get().clearOnRouteLeave()
+      set({ selectedSessionId: null, selectedConversation: null, messages: [] })
     }
-  }
-
-  async function setMessageFeedback(message: DisplayMessage, rating: FeedbackRating) {
-    if (message.role !== 'assistant' || message.id <= 0) {
-      return
+    await get().fetchConversations()
+    if (!get().selectedSessionId && get().conversations.length > 0) {
+      await get().selectConversation(get().conversations[0].id)
     }
+  },
 
+  async setMessageFeedback(message, rating) {
+    if (message.role !== 'assistant' || message.id <= 0) return
     if (message.feedback?.rating === rating) {
-      await clearMessageFeedback(message)
+      await get().clearMessageFeedback(message)
       return
     }
-
-    updatingFeedbackMessageId.value = message.id
+    set({ updatingFeedbackMessageId: message.id })
     try {
       const response = await upsertMessageFeedback(message.id, { rating })
-      patchMessageFeedback(message.id, response.data.data)
+      patchFeedback(set, message.id, response.data.data)
     } finally {
-      updatingFeedbackMessageId.value = null
+      set({ updatingFeedbackMessageId: null })
     }
-  }
+  },
 
-  async function correctMessageFeedback(message: DisplayMessage) {
-    if (message.role !== 'assistant' || message.id <= 0) {
-      return
-    }
-
+  async correctMessageFeedback(message) {
+    if (message.role !== 'assistant' || message.id <= 0) return
     const correction = window.prompt('请输入更正建议，将用于后续评测和质量改进。', message.feedback?.correction ?? '')
-    if (correction === null) {
-      return
-    }
-
-    const trimmedCorrection = correction.trim()
-    if (!trimmedCorrection) {
-      return
-    }
-
-    updatingFeedbackMessageId.value = message.id
+    if (correction === null) return
+    const trimmed = correction.trim()
+    if (!trimmed) return
+    set({ updatingFeedbackMessageId: message.id })
     try {
-      const response = await upsertMessageFeedback(message.id, {
-        rating: 'correction',
-        correction: trimmedCorrection,
-      })
-      patchMessageFeedback(message.id, response.data.data)
+      const response = await upsertMessageFeedback(message.id, { rating: 'correction', correction: trimmed })
+      patchFeedback(set, message.id, response.data.data)
     } finally {
-      updatingFeedbackMessageId.value = null
+      set({ updatingFeedbackMessageId: null })
     }
-  }
+  },
 
-  async function clearMessageFeedback(message: DisplayMessage) {
-    if (message.role !== 'assistant' || message.id <= 0) {
-      return
-    }
-
-    updatingFeedbackMessageId.value = message.id
+  async clearMessageFeedback(message) {
+    if (message.role !== 'assistant' || message.id <= 0) return
+    set({ updatingFeedbackMessageId: message.id })
     try {
       await deleteMessageFeedback(message.id)
-      patchMessageFeedback(message.id, null)
+      patchFeedback(set, message.id, null)
     } finally {
-      updatingFeedbackMessageId.value = null
+      set({ updatingFeedbackMessageId: null })
     }
-  }
+  },
 
-  function patchMessageFeedback(messageId: number, feedback: DisplayMessage['feedback']) {
-    messages.value = messages.value.map((message) => (
-      message.id === messageId
-        ? { ...message, feedback }
-        : message
-    ))
-  }
+  setKeyword: (value) => set({ keyword: value }),
+  setMessage: (value) => set({ message: value }),
+  setSelectedKnowledgeBaseId: (value) => set({ selectedKnowledgeBaseId: value }),
+  setExecutionMode: (value) => set({ executionMode: value }),
+  useRecommendation: (question) => set({ message: question }),
 
-  return {
-    conversations,
-    filteredConversations,
-    selectedSessionId,
-    selectedConversation,
-    messages,
-    loadingConversations,
-    loadingMessages,
-    creatingConversation,
-    streaming,
-    streamState,
-    selectedReference,
-    keyword,
-    editingConversationId,
-    updatingConversation,
-    deletingConversation,
-    updatingFeedbackMessageId,
-    hasMessages,
-    bootstrap,
-    fetchConversations,
-    createAndSelectConversation,
-    selectConversation,
-    sendMessage,
-    stopStreaming,
-    resumeConversationRun,
-    clearOnRouteLeave,
-    renameConversation,
-    archiveConversation,
-    removeConversation,
-    setMessageFeedback,
-    correctMessageFeedback,
-    clearMessageFeedback,
+  clearOnRouteLeave() {
+    abortController?.abort()
+    abortController = null
+    resetParser()
+    set({ streaming: false })
+  },
+}))
+
+type SetState = (partial: Partial<ChatStore>) => void
+
+function patchFeedback(set: SetState, messageId: number, feedback: DisplayMessage['feedback']) {
+  set({
+    messages: useChatStore
+      .getState()
+      .messages.map((message) => (message.id === messageId ? { ...message, feedback } : message)),
+  })
+}
+
+async function fetchKnowledgeBaseOptions(set: SetState) {
+  try {
+    const response = await listKnowledgeBases({ pageSize: 100, status: 'published' })
+    set({ availableKnowledgeBases: response.data.items.map((item) => ({ id: item.id, name: item.name })) })
+  } catch {
+    set({ availableKnowledgeBases: [] })
   }
-})
+}
+
+async function fetchToolCapabilities(set: SetState) {
+  try {
+    const response = await listToolCapabilities()
+    set({ toolCapabilities: response.data.tools })
+  } catch {
+    set({ toolCapabilities: [] })
+  }
+}
+
+// Derived selectors
+export const selectFilteredConversations = (s: ChatStore) => {
+  const search = s.keyword.trim().toLowerCase()
+  if (!search) return s.conversations
+  return s.conversations.filter((c) => c.title.toLowerCase().includes(search))
+}
