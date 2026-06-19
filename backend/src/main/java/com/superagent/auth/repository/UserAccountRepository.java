@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -65,14 +66,23 @@ public class UserAccountRepository {
                         VALUES (:username, :passwordHash, :displayName, :email, :status)
                         RETURNING id
                         """,
-                Map.of(
-                        "username", username,
-                        "passwordHash", passwordHash,
-                        "displayName", displayName,
-                        "email", email,
-                        "status", status
-                ),
+                new MapSqlParameterSource()
+                        .addValue("username", username)
+                        .addValue("passwordHash", passwordHash)
+                        .addValue("displayName", displayName)
+                        .addValue("email", email)
+                        .addValue("status", status),
                 Long.class
+        );
+    }
+
+    public void updatePasswordHash(long userId, String passwordHash) {
+        jdbcTemplate.update("""
+                        UPDATE user_account
+                        SET password_hash = :passwordHash
+                        WHERE id = :userId AND deleted_at IS NULL
+                        """,
+                Map.of("userId", userId, "passwordHash", passwordHash)
         );
     }
 

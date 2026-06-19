@@ -141,6 +141,27 @@ class ConversationIntegrationTest {
     }
 
     @Test
+    void shouldListMemberOwnedConversations() throws Exception {
+        JsonNode login = login("member", "password123");
+        String token = login.path("data").path("accessToken").asText();
+        long tenantId = login.path("data").path("defaultTenant").path("id").asLong();
+
+        JsonNode created = createConversation(token, tenantId, "成员自己的会话");
+        long sessionId = created.path("data").path("id").asLong();
+
+        MvcResult listResponse = mockMvc.perform(get("/api/v1/conversations")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header("X-Tenant-Id", tenantId))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode listJson = objectMapper.readTree(listResponse.getResponse().getContentAsString(StandardCharsets.UTF_8));
+
+        assertThat(listJson.path("data").path("total").asInt()).isEqualTo(1);
+        assertThat(listJson.path("data").path("items").get(0).path("id").asLong()).isEqualTo(sessionId);
+        assertThat(listJson.path("data").path("items").get(0).path("title").asText()).isEqualTo("成员自己的会话");
+    }
+
+    @Test
     void shouldStreamMessageAndPersistAssistantReply() throws Exception {
         JsonNode login = login("admin", "password123");
         String token = login.path("data").path("accessToken").asText();

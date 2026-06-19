@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createInvitation, listInvitations, listMembers, removeMember, updateMember } from '../api'
+import { createInvitation, createMember, listInvitations, listMembers, removeMember, resetMemberPassword, updateMember } from '../api'
 import type { MemberRole } from '../api'
 import { ConsolePage } from '../../../shared/ui/console-page'
 import { Badge } from '../../../shared/ui/badge'
 import { Button } from '../../../shared/ui/button'
+import { Dialog, DialogContent } from '../../../shared/ui/dialog'
 import { useAuthStore, selectCurrentTenant } from '../../auth/store/auth'
 import { toast } from '../../../utils/toast'
 
@@ -20,6 +21,15 @@ export function MembersConsolePage() {
   const queryClient = useQueryClient()
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<MemberRole>('MEMBER')
+  const [newMember, setNewMember] = useState({
+    username: '',
+    displayName: '',
+    email: '',
+    password: '',
+    role: 'MEMBER' as MemberRole,
+  })
+  const [resetTarget, setResetTarget] = useState<{ userId: number; name: string } | null>(null)
+  const [resetPassword, setResetPassword] = useState('')
 
   const membersQuery = useQuery({
     queryKey: ['members', tenantId],
@@ -43,6 +53,33 @@ export function MembersConsolePage() {
     onError: () => toast.error('邀请失败，请稍后重试'),
   })
 
+  const createMemberMutation = useMutation({
+    mutationFn: () =>
+      createMember(tenantId as number, {
+        username: newMember.username.trim(),
+        displayName: newMember.displayName.trim() || undefined,
+        email: newMember.email.trim() || undefined,
+        password: newMember.password,
+        role: newMember.role,
+      }),
+    onSuccess: async () => {
+      toast.success('成员账号已创建')
+      setNewMember({ username: '', displayName: '', email: '', password: '', role: 'MEMBER' })
+      await queryClient.invalidateQueries({ queryKey: ['members', tenantId] })
+    },
+    onError: () => toast.error('创建成员失败，请检查用户名、密码或角色权限'),
+  })
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: () => resetMemberPassword(tenantId as number, resetTarget?.userId as number, { password: resetPassword }),
+    onSuccess: () => {
+      toast.success('密码已重置')
+      setResetTarget(null)
+      setResetPassword('')
+    },
+    onError: () => toast.error('重置密码失败，请检查权限或密码长度'),
+  })
+
   async function changeRole(userId: number, nextRole: MemberRole) {
     await updateMember(tenantId as number, userId, { role: nextRole })
     await queryClient.invalidateQueries({ queryKey: ['members', tenantId] })
@@ -54,8 +91,69 @@ export function MembersConsolePage() {
     await queryClient.invalidateQueries({ queryKey: ['members', tenantId] })
   }
 
+  const canCreateMember = newMember.username.trim() && newMember.password.length >= 8
+  const canResetPassword = resetPassword.length >= 8
+
   return (
     <ConsolePage title="成员" description="管理当前租户的成员角色与邀请。">
+      <section className="surface-box" style={{ display: 'grid', gap: 12 }}>
+        <p className="section-label">创建组织账号</p>
+        <div className="filter-row">
+          <label className="field" style={{ flex: '1 1 180px' }}>
+            <span>用户名</span>
+            <input
+              value={newMember.username}
+              onChange={(e) => setNewMember((value) => ({ ...value, username: e.target.value }))}
+              placeholder="test"
+            />
+          </label>
+          <label className="field" style={{ flex: '1 1 180px' }}>
+            <span>显示名</span>
+            <input
+              value={newMember.displayName}
+              onChange={(e) => setNewMember((value) => ({ ...value, displayName: e.target.value }))}
+              placeholder="组织成员"
+            />
+          </label>
+          <label className="field" style={{ flex: '1 1 220px' }}>
+            <span>邮箱</span>
+            <input
+              type="email"
+              value={newMember.email}
+              onChange={(e) => setNewMember((value) => ({ ...value, email: e.target.value }))}
+              placeholder="name@example.com"
+            />
+          </label>
+        </div>
+        <div className="filter-row">
+          <label className="field" style={{ flex: '1 1 220px' }}>
+            <span>初始密码</span>
+            <input
+              type="password"
+              value={newMember.password}
+              onChange={(e) => setNewMember((value) => ({ ...value, password: e.target.value }))}
+              placeholder="至少 8 位"
+            />
+          </label>
+          <label className="field" style={{ flex: '0 0 160px' }}>
+            <span>角色</span>
+            <select
+              value={newMember.role}
+              onChange={(e) => setNewMember((value) => ({ ...value, role: e.target.value as MemberRole }))}
+            >
+              <option value="MEMBER">MEMBER</option>
+              <option value="ADMIN">ADMIN</option>
+              <option value="OWNER">OWNER</option>
+            </select>
+          </label>
+        </div>
+        <div className="action-row">
+          <Button loading={createMemberMutation.isPending} disabled={!canCreateMember} onClick={() => createMemberMutation.mutate()}>
+            创建并加入组织
+          </Button>
+        </div>
+      </section>
+
       <section className="surface-box" style={{ display: 'grid', gap: 12 }}>
         <p className="section-label">邀请成员</p>
         <div className="filter-row">
@@ -113,9 +211,21 @@ export function MembersConsolePage() {
                   </td>
                   <td className="mono">{new Date(member.joinedAt).toLocaleDateString('zh-CN')}</td>
                   <td>
-                    <Button variant="ghost" size="sm" onClick={() => kick(member.userId)}>
+                    <div className="action-row" style={{ justifyContent: 'flex-end' }}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setResetTarget({ userId: member.userId, name: member.displayName || member.username })
+                          setResetPassword('')
+                        }}
+                      >
+                        重置密码
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => kick(member.userId)}>
                       移除
-                    </Button>
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -165,6 +275,38 @@ export function MembersConsolePage() {
           </table>
         </div>
       </section>
+
+      <Dialog open={resetTarget != null} onOpenChange={(open) => !open && setResetTarget(null)}>
+        <DialogContent title="重置成员密码">
+          <div style={{ display: 'grid', gap: 14 }}>
+            <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+              为 <strong style={{ color: 'var(--text)' }}>{resetTarget?.name}</strong> 设置新的登录密码。
+            </p>
+            <label className="field">
+              <span>新密码</span>
+              <input
+                type="password"
+                value={resetPassword}
+                onChange={(event) => setResetPassword(event.target.value)}
+                placeholder="至少 8 位"
+              />
+            </label>
+            <div className="action-row">
+              <Button variant="ghost" onClick={() => setResetTarget(null)}>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                loading={resetPasswordMutation.isPending}
+                disabled={!canResetPassword}
+                onClick={() => resetPasswordMutation.mutate()}
+              >
+                确认重置
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </ConsolePage>
   )
 }

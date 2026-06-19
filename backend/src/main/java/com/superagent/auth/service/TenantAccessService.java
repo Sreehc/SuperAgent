@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ public class TenantAccessService {
     private final TenantInvitationRepository tenantInvitationRepository;
     private final UserAccountRepository userAccountRepository;
     private final AuditLogRepository auditLogRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public TenantAccessService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
@@ -45,7 +47,8 @@ public class TenantAccessService {
             TenantMemberRepository tenantMemberRepository,
             TenantInvitationRepository tenantInvitationRepository,
             UserAccountRepository userAccountRepository,
-            AuditLogRepository auditLogRepository
+            AuditLogRepository auditLogRepository,
+            PasswordEncoder passwordEncoder
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.tenantRepository = tenantRepository;
@@ -53,6 +56,7 @@ public class TenantAccessService {
         this.tenantInvitationRepository = tenantInvitationRepository;
         this.userAccountRepository = userAccountRepository;
         this.auditLogRepository = auditLogRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public List<TenantMembership> listCurrentUserTenants() {
@@ -74,6 +78,64 @@ public class TenantAccessService {
             throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "Tenant context mismatch");
         }
         return tenantRepository.findMembers(tenantId);
+    }
+
+    @Transactional
+    public MemberCreateResult createMember(
+            long tenantId,
+            String username,
+            String displayName,
+            String email,
+            String password,
+            TenantRole targetRole
+    ) {
+        AuthenticatedUserPrincipal principal = requireMembershipMatch(tenantId);
+        assertCanAssignRole(principal.currentRole(), targetRole, "create");
+
+        String normalizedUsername = normalizeUsername(username);
+        String normalizedDisplayName = normalizeDisplayName(displayName, normalizedUsername);
+        String normalizedEmail = normalizeOptionalEmail(email);
+        String normalizedPassword = normalizePassword(password);
+
+        if (userAccountRepository.findByUsername(normalizedUsername).isPresent()) {
+            throw new AppException(ErrorCode.CONFLICT, HttpStatus.CONFLICT, "Username already exists");
+        }
+
+        long userId = userAccountRepository.create(
+                normalizedUsername,
+                passwordEncoder.encode(normalizedPassword),
+                normalizedDisplayName,
+                normalizedEmail,
+                "active"
+        );
+        tenantMemberRepository.create(tenantId, userId, targetRole, "active");
+        userAccountRepository.updateDefaultTenantId(userId, tenantId);
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("username", normalizedUsername);
+        detail.put("role", targetRole.name());
+        auditLogRepository.append(tenantId, principal.userId(), "tenant.member.created", "tenant_member", userId, detail);
+        return new MemberCreateResult(userId, normalizedUsername, normalizedDisplayName, normalizedEmail, targetRole.name(), "active");
+    }
+
+    @Transactional
+    public PasswordResetResult resetMemberPassword(long tenantId, long userId, String password) {
+        AuthenticatedUserPrincipal principal = requireMembershipMatch(tenantId);
+        TenantRole actorRole = principal.currentRole();
+        if (actorRole != TenantRole.OWNER && actorRole != TenantRole.ADMIN) {
+            throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "Forbidden");
+        }
+        TenantMembership target = tenantMemberRepository.findByUserIdAndTenantId(userId, tenantId)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, "Member not found"));
+        if (actorRole == TenantRole.ADMIN && target.role() != TenantRole.MEMBER) {
+            throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "ADMIN can only reset MEMBER password");
+        }
+        if (target.userId() == principal.userId()) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "Use account settings to change your own password");
+        }
+        userAccountRepository.updatePasswordHash(userId, passwordEncoder.encode(normalizePassword(password)));
+        auditLogRepository.append(tenantId, principal.userId(), "tenant.member.password_reset", "tenant_member", userId, Map.of());
+        return new PasswordResetResult(userId, true);
     }
 
     @Transactional
@@ -233,6 +295,18 @@ public class TenantAccessService {
         }
     }
 
+    private void assertCanAssignRole(TenantRole actorRole, TenantRole targetRole, String action) {
+        if (actorRole != TenantRole.OWNER && actorRole != TenantRole.ADMIN) {
+            throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "Forbidden");
+        }
+        if (targetRole == null) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "role is required");
+        }
+        if (actorRole == TenantRole.ADMIN && targetRole != TenantRole.MEMBER) {
+            throw new AppException(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN, "ADMIN can only " + action + " MEMBER");
+        }
+    }
+
     private AuthenticatedUserPrincipal requireMembershipMatch(long tenantId) {
         TenantContext context = TenantContextHolder.get();
         if (context == null || context.tenantId() != tenantId) {
@@ -250,6 +324,45 @@ public class TenantAccessService {
             throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "invalid email");
         }
         return trimmed;
+    }
+
+    private String normalizeOptionalEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return normalizeEmail(email).toLowerCase();
+    }
+
+    private String normalizeUsername(String username) {
+        if (username == null || username.isBlank()) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "username is required");
+        }
+        String normalized = username.trim();
+        if (normalized.length() > 128 || !normalized.matches("[A-Za-z0-9_.-]+")) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "invalid username");
+        }
+        return normalized;
+    }
+
+    private String normalizeDisplayName(String displayName, String fallback) {
+        if (displayName == null || displayName.isBlank()) {
+            return fallback;
+        }
+        String normalized = displayName.trim();
+        if (normalized.length() > 128) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "displayName is too long");
+        }
+        return normalized;
+    }
+
+    private String normalizePassword(String password) {
+        if (password == null || password.length() < 8) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "password must be at least 8 characters");
+        }
+        if (password.length() > 128) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, HttpStatus.BAD_REQUEST, "password is too long");
+        }
+        return password;
     }
 
     private String normalizeStatus(String status) {
@@ -305,6 +418,19 @@ public class TenantAccessService {
     ) {
     }
 
+    public record MemberCreateResult(
+            long userId,
+            String username,
+            String displayName,
+            String email,
+            String role,
+            String status
+    ) {
+    }
+
     public record MemberUpdateResult(long userId, String role, String status) {
+    }
+
+    public record PasswordResetResult(long userId, boolean reset) {
     }
 }

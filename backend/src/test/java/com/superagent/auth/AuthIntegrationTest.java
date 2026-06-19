@@ -36,8 +36,15 @@ class AuthIntegrationTest {
     private ObjectMapper objectMapper;
 
     @BeforeEach
-    void cleanRefreshTokens() {
+    void cleanTestState() {
         jdbcTemplate.execute("DELETE FROM refresh_token");
+        jdbcTemplate.execute("""
+                DELETE FROM tenant_member
+                WHERE user_id IN (
+                    SELECT id FROM user_account WHERE username IN ('created-member', 'reset-member', 'blocked-member')
+                )
+                """);
+        jdbcTemplate.execute("DELETE FROM user_account WHERE username IN ('created-member', 'reset-member', 'blocked-member')");
     }
 
     @Test
@@ -133,6 +140,81 @@ class AuthIntegrationTest {
 
         JsonNode json = objectMapper.readTree(response.getResponse().getContentAsString());
         assertThat(json.path("data").size()).isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void shouldAllowOwnerToCreateTenantMemberAndLogin() throws Exception {
+        JsonNode owner = login("admin", "password123");
+        long tenantId = owner.path("data").path("defaultTenant").path("id").asLong();
+
+        MvcResult response = mockMvc.perform(post("/api/v1/tenants/{tenantId}/members", tenantId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.path("data").path("accessToken").asText())
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "username", "created-member",
+                                "displayName", "Created Member",
+                                "email", "created-member@example.com",
+                                "password", "test1234",
+                                "role", "MEMBER"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode created = objectMapper.readTree(response.getResponse().getContentAsString());
+        assertThat(created.path("data").path("username").asText()).isEqualTo("created-member");
+        assertThat(created.path("data").path("role").asText()).isEqualTo("MEMBER");
+
+        JsonNode createdLogin = login("created-member", "test1234");
+        assertThat(createdLogin.path("data").path("defaultTenant").path("id").asLong()).isEqualTo(tenantId);
+    }
+
+    @Test
+    void shouldAllowOwnerToResetTenantMemberPassword() throws Exception {
+        JsonNode owner = login("admin", "password123");
+        long tenantId = owner.path("data").path("defaultTenant").path("id").asLong();
+        MvcResult createResponse = mockMvc.perform(post("/api/v1/tenants/{tenantId}/members", tenantId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.path("data").path("accessToken").asText())
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "username", "reset-member",
+                                "password", "test1234",
+                                "role", "MEMBER"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        long memberUserId = objectMapper.readTree(createResponse.getResponse().getContentAsString()).path("data").path("userId").asLong();
+
+        mockMvc.perform(post("/api/v1/tenants/{tenantId}/members/{userId}/password", tenantId, memberUserId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.path("data").path("accessToken").asText())
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("password", "newpass123"))))
+                .andExpect(status().isOk());
+
+        JsonNode resetLogin = login("reset-member", "newpass123");
+        assertThat(resetLogin.path("data").path("user").path("username").asText()).isEqualTo("reset-member");
+    }
+
+    @Test
+    void shouldForbidMemberFromCreatingTenantMember() throws Exception {
+        JsonNode member = login("member", "password123");
+        long tenantId = member.path("data").path("defaultTenant").path("id").asLong();
+
+        MvcResult response = mockMvc.perform(post("/api/v1/tenants/{tenantId}/members", tenantId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + member.path("data").path("accessToken").asText())
+                        .header("X-Tenant-Id", tenantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "username", "blocked-member",
+                                "password", "test1234",
+                                "role", "MEMBER"
+                        ))))
+                .andExpect(status().isForbidden())
+                .andReturn();
+
+        assertThat(objectMapper.readTree(response.getResponse().getContentAsString()).path("code").asText()).isEqualTo("FORBIDDEN");
     }
 
     @Test

@@ -889,14 +889,14 @@ public class ConversationRepository {
                 .addValue("tenantId", tenantId)
                 .addValue("userId", userId);
         if (!tenantAdmin) {
-            sql.append(" AND cs.owner_id = :userId");
+            sql.append(" AND cs.owner_id = :userId ");
         }
         if (status != null && !status.isBlank()) {
-            sql.append(" AND cs.status = :status");
+            sql.append(" AND cs.status = :status ");
             params.addValue("status", status);
         }
         if (keyword != null && !keyword.isBlank()) {
-            sql.append(" AND cs.title ILIKE :keyword");
+            sql.append(" AND cs.title ILIKE :keyword ");
             params.addValue("keyword", "%" + keyword.trim() + "%");
         }
         return params;

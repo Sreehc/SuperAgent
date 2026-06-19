@@ -57,6 +57,13 @@ export function GuestOnly() {
 
   useEffect(() => {
     let active = true
+    if (!useAuthStore.getState().accessToken) {
+      setState('guest')
+      return () => {
+        active = false
+      }
+    }
+
     useAuthStore
       .getState()
       .ensureSession()

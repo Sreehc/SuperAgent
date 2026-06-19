@@ -148,7 +148,7 @@ async function loginByUi(page: Page, username: string, password: string) {
   await page.getByTestId('login-username').fill(username)
   await page.getByTestId('login-password').fill(password)
   await page.getByTestId('login-submit').click()
-  await page.waitForLoadState('networkidle')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('superagent.accessToken'))).not.toBeNull()
   await expect.poll(() => page.evaluate(() => localStorage.getItem('superagent.refreshToken'))).toBeNull()
 }
 

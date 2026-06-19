@@ -33,8 +33,29 @@ export interface InvitationCreatedResponse {
   token: string
 }
 
+export interface MemberCreatePayload {
+  username: string
+  displayName?: string
+  email?: string
+  password: string
+  role: MemberRole
+}
+
+export interface MemberCreateResponse {
+  userId: number
+  username: string
+  displayName: string
+  email: string | null
+  role: MemberRole
+  status: string
+}
+
 export function listMembers(tenantId: number) {
   return apiGet<MemberItem[]>(`/tenants/${tenantId}/members`)
+}
+
+export function createMember(tenantId: number, payload: MemberCreatePayload) {
+  return http.post<{ data: MemberCreateResponse }>(`/tenants/${tenantId}/members`, payload).then((r) => r.data.data)
 }
 
 export function listInvitations(tenantId: number, params?: { status?: string }) {
@@ -62,4 +83,10 @@ export function updateMember(
 
 export function removeMember(tenantId: number, userId: number) {
   return http.delete<{ data: { removed: boolean } }>(`/tenants/${tenantId}/members/${userId}`).then((r) => r.data.data)
+}
+
+export function resetMemberPassword(tenantId: number, userId: number, payload: { password: string }) {
+  return http
+    .post<{ data: { userId: number; reset: boolean } }>(`/tenants/${tenantId}/members/${userId}/password`, payload)
+    .then((r) => r.data.data)
 }

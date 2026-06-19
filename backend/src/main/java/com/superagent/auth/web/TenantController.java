@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -65,6 +66,30 @@ public class TenantController {
     }
 
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    @PostMapping("/{tenantId}/members")
+    public ApiResponse<MemberCreateResponse> createMember(
+            @PathVariable long tenantId,
+            @Valid @RequestBody CreateMemberRequest request
+    ) {
+        TenantAccessService.MemberCreateResult result = tenantAccessService.createMember(
+                tenantId,
+                request.username(),
+                request.displayName(),
+                request.email(),
+                request.password(),
+                request.role()
+        );
+        return ApiResponse.success(new MemberCreateResponse(
+                result.userId(),
+                result.username(),
+                result.displayName(),
+                result.email(),
+                result.role(),
+                result.status()
+        ));
+    }
+
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     @PatchMapping("/{tenantId}/members/{userId}")
     public ApiResponse<MemberUpdateResponse> updateMember(
             @PathVariable long tenantId,
@@ -87,6 +112,21 @@ public class TenantController {
             @PathVariable long userId
     ) {
         return ApiResponse.success(new MemberRemoveResponse(tenantAccessService.removeMember(tenantId, userId)));
+    }
+
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    @PostMapping("/{tenantId}/members/{userId}/password")
+    public ApiResponse<PasswordResetResponse> resetMemberPassword(
+            @PathVariable long tenantId,
+            @PathVariable long userId,
+            @Valid @RequestBody ResetMemberPasswordRequest request
+    ) {
+        TenantAccessService.PasswordResetResult result = tenantAccessService.resetMemberPassword(
+                tenantId,
+                userId,
+                request.password()
+        );
+        return ApiResponse.success(new PasswordResetResponse(result.userId(), result.reset()));
     }
 
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
@@ -163,6 +203,25 @@ public class TenantController {
     ) {
     }
 
+    public record CreateMemberRequest(
+            @NotBlank @Size(max = 128) String username,
+            @Size(max = 128) String displayName,
+            @Email @Size(max = 255) String email,
+            @NotBlank @Size(min = 8, max = 128) String password,
+            @NotNull TenantRole role
+    ) {
+    }
+
+    public record MemberCreateResponse(
+            long userId,
+            String username,
+            String displayName,
+            String email,
+            String role,
+            String status
+    ) {
+    }
+
     public record UpdateMemberRequest(TenantRole role, String status) {
     }
 
@@ -170,6 +229,14 @@ public class TenantController {
     }
 
     public record MemberRemoveResponse(boolean removed) {
+    }
+
+    public record ResetMemberPasswordRequest(
+            @NotBlank @Size(min = 8, max = 128) String password
+    ) {
+    }
+
+    public record PasswordResetResponse(long userId, boolean reset) {
     }
 
     public record CreateInvitationRequest(
