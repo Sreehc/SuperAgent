@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   deleteKnowledgeDocument,
@@ -7,25 +8,84 @@ import {
   listKnowledgeDocuments,
   listKnowledgeDomains,
   uploadKnowledgeDocument,
+  uploadKnowledgeDocumentsBatch,
 } from '../api'
 import type {
   ChunkingProfileItem,
   KnowledgeBaseDetail,
   KnowledgeDocumentListItem,
   KnowledgeDomainItem,
+  UploadDocumentResponse,
 } from '../types'
 import { ConsolePage } from '../../../shared/ui/console-page'
 import { Badge } from '../../../shared/ui/badge'
 import { Button } from '../../../shared/ui/button'
+import { ConfirmDialog } from '../../../shared/ui/dialog'
 import { toast } from '../../../utils/toast'
+import { formatDateTime, formatFileSize } from '@/shared/lib/format'
 
 const READY_POLL_INTERVAL = 2500
+type UploadQueueStatus = 'queued' | 'uploading' | 'submitted' | 'processing' | 'ready' | 'failed'
+
+interface UploadQueueItem {
+  localId: string
+  fileName: string
+  fileSize: number
+  status: UploadQueueStatus
+  documentId?: number
+  title?: string
+  message?: string
+}
+
+const UPLOAD_STATUS_LABEL: Record<UploadQueueStatus, string> = {
+  queued: '等待上传',
+  uploading: '上传中',
+  submitted: '已提交',
+  processing: '解析中',
+  ready: '已就绪',
+  failed: '失败',
+}
 
 function statusBadge(status: string) {
   if (status === 'ready') return 'badge--success'
   if (status === 'failed' || status === 'error') return 'badge--danger'
   if (status === 'processing' || status === 'pending') return 'badge--warning'
   return ''
+}
+
+function uploadStatusBadge(status: UploadQueueStatus) {
+  if (status === 'ready') return 'badge--success'
+  if (status === 'failed') return 'badge--danger'
+  if (status === 'processing') return 'badge--warning'
+  if (status === 'uploading' || status === 'submitted') return 'badge--accent'
+  return ''
+}
+
+function normalizeUploadStatus(status: string | undefined): UploadQueueStatus {
+  if (status === 'ready') return 'ready'
+  if (status === 'failed' || status === 'error') return 'failed'
+  if (status === 'processing' || status === 'pending' || status === 'parsing') return 'processing'
+  if (status === 'submitted') return 'submitted'
+  return 'submitted'
+}
+
+function queueItemFromFile(file: File, index: number): UploadQueueItem {
+  return {
+    localId: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+    fileName: file.name,
+    fileSize: file.size,
+    status: 'queued',
+  }
+}
+
+function queueItemFromUpload(item: UploadQueueItem, response: UploadDocumentResponse): UploadQueueItem {
+  return {
+    ...item,
+    documentId: response.id,
+    title: response.title,
+    status: normalizeUploadStatus(response.status),
+    message: undefined,
+  }
 }
 
 export function KnowledgeDetailPage() {
@@ -35,16 +95,22 @@ export function KnowledgeDetailPage() {
 
   const [detail, setDetail] = useState<KnowledgeBaseDetail | null>(null)
   const [documents, setDocuments] = useState<KnowledgeDocumentListItem[]>([])
+  const [documentSearch, setDocumentSearch] = useState('')
+  const [documentStatusFilter, setDocumentStatusFilter] = useState('')
+  const [documentTypeFilter, setDocumentTypeFilter] = useState('')
   const [domains, setDomains] = useState<KnowledgeDomainItem[]>([])
   const [profiles, setProfiles] = useState<ChunkingProfileItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const [title, setTitle] = useState('')
-  const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<File[]>([])
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
+  const [uploadError, setUploadError] = useState('')
   const [domainId, setDomainId] = useState<number | null>(null)
   const [profileId, setProfileId] = useState<number | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; title: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pollRef = useRef<number | null>(null)
 
@@ -53,6 +119,24 @@ export function KnowledgeDetailPage() {
     setDocuments(response.data.items)
     return response.data.items
   }, [knowledgeBaseId])
+
+  const documentStatusOptions = useMemo(
+    () => Array.from(new Set(documents.map((doc) => doc.status).filter(Boolean))).sort(),
+    [documents],
+  )
+  const documentTypeOptions = useMemo(
+    () => Array.from(new Set(documents.map((doc) => doc.fileType).filter(Boolean))).sort(),
+    [documents],
+  )
+  const filteredDocuments = useMemo(() => {
+    const keyword = documentSearch.trim().toLowerCase()
+    return documents.filter((doc) => {
+      const matchesKeyword = !keyword || doc.title.toLowerCase().includes(keyword) || doc.fileType.toLowerCase().includes(keyword)
+      const matchesStatus = !documentStatusFilter || doc.status === documentStatusFilter
+      const matchesType = !documentTypeFilter || doc.fileType === documentTypeFilter
+      return matchesKeyword && matchesStatus && matchesType
+    })
+  }, [documentSearch, documentStatusFilter, documentTypeFilter, documents])
 
   useEffect(() => {
     let cancelled = false
@@ -83,6 +167,18 @@ export function KnowledgeDetailPage() {
     }
   }, [knowledgeBaseId, loadDocuments])
 
+  useEffect(() => {
+    setUploadQueue((items) =>
+      items.map((item) => {
+        if (!item.documentId) return item
+        const document = documents.find((doc) => doc.id === item.documentId)
+        if (!document) return item
+        const nextStatus = normalizeUploadStatus(document.status)
+        return nextStatus === item.status ? item : { ...item, status: nextStatus }
+      }),
+    )
+  }, [documents])
+
   // Poll while any document is still processing.
   useEffect(() => {
     const pending = documents.some((doc) => doc.status !== 'ready' && doc.status !== 'failed' && doc.status !== 'error')
@@ -104,39 +200,85 @@ export function KnowledgeDetailPage() {
     }
   }, [documents, loadDocuments])
 
+  function handleFilesChange(selectedFiles: FileList | null) {
+    const nextFiles = Array.from(selectedFiles ?? [])
+    setFiles(nextFiles)
+    setUploadError('')
+    setUploadQueue(nextFiles.map(queueItemFromFile))
+  }
+
   async function handleUpload() {
-    if (!file) {
+    if (files.length === 0) {
+      setUploadError('请选择要上传的文件。')
       toast.error('请选择要上传的文件。')
       return
     }
     setUploading(true)
+    setUploadError('')
+    setUploadQueue((items) => items.map((item) => ({ ...item, status: 'uploading', message: undefined })))
     try {
-      await uploadKnowledgeDocument(knowledgeBaseId, {
-        file,
-        title: title.trim() || undefined,
-        knowledgeDomainId: domainId,
-        chunkingProfileId: profileId,
-      })
-      toast.success('文档已提交，正在解析。')
+      if (files.length === 1) {
+        const response = await uploadKnowledgeDocument(knowledgeBaseId, {
+          file: files[0],
+          title: title.trim() || undefined,
+          knowledgeDomainId: domainId,
+          chunkingProfileId: profileId,
+        })
+        setUploadQueue((items) => items.map((item, index) => (index === 0 ? queueItemFromUpload(item, response.data) : item)))
+      } else {
+        const response = await uploadKnowledgeDocumentsBatch(knowledgeBaseId, {
+          files,
+          knowledgeDomainId: domainId,
+          chunkingProfileId: profileId,
+        })
+        setUploadQueue((items) =>
+          items.map((item, index) => {
+            const uploaded = response.data.items[index]
+            return uploaded ? queueItemFromUpload(item, uploaded) : { ...item, status: 'submitted' }
+          }),
+        )
+      }
+      toast.success(files.length === 1 ? '文档已提交，正在解析。' : `已提交 ${files.length} 个文档，正在解析。`)
       setTitle('')
-      setFile(null)
+      setFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
       await loadDocuments()
     } catch {
+      setUploadError('上传失败，请稍后重试。')
+      setUploadQueue((items) =>
+        items.map((item) =>
+          item.status === 'queued' || item.status === 'uploading'
+            ? { ...item, status: 'failed', message: '上传失败，请稍后重试。' }
+            : item,
+        ),
+      )
       toast.error('上传失败，请稍后重试。')
     } finally {
       setUploading(false)
     }
   }
 
-  async function handleDelete(documentId: number) {
-    if (!window.confirm('删除文档后无法恢复，确认继续吗？')) return
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteKnowledgeDocument(documentId)
+      await deleteKnowledgeDocument(deleteTarget.id)
+      setDeleteTarget(null)
       await loadDocuments()
     } catch {
       toast.error('删除失败，请稍后重试。')
     }
+  }
+
+  function openDocument(documentId: number) {
+    navigate(`/documents/${documentId}`)
+  }
+
+  function handleDocumentRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, documentId: number) {
+    if (event.target !== event.currentTarget) return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+
+    event.preventDefault()
+    openDocument(documentId)
   }
 
   return (
@@ -191,20 +333,79 @@ export function KnowledgeDetailPage() {
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               data-testid="document-upload-file"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => handleFilesChange(event.target.files)}
             />
           </label>
         </div>
+        {uploadError && (
+          <p className="error-banner" role="alert">
+            {uploadError}
+          </p>
+        )}
+        {uploadQueue.length > 0 && (
+          <div className="upload-queue" role="list" aria-label="上传队列">
+            {uploadQueue.map((item) => (
+              <div
+                key={item.localId}
+                className="upload-queue__item"
+                role="listitem"
+                data-status={item.status}
+                data-testid={`upload-queue-item-${item.localId}`}
+              >
+                <div className="upload-queue__meta">
+                  <strong>{item.fileName}</strong>
+                  <span>{formatFileSize(item.fileSize)}</span>
+                  {item.title && item.title !== item.fileName ? <span>{item.title}</span> : null}
+                </div>
+                <Badge className={uploadStatusBadge(item.status)}>{UPLOAD_STATUS_LABEL[item.status]}</Badge>
+                {item.message ? <span className="field-error upload-queue__message">{item.message}</span> : null}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="action-row">
           <Button data-testid="document-upload-submit" loading={uploading} onClick={handleUpload}>
-            上传文档
+            {files.length > 1 ? `批量上传 ${files.length} 个文档` : '上传文档'}
           </Button>
         </div>
       </section>
 
       <section className="surface-box" style={{ display: 'grid', gap: 10 }}>
         <p className="section-label">文档列表</p>
+        <div className="filter-row">
+          <label className="field" style={{ flex: '1 1 220px' }}>
+            <span>搜索文档</span>
+            <input
+              value={documentSearch}
+              placeholder="按标题或类型搜索"
+              onChange={(event) => setDocumentSearch(event.target.value)}
+            />
+          </label>
+          <label className="field" style={{ flex: '1 1 160px' }}>
+            <span>状态</span>
+            <select value={documentStatusFilter} onChange={(event) => setDocumentStatusFilter(event.target.value)}>
+              <option value="">全部状态</option>
+              {documentStatusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field" style={{ flex: '1 1 160px' }}>
+            <span>文件类型</span>
+            <select value={documentTypeFilter} onChange={(event) => setDocumentTypeFilter(event.target.value)}>
+              <option value="">全部类型</option>
+              {documentTypeOptions.map((fileType) => (
+                <option key={fileType} value={fileType}>
+                  {fileType}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="table-wrap">
           <table className="data-table">
             <thead>
@@ -224,13 +425,21 @@ export function KnowledgeDetailPage() {
                     <div className="empty-line">还没有文档，先上传一个吧。</div>
                   </td>
                 </tr>
+              ) : filteredDocuments.length === 0 ? (
+                <tr>
+                  <td colSpan={6}>
+                    <div className="empty-line">没有匹配的文档。</div>
+                  </td>
+                </tr>
               ) : (
-                documents.map((doc) => (
+                filteredDocuments.map((doc) => (
                   <tr
                     key={doc.id}
                     data-testid={`document-row-${doc.id}`}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => navigate(`/documents/${doc.id}`)}
+                    tabIndex={0}
+                    className="data-table__row--clickable"
+                    onClick={() => openDocument(doc.id)}
+                    onKeyDown={(event) => handleDocumentRowKeyDown(event, doc.id)}
                   >
                     <td>{doc.title}</td>
                     <td className="mono">{doc.fileType}</td>
@@ -238,9 +447,9 @@ export function KnowledgeDetailPage() {
                       <Badge className={statusBadge(doc.status)}>{doc.status}</Badge>
                     </td>
                     <td className="numeric">{doc.chunkCount}</td>
-                    <td className="mono">{new Date(doc.updatedAt).toLocaleString('zh-CN')}</td>
+                    <td className="mono">{formatDateTime(doc.updatedAt)}</td>
                     <td onClick={(event) => event.stopPropagation()}>
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(doc.id)}>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget({ id: doc.id, title: doc.title })}>
                         删除
                       </Button>
                     </td>
@@ -251,6 +460,16 @@ export function KnowledgeDetailPage() {
           </table>
         </div>
       </section>
+      <ConfirmDialog
+        open={deleteTarget != null}
+        title="删除文档"
+        description={`删除「${deleteTarget?.title ?? '该文档'}」后无法恢复，确认继续吗？`}
+        confirmLabel="确认删除"
+        cancelLabel="取消"
+        tone="danger"
+        onConfirm={confirmDelete}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      />
     </ConsolePage>
   )
 }

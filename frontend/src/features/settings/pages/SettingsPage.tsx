@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useBlocker, useSearchParams } from 'react-router-dom'
 import { ConsolePage } from '../../../shared/ui/console-page'
 import { Button } from '../../../shared/ui/button'
+import { ConfirmDialog } from '../../../shared/ui/dialog'
+import { FormField as Field, SaveBar } from '../../../shared/ui/form'
 import { toast } from '../../../utils/toast'
 import { selectCurrentRole, useAuthStore } from '../../auth/store/auth'
-import { useSettingsStore } from '../store/settings'
+import { useSettingsStore, type SettingsTab } from '../store/settings'
 
 const TABS = [
   { id: 'model', label: '模型', risk: '影响对话模型、向量模型和所有回答生成。' },
@@ -13,13 +16,54 @@ const TABS = [
   { id: 'tools', label: '工具权限', risk: '影响联网、HTTP 和代码执行等高风险能力。' },
 ] as const
 
+const SAVE_CONFIRM: Record<SettingsTab, { title: string; description: string; risks: string[] }> = {
+  model: {
+    title: '保存模型配置',
+    description: '模型配置直接影响对话和向量计算，保存后会影响后续回答生成。',
+    risks: ['对话模型', '向量模型', '模型接口地址', '模型 API Key'],
+  },
+  rag: {
+    title: '保存 RAG 配置',
+    description: '检索策略配置会影响回答质量、召回数量和证据预算。',
+    risks: ['召回数量', '证据预算', '重排序开关'],
+  },
+  rerank: {
+    title: '保存重排序配置',
+    description: '重排序配置会影响检索结果的排序质量和证据选择。',
+    risks: ['重排序模型', '重排序接口地址', '重排序 API Key'],
+  },
+  agent: {
+    title: '保存智能体设置',
+    description: '智能体设置会影响执行上限、检查点、工具策略和外部访问边界。',
+    risks: ['Agent 工具能力', '代码执行', 'HTTP 域名', '最大工具调用数'],
+  },
+  tools: {
+    title: '保存工具权限',
+    description: '工具权限设置会影响联网搜索、HTTP 和代码执行的可用范围。',
+    risks: ['联网搜索', 'HTTP 工具', '代码执行', 'HTTP 域名'],
+  },
+}
+
+function isSettingsTab(value: string | null): value is SettingsTab {
+  return TABS.some((tab) => tab.id === value)
+}
+
 export function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const role = useAuthStore(selectCurrentRole)
   const currentTenantId = useAuthStore((s) => s.currentTenantId)
   const isOwner = role === 'OWNER'
   const store = useSettingsStore()
-  const { modelForm, ragForm, fieldErrors, savingTab } = store
-  const [activeTab, setActiveTab] = useState<string>('model')
+  const { modelForm, ragForm, fieldErrors, savingTab, dirtyTabs, lastSavedTab, successMessage, errorMessage } = store
+  const [pendingSave, setPendingSave] = useState<SettingsTab | null>(null)
+  const hasDirtySettings = Object.values(dirtyTabs).some(Boolean)
+  const tabParam = searchParams.get('tab')
+  const activeTab: SettingsTab = isSettingsTab(tabParam) ? tabParam : 'model'
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
+    if (!hasDirtySettings) return false
+    if (currentLocation.pathname === nextLocation.pathname) return false
+    return true
+  })
 
   useEffect(() => {
     store.loadAll().catch(() => {})
@@ -37,28 +81,82 @@ export function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.errorMessage])
 
-  async function saveModel() {
-    if (!isOwner || !window.confirm('模型配置直接影响对话和向量计算，确认保存吗？')) return
-    await store.saveModel()
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!hasDirtySettings) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasDirtySettings])
+
+  function setActiveTab(tab: SettingsTab) {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (tab === 'model') {
+        next.delete('tab')
+      } else {
+        next.set('tab', tab)
+      }
+      return next
+    })
   }
-  async function saveRag() {
-    if (!window.confirm('检索策略配置会影响回答质量和证据预算，确认保存吗？')) return
-    await store.saveRag()
+
+  function requestSave(tab: SettingsTab) {
+    if ((tab === 'model' || tab === 'rerank') && !isOwner) return
+    setPendingSave(tab)
   }
-  async function saveRerank() {
-    if (!isOwner || !window.confirm('重排序配置会影响检索结果的排序质量，确认保存吗？')) return
-    await store.saveRerank()
-  }
-  async function saveAgent() {
-    if (!window.confirm('智能体设置会影响执行上限、检查点和工具策略，确认保存吗？')) return
-    await store.saveAgent()
-  }
-  async function saveTools() {
-    if (!window.confirm('工具权限设置会影响联网搜索、HTTP 和代码执行的可用范围，确认保存吗？')) return
-    await store.saveTools()
+
+  async function confirmPendingSave() {
+    if (!pendingSave) return
+    if (pendingSave === 'model') await store.saveModel()
+    if (pendingSave === 'rag') await store.saveRag()
+    if (pendingSave === 'rerank') await store.saveRerank()
+    if (pendingSave === 'agent') await store.saveAgent()
+    if (pendingSave === 'tools') await store.saveTools()
   }
 
   const activeMeta = TABS.find((tab) => tab.id === activeTab) ?? TABS[0]
+  const pendingSaveMeta = pendingSave ? SAVE_CONFIRM[pendingSave] : null
+  const auditSuccessMessage = successMessage ? `${successMessage}已记录审计。` : ''
+  const activeSaveState = savingTab === activeTab ? 'saving' : dirtyTabs[activeTab] ? 'dirty' : lastSavedTab === activeTab ? 'saved' : 'idle'
+
+  function renderSaveBar(
+    tab: SettingsTab,
+    label: string,
+    buttonLabel: string,
+    testId: string,
+    onSave: () => void,
+    disabled = false,
+  ) {
+    const dirty = dirtyTabs[tab]
+    const saving = savingTab === tab
+    const saved = lastSavedTab === tab && !dirty && Boolean(successMessage)
+    const error = activeTab === tab && !savingTab && errorMessage ? errorMessage : undefined
+    const message = saving
+      ? `正在保存${label}…`
+      : dirty
+        ? `${label}有未保存修改。`
+        : saved
+          ? auditSuccessMessage
+          : `${label}没有未保存修改。`
+
+    return (
+      <SaveBar dirty={dirty} saving={saving} saved={saved} error={error} message={message}>
+        <Button
+          variant="primary"
+          data-testid={testId}
+          loading={saving}
+          disabled={disabled || Boolean(savingTab) || !dirty}
+          onClick={onSave}
+        >
+          {buttonLabel}
+        </Button>
+      </SaveBar>
+    )
+  }
 
   return (
     <ConsolePage
@@ -72,11 +170,14 @@ export function SettingsPage() {
     >
       <div className="settings-layout">
         <main className="settings-main">
-          <nav className="tabs-list" aria-label="设置分组">
+          <nav className="tabs-list" aria-label="设置分组" role="tablist">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls={`settings-panel-${tab.id}`}
                 className={`tab-button${activeTab === tab.id ? ' tab-button--active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
@@ -86,8 +187,8 @@ export function SettingsPage() {
           </nav>
 
           {activeTab === 'model' && (
-          <section className="settings-section">
-            <Field label="接口地址" error={fieldErrors.baseUrl} testid="settings-error-base-url">
+          <section className="settings-section" id="settings-panel-model" role="tabpanel" aria-label="模型">
+            <Field label="接口地址" htmlFor="settings-model-base-url" error={fieldErrors.baseUrl} errorTestId="settings-error-base-url">
               <input
                 data-testid="settings-model-base-url"
                 value={modelForm.baseUrl}
@@ -95,7 +196,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchModel({ baseUrl: e.target.value })}
               />
             </Field>
-            <Field label="对话模型">
+            <Field label="对话模型" htmlFor="settings-model-chat-model" error={fieldErrors.chatModel}>
               <input
                 data-testid="settings-model-chat-model"
                 value={modelForm.chatModel}
@@ -103,7 +204,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchModel({ chatModel: e.target.value })}
               />
             </Field>
-            <Field label="向量模型">
+            <Field label="向量模型" htmlFor="settings-model-embedding-model" error={fieldErrors.embeddingModel}>
               <input
                 data-testid="settings-model-embedding-model"
                 value={modelForm.embeddingModel}
@@ -111,7 +212,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchModel({ embeddingModel: e.target.value })}
               />
             </Field>
-            <Field label="API Key" hint={modelForm.apiKeySet ? 'API Key 已设置' : undefined}>
+            <Field label="API Key" htmlFor="settings-model-api-key" hint={modelForm.apiKeySet ? 'API Key 已设置' : undefined} error={fieldErrors.apiKey}>
               <input
                 data-testid="settings-model-api-key"
                 type="password"
@@ -121,17 +222,13 @@ export function SettingsPage() {
                 onChange={(e) => store.patchModel({ apiKey: e.target.value })}
               />
             </Field>
-            <div className="action-row">
-              <Button variant="primary" data-testid="settings-save-model" loading={savingTab === 'model'} onClick={saveModel}>
-                保存配置
-              </Button>
-            </div>
+            {renderSaveBar('model', '模型配置', '保存配置', 'settings-save-model', () => requestSave('model'), !isOwner)}
           </section>
           )}
 
           {activeTab === 'rag' && (
-          <section className="settings-section">
-            <Field label="最大子问题数">
+          <section className="settings-section" id="settings-panel-rag" role="tabpanel" aria-label="RAG">
+            <Field label="最大子问题数" htmlFor="settings-rag-max-sub-questions" error={fieldErrors.maxSubQuestions}>
               <input
                 type="number"
                 min={1}
@@ -140,7 +237,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchRag({ maxSubQuestions: Number(e.target.value) })}
               />
             </Field>
-            <Field label="向量召回 Top-K" error={fieldErrors.vectorTopK} testid="settings-error-vector-top-k">
+            <Field label="向量召回 Top-K" htmlFor="settings-rag-vector-top-k" error={fieldErrors.vectorTopK} errorTestId="settings-error-vector-top-k">
               <input
                 type="number"
                 min={1}
@@ -149,7 +246,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchRag({ vectorTopK: Number(e.target.value) })}
               />
             </Field>
-            <Field label="关键词召回 Top-K">
+            <Field label="关键词召回 Top-K" htmlFor="settings-rag-keyword-top-k" error={fieldErrors.keywordTopK}>
               <input
                 type="number"
                 min={1}
@@ -157,7 +254,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchRag({ keywordTopK: Number(e.target.value) })}
               />
             </Field>
-            <Field label="证据条数上限">
+            <Field label="证据条数上限" htmlFor="settings-rag-evidence-limit" error={fieldErrors.evidenceLimit}>
               <input
                 type="number"
                 min={1}
@@ -165,17 +262,13 @@ export function SettingsPage() {
                 onChange={(e) => store.patchRag({ evidenceLimit: Number(e.target.value) })}
               />
             </Field>
-            <div className="action-row">
-              <Button variant="primary" data-testid="settings-save-rag" loading={savingTab === 'rag'} onClick={saveRag}>
-                保存检索策略
-              </Button>
-            </div>
+            {renderSaveBar('rag', 'RAG 配置', '保存检索策略', 'settings-save-rag', () => requestSave('rag'))}
           </section>
           )}
 
           {activeTab === 'rerank' && (
-          <section className="settings-section">
-            <Field label="模型提供方" error={fieldErrors.provider}>
+          <section className="settings-section" id="settings-panel-rerank" role="tabpanel" aria-label="重排序">
+            <Field label="模型提供方" htmlFor="settings-rerank-provider" error={fieldErrors.provider}>
               <input
                 data-testid="settings-rerank-provider"
                 value={store.rerankForm.provider}
@@ -183,7 +276,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchRerank({ provider: e.target.value })}
               />
             </Field>
-            <Field label="接口地址">
+            <Field label="接口地址" htmlFor="settings-rerank-base-url" error={fieldErrors.baseUrl}>
               <input
                 data-testid="settings-rerank-base-url"
                 value={store.rerankForm.baseUrl}
@@ -191,7 +284,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchRerank({ baseUrl: e.target.value })}
               />
             </Field>
-            <Field label="模型名称">
+            <Field label="模型名称" htmlFor="settings-rerank-model" error={fieldErrors.model}>
               <input
                 data-testid="settings-rerank-model"
                 value={store.rerankForm.model}
@@ -199,7 +292,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchRerank({ model: e.target.value })}
               />
             </Field>
-            <Field label="密钥" hint={store.rerankForm.apiKeySet ? 'API Key 已设置' : undefined}>
+            <Field label="密钥" htmlFor="settings-rerank-api-key" hint={store.rerankForm.apiKeySet ? 'API Key 已设置' : undefined} error={fieldErrors.apiKey}>
               <input
                 data-testid="settings-rerank-api-key"
                 type="password"
@@ -209,17 +302,13 @@ export function SettingsPage() {
                 onChange={(e) => store.patchRerank({ apiKey: e.target.value })}
               />
             </Field>
-            <div className="action-row">
-              <Button variant="primary" data-testid="settings-save-rerank" loading={savingTab === 'rerank'} onClick={saveRerank}>
-                保存配置
-              </Button>
-            </div>
+            {renderSaveBar('rerank', '重排序配置', '保存配置', 'settings-save-rerank', () => requestSave('rerank'), !isOwner)}
           </section>
           )}
 
           {activeTab === 'agent' && (
-          <section className="settings-section">
-            <Field label="最大模型步数">
+          <section className="settings-section" id="settings-panel-agent" role="tabpanel" aria-label="智能体">
+            <Field label="最大模型步数" htmlFor="settings-agent-max-model-steps" error={fieldErrors.maxModelSteps}>
               <input
                 type="number"
                 min={1}
@@ -227,7 +316,7 @@ export function SettingsPage() {
                 onChange={(e) => store.patchAgent({ maxModelSteps: Number(e.target.value) })}
               />
             </Field>
-            <Field label="最大工具调用数">
+            <Field label="最大工具调用数" htmlFor="settings-agent-max-tool-calls" error={fieldErrors.maxToolCalls}>
               <input
                 type="number"
                 min={1}
@@ -235,30 +324,26 @@ export function SettingsPage() {
                 onChange={(e) => store.patchAgent({ maxToolCalls: Number(e.target.value) })}
               />
             </Field>
-            <Field label="允许的 HTTP 域名（每行一个）">
+            <Field label="允许的 HTTP 域名（每行一个）" htmlFor="settings-agent-allowed-http-domains" error={fieldErrors.allowedHttpDomains}>
               <textarea
                 rows={4}
                 value={store.agentForm.allowedHttpDomainsText}
                 onChange={(e) => store.patchAgent({ allowedHttpDomainsText: e.target.value })}
               />
             </Field>
-            <div className="action-row">
-              <Button variant="primary" data-testid="settings-save-agent" loading={savingTab === 'agent'} onClick={saveAgent}>
-                保存智能体设置
-              </Button>
-            </div>
+            {renderSaveBar('agent', '智能体配置', '保存智能体设置', 'settings-save-agent', () => requestSave('agent'))}
           </section>
           )}
 
           {activeTab === 'tools' && (
-          <section className="settings-section">
-            <Field label="搜索提供方">
+          <section className="settings-section" id="settings-panel-tools" role="tabpanel" aria-label="工具权限">
+            <Field label="搜索提供方" htmlFor="settings-tools-search-provider" error={fieldErrors.searchProvider}>
               <input
                 value={store.toolForm.searchProvider}
                 onChange={(e) => store.patchTool({ searchProvider: e.target.value })}
               />
             </Field>
-            <Field label="工具超时（ms）">
+            <Field label="工具超时（ms）" htmlFor="settings-tools-timeout" error={fieldErrors.toolTimeoutMs}>
               <input
                 type="number"
                 min={1000}
@@ -266,18 +351,14 @@ export function SettingsPage() {
                 onChange={(e) => store.patchTool({ toolTimeoutMs: Number(e.target.value) })}
               />
             </Field>
-            <Field label="允许的 HTTP 域名（每行一个）">
+            <Field label="允许的 HTTP 域名（每行一个）" htmlFor="settings-tools-allowed-http-domains" error={fieldErrors.allowedHttpDomains}>
               <textarea
                 rows={4}
                 value={store.toolForm.allowedHttpDomainsText}
                 onChange={(e) => store.patchTool({ allowedHttpDomainsText: e.target.value })}
               />
             </Field>
-            <div className="action-row">
-              <Button variant="primary" data-testid="settings-save-tools" loading={savingTab === 'tools'} onClick={saveTools}>
-                保存工具权限
-              </Button>
-            </div>
+            {renderSaveBar('tools', '工具权限配置', '保存工具权限', 'settings-save-tools', () => requestSave('tools'))}
           </section>
           )}
         </main>
@@ -292,45 +373,44 @@ export function SettingsPage() {
             </div>
             <div>
               <dt>保存状态</dt>
-              <dd>{savingTab ?? 'idle'}</dd>
+              <dd>{activeSaveState}</dd>
             </div>
             <div>
               <dt>校验错误</dt>
               <dd>{Object.keys(fieldErrors).length}</dd>
             </div>
           </dl>
-          {store.successMessage && <p className="success-banner">{store.successMessage}</p>}
+          {store.successMessage && <p className="success-banner">{auditSuccessMessage}</p>}
           {store.errorMessage && <p className="error-banner">{store.errorMessage}</p>}
         </aside>
       </div>
-    </ConsolePage>
-  )
-}
-
-function Field({
-  label,
-  error,
-  testid,
-  hint,
-  children,
-}: {
-  label: string
-  error?: string
-  testid?: string
-  hint?: string
-  children: React.ReactNode
-}) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-      {hint && <small className="field-label">{hint}</small>}
-      {error && (
-        <small className="field-error" data-testid={testid}>
-          {error}
-        </small>
+      {pendingSaveMeta && (
+        <ConfirmDialog
+          open={pendingSave != null}
+          title={pendingSaveMeta.title}
+          description={`${pendingSaveMeta.description} 高风险项：${pendingSaveMeta.risks.join('、')}。当前版本使用二次确认和审计记录，不展示审批流入口。`}
+          confirmLabel="确认保存并记录审计"
+          cancelLabel="取消"
+          tone="danger"
+          onConfirm={confirmPendingSave}
+          onOpenChange={(open) => !open && setPendingSave(null)}
+        />
       )}
-    </label>
+      <ConfirmDialog
+        open={blocker.state === 'blocked'}
+        title="未保存修改"
+        description="当前设置页有未保存修改。离开后这些改动不会保存。"
+        confirmLabel="确认离开"
+        cancelLabel="继续编辑"
+        tone="danger"
+        onConfirm={() => blocker.proceed?.()}
+        onOpenChange={(open) => {
+          if (!open && blocker.state === 'blocked') {
+            blocker.reset?.()
+          }
+        }}
+      />
+    </ConsolePage>
   )
 }
 

@@ -4,6 +4,7 @@ import { Command, MagnifyingGlass, SidebarSimple, SignOut } from '@phosphor-icon
 import { BrandLogo } from '@/components/BrandLogo'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { selectCurrentRole, useAuthStore } from '@/features/auth/store/auth'
+import { DetailDrawer } from '@/shared/ui'
 import { NAV_ITEMS } from '../nav'
 
 export function AppShell() {
@@ -40,8 +41,8 @@ export function AppShell() {
   }
 
   return (
-    <div className={`console-shell${navOpen ? ' console-shell--nav-open' : ''}`}>
-      <aside className="global-rail" aria-label="主导航">
+    <div className="console-shell">
+      <aside className="global-rail" aria-label="主导航" data-testid="desktop-nav">
         <NavLink className="global-rail__mark" to="/chat" aria-label="SuperAgent 对话">
           <BrandLogo size="small" />
         </NavLink>
@@ -74,12 +75,16 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="console-shell__overlay" aria-hidden="true" onClick={() => setNavOpen(false)} />
-
       <section className="console-workspace">
         <header className="utility-bar">
           <div className="utility-bar__left">
-            <button className="utility-bar__menu icon-button" type="button" aria-label="打开导航" onClick={() => setNavOpen(true)}>
+            <button
+              className="utility-bar__menu icon-button"
+              type="button"
+              aria-label="打开导航"
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen(true)}
+            >
               <SidebarSimple size={18} aria-hidden="true" />
             </button>
             <div className="tenant-chip">
@@ -117,6 +122,46 @@ export function AppShell() {
           <Outlet />
         </main>
       </section>
+
+      <DetailDrawer
+        open={navOpen}
+        title="主导航"
+        description="切换控制台页面"
+        className="mobile-nav-drawer"
+        onOpenChange={setNavOpen}
+      >
+        <div className="mobile-nav">
+          <NavLink className="mobile-nav__brand" to="/chat" onClick={() => setNavOpen(false)}>
+            <BrandLogo size="small" />
+            <span>SuperAgent</span>
+          </NavLink>
+          <nav className="mobile-nav__list" aria-label="移动端主导航">
+            {visibleItems.map((item) => {
+              const Icon = item.icon
+              const active = isActive(item.to)
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={`mobile-nav__item${active ? ' mobile-nav__item--active' : ''}`}
+                  aria-label={item.label}
+                  onClick={() => setNavOpen(false)}
+                >
+                  <Icon size={20} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
+                  <span>{item.label}</span>
+                </NavLink>
+              )
+            })}
+          </nav>
+          <div className="mobile-nav__tools">
+            <button className="mobile-nav__tool" type="button" onClick={openCommand}>
+              <Command size={18} aria-hidden="true" />
+              <span>命令面板</span>
+            </button>
+            <ThemeToggle className="mobile-nav__tool" />
+          </div>
+        </div>
+      </DetailDrawer>
     </div>
   )
 }

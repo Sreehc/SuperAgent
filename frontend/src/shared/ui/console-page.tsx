@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from './button'
-import { LoadingSpinner } from '@/components/feedback'
+import { ErrorState, LoadingState } from './status'
 
 interface ConsolePageProps {
   title: string
@@ -32,8 +32,7 @@ export function ConsolePage({ title, description, actions, backTo, loading, erro
           {actions}
         </div>
       </div>
-      {error ? <p className="error-banner">{error}</p> : null}
-      {loading ? <LoadingSpinner /> : children}
+      {error ? <ErrorState title="页面加载失败" description={error} /> : loading ? <LoadingState label="正在加载页面内容" /> : children}
     </div>
   )
 }

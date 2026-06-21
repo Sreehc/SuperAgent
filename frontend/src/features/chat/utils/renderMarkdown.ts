@@ -46,6 +46,7 @@ function enhanceCodeBlocks(html: string) {
     copyButton.type = 'button'
     copyButton.className = 'markdown-codeblock__copy'
     copyButton.dataset.codeCopy = String(index)
+    copyButton.setAttribute('aria-label', '复制代码块')
     copyButton.textContent = '复制代码'
 
     header.append(label, copyButton)

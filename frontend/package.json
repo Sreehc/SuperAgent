@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "e2e": "playwright test",
+    "e2e": "playwright test --project=desktop --project=tablet --grep-invert @visual",
+    "test:visual": "playwright test --project=visual-desktop --project=visual-tablet --project=visual-mobile --grep @visual",
     "test": "vitest run"
   },
   "dependencies": {

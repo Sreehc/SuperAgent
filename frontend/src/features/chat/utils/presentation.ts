@@ -1,4 +1,5 @@
 import type { MessageRole } from '../types'
+import { formatShortDateTime } from '@/shared/lib/format'
 
 export function roleLabel(role: MessageRole) {
   if (role === 'assistant') {
@@ -14,10 +15,5 @@ export function formatChatTime(value: string | null) {
   if (!value) {
     return '刚刚'
   }
-  return new Date(value).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return formatShortDateTime(value)
 }

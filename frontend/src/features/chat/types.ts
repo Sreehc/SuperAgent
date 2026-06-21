@@ -6,6 +6,8 @@ export type ConversationStatus = 'active' | 'archived' | 'deleted'
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 
+export type StreamLifecycleStatus = 'idle' | 'submitting' | 'streaming' | 'stopping' | 'done' | 'error'
+
 export interface ConversationSummary {
   id: number
   title: string
@@ -73,7 +75,7 @@ export interface DisplayMessage extends ConversationMessage {
 }
 
 export interface RunTimelineItem {
-  type: 'agent_step' | 'tool_start' | 'tool_result' | 'checkpoint' | 'resume'
+  type: 'trace_stage' | 'agent_step' | 'tool_start' | 'tool_result' | 'checkpoint' | 'resume'
   title: string
   summary: string
 }
@@ -84,6 +86,7 @@ export interface StreamState {
   stage: string | null
   recommendations: string[]
   error: string
+  completed: boolean
   stopped: boolean
   timeline: RunTimelineItem[]
 }
@@ -117,6 +120,7 @@ export interface ConversationPatchResponse {
 export interface StreamMessageRequest {
   message: string
   knowledgeBaseId?: number | null
+  knowledgeBaseIds?: number[]
   memoryStrategy?: MemoryStrategy
   executionMode?: RequestedExecutionMode
 }
