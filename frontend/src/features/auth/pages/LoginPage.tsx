@@ -30,12 +30,19 @@ export function LoginPage() {
     <div className="login-page">
       <div className="login-panel">
         <section className="login-brief" aria-label="SuperAgent 控制台概览">
-          <div className="login-brief__brand">
-            <BrandLogo size="large" />
-            <div>
+          <div className="login-brief__brand" data-testid="login-brand-header">
+            <div className="login-brief__signature" data-testid="login-brand-signature">
+              <BrandLogo size="medium" />
               <p className="section-label">SuperAgent</p>
-              <h1>Agent 运行控制台</h1>
             </div>
+            <h1>
+              <span className="login-brief__title-primary" data-testid="login-title-primary">
+                Agent
+              </span>
+              <span className="login-brief__title-secondary" data-testid="login-title-secondary">
+                运行控制台
+              </span>
+            </h1>
           </div>
 
           <div className="login-brief__copy">

@@ -564,14 +564,42 @@
 .login-brief__brand,
 .login-card__brand {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
   min-width: 0;
 }
 
 .login-brief__brand {
+  display: grid;
+  gap: 18px;
   justify-content: flex-start;
+}
+
+.login-brief__signature {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  min-width: 0;
+  padding: 8px 12px 8px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-surface), white 42%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line-soft), transparent 18%);
+}
+
+.login-brief__signature .section-label {
+  margin: 0;
+  letter-spacing: 0.08em;
+}
+
+:root[data-theme="dark"] .login-brief__signature {
+  background: color-mix(in srgb, var(--bg-surface), var(--bg-inset) 58%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line-strong), transparent 12%);
+}
+
+:root[data-theme="dark"] .login-brief__signature .section-label {
+  color: var(--text-main);
 }
 
 .login-brief h1,
@@ -583,10 +611,30 @@
 }
 
 .login-brief h1 {
-  max-width: 11ch;
+  display: grid;
+  gap: 2px;
+  max-width: 8.4ch;
   font-size: clamp(48px, 5vw, 70px);
-  line-height: 0.95;
+  line-height: 0.88;
+  letter-spacing: -0.04em;
   text-wrap: balance;
+}
+
+.login-brief__title-primary,
+.login-brief__title-secondary {
+  display: block;
+}
+
+.login-brief__title-primary {
+  line-height: 0.86;
+}
+
+.login-brief__title-secondary {
+  max-width: none;
+  font-size: 0.9em;
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
 }
 
 .login-card h2 {
@@ -3593,8 +3641,21 @@ pre {
   }
 
   .login-brief h1 {
-    max-width: 12ch;
+    max-width: 10ch;
     font-size: 38px;
+  }
+
+  .login-brief__title-secondary {
+    max-width: none;
+    font-size: 0.92em;
+  }
+
+  .login-brief__brand {
+    gap: 14px;
+  }
+
+  .login-brief__signature {
+    padding-right: 10px;
   }
 
   .login-brief__copy {

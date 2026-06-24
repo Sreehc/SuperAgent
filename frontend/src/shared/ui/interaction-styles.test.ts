@@ -53,4 +53,14 @@ describe('global interaction styles', () => {
     expect(appCss).toMatch(/\.table-wrap\s*{[\s\S]*border-radius:\s*22px/)
     expect(appCss).toMatch(/\.trace-detail-layout\s*{[\s\S]*gap:\s*16px/)
   })
+
+  it('keeps the login brand signature legible in dark theme', () => {
+    expect(appCss).toMatch(/:root\[data-theme="dark"\]\s+\.login-brief__signature\s*{[\s\S]*background:/)
+    expect(appCss).toMatch(/:root\[data-theme="dark"\]\s+\.login-brief__signature\s+\.section-label\s*{[\s\S]*color:\s*var\(--text-main\)/)
+  })
+
+  it('keeps the login headline secondary line on a single row', () => {
+    expect(appCss).toMatch(/\.login-brief__title-secondary\s*{[\s\S]*white-space:\s*nowrap/)
+    expect(appCss).toMatch(/\.login-brief__title-secondary\s*{[\s\S]*max-width:\s*none/)
+  })
 })
