@@ -18,6 +18,7 @@ import { Button } from '../../../shared/ui/button'
 import { ConfirmDialog } from '../../../shared/ui/dialog'
 import { DetailDrawer } from '../../../shared/ui/drawer'
 import { TableStateRow } from '../../../shared/ui/status'
+import { SelectField } from '@/shared/ui'
 import { formatDateTime, formatDurationMs, formatNumber } from '@/shared/lib/format'
 import type { AgentRunSummary, PluginItem, ToolCallDetail, ToolCapabilityItem } from '../types'
 
@@ -753,13 +754,13 @@ function AgentRunsTable({
       <div className="filter-row" role="search" aria-label="Agent Runs 筛选">
         <label className="field">
           <span>运行状态</span>
-          <select value={status} onChange={(event) => onStatusChange(event.target.value)}>
+          <SelectField value={status} onChange={(event) => onStatusChange(event.target.value)}>
             <option value="">全部</option>
             <option value="running">running</option>
             <option value="completed">completed</option>
             <option value="failed">failed</option>
             <option value="pending">pending</option>
-          </select>
+          </SelectField>
         </label>
         <Button type="button" variant="secondary" onClick={onApplyFilters}>
           筛选 Agent Runs

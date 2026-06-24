@@ -16,7 +16,7 @@ interface DetailDrawerProps {
   open: boolean
   title: string
   description?: ReactNode
-  side?: 'right' | 'bottom'
+  side?: 'left' | 'right' | 'bottom'
   footer?: ReactNode
   children: ReactNode
   className?: string

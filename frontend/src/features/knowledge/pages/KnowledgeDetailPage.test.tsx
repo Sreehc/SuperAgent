@@ -158,31 +158,34 @@ describe('KnowledgeDetailPage upload queue', () => {
 
     fireEvent.change(input, { target: { files: [refundFile, policyFile, brokenFile] } })
 
-    const queue = screen.getByRole('list', { name: '上传队列' })
+    const queue = screen.getByTestId('upload-queue')
+    expect(within(queue).getByText('上传队列')).toBeTruthy()
     expect(within(queue).getByText('refund-guide.txt')).toBeTruthy()
     expect(within(queue).getByText('policy.pdf')).toBeTruthy()
     expect(within(queue).getByText('broken.csv')).toBeTruthy()
     expect(within(queue).getAllByText('等待上传')).toHaveLength(3)
 
+    fireEvent.click(within(queue).getAllByRole('button', { name: '移除' })[2])
+    await waitFor(() => expect(within(queue).queryByText('broken.csv')).toBeNull())
+
     fireEvent.click(screen.getByTestId('document-upload-submit'))
 
     await waitFor(() =>
       expect(uploadKnowledgeDocumentsBatch).toHaveBeenCalledWith(42, {
-        files: [refundFile, policyFile, brokenFile],
+        files: [refundFile, policyFile],
         knowledgeDomainId: null,
         chunkingProfileId: null,
       }),
     )
-    expect(within(queue).getAllByText('上传中')).toHaveLength(3)
+    expect(within(queue).getAllByText('上传中')).toHaveLength(2)
 
     await act(async () => {
       batchUpload.resolve(
         envelope({
-          uploadedCount: 3,
+          uploadedCount: 2,
           items: [
             uploadItem(21, 'refund-guide.txt', 'processing'),
             uploadItem(22, 'policy.pdf', 'ready'),
-            uploadItem(23, 'broken.csv', 'failed'),
           ],
         }),
       )
@@ -190,7 +193,6 @@ describe('KnowledgeDetailPage upload queue', () => {
 
     await waitFor(() => expect(within(queue).getByText('解析中')).toBeTruthy())
     expect(within(queue).getByText('已就绪')).toBeTruthy()
-    expect(within(queue).getByText('失败')).toBeTruthy()
   })
 
   it('keeps single-file uploads on the single document endpoint with a trimmed title', async () => {
@@ -213,7 +215,7 @@ describe('KnowledgeDetailPage upload queue', () => {
     )
     expect(uploadKnowledgeDocumentsBatch).not.toHaveBeenCalled()
 
-    const queue = screen.getByRole('list', { name: '上传队列' })
+    const queue = screen.getByTestId('upload-queue')
     await waitFor(() => expect(within(queue).getByText('已提交')).toBeTruthy())
   })
 
@@ -227,7 +229,7 @@ describe('KnowledgeDetailPage upload queue', () => {
     fireEvent.change(input, { target: { files: [file] } })
     fireEvent.click(screen.getByTestId('document-upload-submit'))
 
-    const queue = screen.getByRole('list', { name: '上传队列' })
+    const queue = screen.getByTestId('upload-queue')
     const alert = await screen.findByRole('alert')
 
     expect(alert.textContent).toContain('上传失败，请稍后重试。')

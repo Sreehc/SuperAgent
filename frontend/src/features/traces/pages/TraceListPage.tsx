@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { createColumnHelper } from '@tanstack/react-table'
-import { Badge, Button, ConsolePage, DataTable } from '@/shared/ui'
+import { Badge, Button, ConsolePage, DataTable, SelectField } from '@/shared/ui'
 import { listAdminTraces } from '../api'
 import type { TraceListItem } from '../types'
 import { formatDateTime, formatDurationMs } from '@/shared/lib/format'
@@ -92,7 +92,7 @@ export function TraceListPage() {
       <div className="filter-row">
         <label className="field" style={{ flex: '0 1 160px' }}>
           <span>状态</span>
-          <select
+          <SelectField
             value={filters.status}
             onChange={(event) => setFilters((value) => ({ ...value, status: event.target.value }))}
           >
@@ -100,11 +100,11 @@ export function TraceListPage() {
             <option value="success">success</option>
             <option value="failed">failed</option>
             <option value="error">error</option>
-          </select>
+          </SelectField>
         </label>
         <label className="field" style={{ flex: '0 1 180px' }}>
           <span>执行模式</span>
-          <select
+          <SelectField
             value={filters.executionMode}
             onChange={(event) => setFilters((value) => ({ ...value, executionMode: event.target.value }))}
           >
@@ -112,7 +112,7 @@ export function TraceListPage() {
             <option value="CLARIFICATION">CLARIFICATION</option>
             <option value="RAG_QA">RAG_QA</option>
             <option value="REACT_AGENT">REACT_AGENT</option>
-          </select>
+          </SelectField>
         </label>
         <label className="field" style={{ flex: '1 1 190px' }}>
           <span>开始时间</span>

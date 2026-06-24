@@ -11,50 +11,49 @@ const options: KnowledgeBaseOption[] = [
   { id: 6, name: 'Zeta 规范' },
 ]
 
-function selectOptions(select: HTMLElement, values: string[]) {
-  within(select).getAllByRole('option').forEach((option) => {
-    ;(option as HTMLOptionElement).selected = values.includes((option as HTMLOptionElement).value)
-  })
-  fireEvent.change(select)
-}
-
 describe('KnowledgeBasePicker', () => {
-  it('supports multi-select, search, clearing, and the unrestricted option', () => {
+  it('keeps a compact trigger by default and only shows the search panel when opened', () => {
+    render(<KnowledgeBasePicker options={options} selectedIds={[]} onChange={vi.fn()} />)
+
+    const trigger = screen.getByRole('button', { name: '选择知识库' })
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByPlaceholderText('搜索知识库')).toBeNull()
+
+    fireEvent.click(trigger)
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByPlaceholderText('搜索知识库')).toBeTruthy()
+  })
+
+  it('supports search, single selection, clearing, and the unrestricted option', () => {
     const onChange = vi.fn()
+    const { rerender } = render(<KnowledgeBasePicker options={options} selectedIds={[]} onChange={onChange} />)
 
-    render(<KnowledgeBasePicker options={options} selectedIds={[]} onChange={onChange} />)
-
-    expect(screen.getByText('未限定知识库')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '选择知识库' }))
 
     const search = screen.getByPlaceholderText('搜索知识库')
     fireEvent.change(search, { target: { value: 'Beta' } })
-
-    const select = screen.getByTestId('chat-knowledge-base')
-    expect(within(select).getByRole('option', { name: 'Beta 政策' })).toBeTruthy()
-    expect(within(select).queryByRole('option', { name: 'Alpha 手册' })).toBeNull()
+    expect(screen.getByRole('option', { name: 'Beta 政策' })).toBeTruthy()
+    expect(screen.queryByRole('option', { name: 'Alpha 手册' })).toBeNull()
 
     fireEvent.change(search, { target: { value: '' } })
-    selectOptions(select, ['2', '3'])
-    expect(onChange).toHaveBeenLastCalledWith([2, 3])
+    fireEvent.click(screen.getByRole('option', { name: 'Beta 政策' }))
+    expect(onChange).toHaveBeenLastCalledWith([2])
 
-    selectOptions(select, [''])
+    rerender(<KnowledgeBasePicker options={options} selectedIds={[2]} onChange={onChange} />)
+    expect(screen.queryByRole('button', { name: '清空知识库选择' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '选择知识库' }))
+    fireEvent.click(screen.getByRole('button', { name: '清空知识库选择' }))
     expect(onChange).toHaveBeenLastCalledWith([])
   })
 
-  it('summarizes large selections and exposes a clear action', () => {
-    const onChange = vi.fn()
+  it('folds the selected state into the trigger instead of reserving a second summary row', () => {
+    render(<KnowledgeBasePicker options={options} selectedIds={[1]} onChange={vi.fn()} />)
 
-    render(<KnowledgeBasePicker options={options} selectedIds={[1, 2, 3, 4, 5, 6]} onChange={onChange} />)
-
-    const selectedSummary = screen.getByRole('status', { name: '已选知识库' })
-
-    expect(screen.getByText('已选 6 个知识库')).toBeTruthy()
-    expect(within(selectedSummary).getByText('Alpha 手册')).toBeTruthy()
-    expect(within(selectedSummary).getByText('Epsilon 指南')).toBeTruthy()
-    expect(within(selectedSummary).getByText('另 1 个')).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: '清空知识库选择' }))
-
-    expect(onChange).toHaveBeenCalledWith([])
+    const trigger = screen.getByRole('button', { name: '选择知识库' })
+    expect(within(trigger).getByText('Alpha 手册')).toBeTruthy()
+    expect(screen.queryByRole('status', { name: '已选知识库' })).toBeNull()
   })
 })

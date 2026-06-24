@@ -12,6 +12,7 @@ import { ExecutionSummary } from './ExecutionSummary'
 import { KnowledgeBasePicker } from './KnowledgeBasePicker'
 import { MarkdownText } from './MarkdownText'
 import { MessageActions } from './MessageActions'
+import { SelectField } from '@/shared/ui'
 
 function UserMessage() {
   return (
@@ -161,52 +162,54 @@ function Composer() {
   const locked = streamStatus === 'submitting' || streamStatus === 'streaming' || streamStatus === 'stopping'
 
   return (
-    <ComposerPrimitive.Root className="composer-dock">
-      <div className="composer-chips">
-        <KnowledgeBasePicker
-          options={knowledgeBases}
-          selectedIds={selectedKnowledgeBaseIds}
-          disabled={locked}
-          onChange={(ids) => useChatStore.getState().setSelectedKnowledgeBaseIds(ids)}
-        />
-        <label className="composer-chip">
-          <span>模式</span>
-          <select
-            value={executionMode}
+    <ComposerPrimitive.Root className="composer-dock" data-testid="chat-composer-shell">
+      <div className="composer-topbar" data-testid="chat-composer-top">
+        <div className="composer-topbar__primary">
+          <KnowledgeBasePicker
+            options={knowledgeBases}
+            selectedIds={selectedKnowledgeBaseIds}
             disabled={locked}
-            onChange={(event) => useChatStore.getState().setExecutionMode(event.target.value as RequestedExecutionMode)}
-          >
-            {MODES.map((mode) => (
-              <option key={mode.value} value={mode.value}>
-                {mode.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {toolCapabilities.length > 0 && (
-          <div className="tool-capability-strip">
-            <span>工具</span>
-            {toolCapabilities.slice(0, 4).map((tool) => (
-              <span
-                key={tool.toolId}
-                className={`tool-capability${tool.executable ? '' : ' tool-capability--blocked'}`}
-                title={tool.description}
-              >
-                {tool.name}
-              </span>
-            ))}
-          </div>
-        )}
+            onChange={(ids) => useChatStore.getState().setSelectedKnowledgeBaseIds(ids)}
+          />
+        </div>
+
+        <div className="composer-topbar__secondary">
+          <label className="composer-chip composer-chip--mode">
+            <span>模式</span>
+            <SelectField
+              value={executionMode}
+              panelPlacement="top"
+              disabled={locked}
+              onChange={(event) => useChatStore.getState().setExecutionMode(event.target.value as RequestedExecutionMode)}
+            >
+              {MODES.map((mode) => (
+                <option key={mode.value} value={mode.value}>
+                  {mode.label}
+                </option>
+              ))}
+            </SelectField>
+          </label>
+
+          {toolCapabilities.length > 0 && (
+            <div className="tool-capability-strip" title={toolCapabilities.map((tool) => tool.name).join(' / ')}>
+              <span className="tool-capability-strip__label">工具</span>
+              <span className="tool-capability-strip__summary">{toolCapabilities.length}</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      <ComposerPrimitive.Input
-        data-testid="chat-composer"
-        className="composer-input input-control"
-        placeholder="输入消息，Enter 发送，Shift+Enter 换行…"
-        disabled={locked}
-      />
+      <div className="composer-input-row" data-testid="chat-composer-input-row">
+        <ComposerPrimitive.Input
+          data-testid="chat-composer"
+          className="composer-input input-control"
+          placeholder="输入消息，Enter 发送，Shift+Enter 换行…"
+          disabled={locked}
+        />
+      </div>
 
-      <div className="composer-actions">
+      <div className="composer-footer" data-testid="chat-composer-footer">
+        <p className="composer-footer__hint">Enter 发送，Shift+Enter 换行</p>
         <div className="composer-buttons">
           <ThreadPrimitive.If running={false}>
             <ComposerPrimitive.Send data-testid="chat-send" className="btn btn-primary">

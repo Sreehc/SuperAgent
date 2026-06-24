@@ -1,10 +1,10 @@
 import { useState, type ChangeEvent } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Command, MagnifyingGlass, SidebarSimple, SignOut } from '@phosphor-icons/react'
+import { Command, MagnifyingGlass, SidebarSimple, SignOut, X } from '@phosphor-icons/react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { selectCurrentRole, useAuthStore } from '@/features/auth/store/auth'
-import { DetailDrawer } from '@/shared/ui'
+import { SelectField } from '@/shared/ui'
 import { NAV_ITEMS } from '../nav'
 
 export function AppShell() {
@@ -22,6 +22,7 @@ export function AppShell() {
 
   function openCommand() {
     document.dispatchEvent(new CustomEvent('open-command-palette'))
+    setNavOpen(false)
   }
 
   async function onSwitchTenant(event: ChangeEvent<HTMLSelectElement>) {
@@ -42,10 +43,20 @@ export function AppShell() {
 
   return (
     <div className="console-shell">
-      <aside className="global-rail" aria-label="主导航" data-testid="desktop-nav">
-        <NavLink className="global-rail__mark" to="/chat" aria-label="SuperAgent 对话">
-          <BrandLogo size="small" />
-        </NavLink>
+      {navOpen ? <button className="console-shell__overlay" type="button" aria-label="关闭导航遮罩" onClick={() => setNavOpen(false)} /> : null}
+
+      <aside className={`global-rail${navOpen ? ' global-rail--expanded' : ''}`} aria-label="主导航" data-testid="desktop-nav">
+        <div className="global-rail__head">
+          <NavLink className="global-rail__mark" to="/chat" aria-label="SuperAgent 对话" onClick={() => setNavOpen(false)}>
+            <BrandLogo size="small" />
+            <span className="global-rail__brand-label">SuperAgent</span>
+          </NavLink>
+          {navOpen ? (
+            <button className="icon-button global-rail__collapse" type="button" aria-label="收起导航" onClick={() => setNavOpen(false)}>
+              <X size={16} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
 
         <nav className="global-rail__nav" aria-label="主导航">
           {visibleItems.map((item) => {
@@ -81,21 +92,21 @@ export function AppShell() {
             <button
               className="utility-bar__menu icon-button"
               type="button"
-              aria-label="打开导航"
+              aria-label={navOpen ? '关闭导航' : '打开导航'}
               aria-expanded={navOpen}
-              onClick={() => setNavOpen(true)}
+              onClick={() => setNavOpen((open) => !open)}
             >
-              <SidebarSimple size={18} aria-hidden="true" />
+              {navOpen ? <X size={18} aria-hidden="true" /> : <SidebarSimple size={18} aria-hidden="true" />}
             </button>
             <div className="tenant-chip">
               <span>Tenant</span>
-              <select value={currentTenantId ?? ''} disabled={switching} onChange={onSwitchTenant}>
+              <SelectField value={currentTenantId ?? ''} disabled={switching} onChange={onSwitchTenant}>
                 {tenants.map((tenant) => (
                   <option key={tenant.id} value={tenant.id}>
                     {tenant.name} / {tenant.role}
                   </option>
                 ))}
-              </select>
+              </SelectField>
             </div>
             <span className="role-chip">{role ?? '未加载'}</span>
           </div>
@@ -122,46 +133,6 @@ export function AppShell() {
           <Outlet />
         </main>
       </section>
-
-      <DetailDrawer
-        open={navOpen}
-        title="主导航"
-        description="切换控制台页面"
-        className="mobile-nav-drawer"
-        onOpenChange={setNavOpen}
-      >
-        <div className="mobile-nav">
-          <NavLink className="mobile-nav__brand" to="/chat" onClick={() => setNavOpen(false)}>
-            <BrandLogo size="small" />
-            <span>SuperAgent</span>
-          </NavLink>
-          <nav className="mobile-nav__list" aria-label="移动端主导航">
-            {visibleItems.map((item) => {
-              const Icon = item.icon
-              const active = isActive(item.to)
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={`mobile-nav__item${active ? ' mobile-nav__item--active' : ''}`}
-                  aria-label={item.label}
-                  onClick={() => setNavOpen(false)}
-                >
-                  <Icon size={20} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
-                  <span>{item.label}</span>
-                </NavLink>
-              )
-            })}
-          </nav>
-          <div className="mobile-nav__tools">
-            <button className="mobile-nav__tool" type="button" onClick={openCommand}>
-              <Command size={18} aria-hidden="true" />
-              <span>命令面板</span>
-            </button>
-            <ThemeToggle className="mobile-nav__tool" />
-          </div>
-        </div>
-      </DetailDrawer>
     </div>
   )
 }

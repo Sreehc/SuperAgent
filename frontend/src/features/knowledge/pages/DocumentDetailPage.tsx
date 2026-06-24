@@ -28,6 +28,7 @@ import {
   DialogContent,
   EmptyState,
   ErrorState,
+  SelectField,
   TableStateRow,
   Tabs,
   TabsContent,
@@ -460,7 +461,7 @@ export function DocumentDetailPage() {
             </label>
             <label className="field">
               <span>切块策略</span>
-              <select
+              <SelectField
                 value={reprocessProfileId ?? ''}
                 onChange={(event) => setReprocessProfileId(event.target.value ? Number(event.target.value) : null)}
               >
@@ -471,7 +472,7 @@ export function DocumentDetailPage() {
                     {profile.name}
                   </option>
                 ))}
-              </select>
+              </SelectField>
             </label>
             <div className="dialog-footer">
               <Button type="button" variant="ghost" onClick={() => setReprocessOpen(false)}>

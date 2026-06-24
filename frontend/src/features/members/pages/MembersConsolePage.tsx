@@ -6,6 +6,7 @@ import { ConsolePage } from '../../../shared/ui/console-page'
 import { Badge } from '../../../shared/ui/badge'
 import { Button } from '../../../shared/ui/button'
 import { ConfirmDialog, Dialog, DialogContent } from '../../../shared/ui/dialog'
+import { SelectField } from '@/shared/ui'
 import { useAuthStore, selectCurrentTenant } from '../../auth/store/auth'
 import { toast } from '../../../utils/toast'
 import { formatDate } from '@/shared/lib/format'
@@ -180,7 +181,7 @@ export function MembersConsolePage() {
                     </div>
                   </td>
                   <td>
-                    <select
+                    <SelectField
                       value={member.role}
                       onChange={(e) =>
                         requestRoleChange(member.userId, member.displayName || member.username, member.role, e.target.value as MemberRole)
@@ -189,7 +190,7 @@ export function MembersConsolePage() {
                       <option value="MEMBER">MEMBER</option>
                       <option value="ADMIN">ADMIN</option>
                       <option value="OWNER">OWNER</option>
-                    </select>
+                    </SelectField>
                   </td>
                   <td>
                     <Badge tone={ROLE_TONE[member.role]}>{member.status}</Badge>
@@ -310,14 +311,14 @@ export function MembersConsolePage() {
           </label>
           <label className="field" style={{ flex: '0 0 160px' }}>
             <span>角色</span>
-            <select
+            <SelectField
               value={newMember.role}
               onChange={(e) => setNewMember((value) => ({ ...value, role: e.target.value as MemberRole }))}
             >
               <option value="MEMBER">MEMBER</option>
               <option value="ADMIN">ADMIN</option>
               <option value="OWNER">OWNER</option>
-            </select>
+            </SelectField>
           </label>
         </div>
         <div className="action-row">
@@ -338,11 +339,11 @@ export function MembersConsolePage() {
           </label>
           <label className="field" style={{ flex: '0 0 160px' }}>
             <span>角色</span>
-            <select value={role} onChange={(e) => setRole(e.target.value as MemberRole)}>
+            <SelectField value={role} onChange={(e) => setRole(e.target.value as MemberRole)}>
               <option value="MEMBER">MEMBER</option>
               <option value="ADMIN">ADMIN</option>
               <option value="OWNER">OWNER</option>
-            </select>
+            </SelectField>
           </label>
         </div>
         <div className="action-row">

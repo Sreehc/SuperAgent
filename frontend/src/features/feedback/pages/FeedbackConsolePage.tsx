@@ -14,7 +14,7 @@ import { Badge } from '../../../shared/ui/badge'
 import { Button } from '../../../shared/ui/button'
 import { Dialog, DialogContent } from '../../../shared/ui/dialog'
 import { DetailDrawer } from '../../../shared/ui/drawer'
-import { FormField } from '../../../shared/ui/form'
+import { FormField, SelectField } from '../../../shared/ui/form'
 import { formatDateTime } from '@/shared/lib/format'
 
 const RATING_LABEL: Record<FeedbackRating, string> = {
@@ -180,12 +180,12 @@ export function FeedbackConsolePage() {
       <div className="filter-row">
         <label className="field" style={{ maxWidth: 220 }}>
           <span>评价类型</span>
-          <select value={rating} onChange={(e) => setRating(e.target.value as FeedbackRating | '')}>
+          <SelectField value={rating} onChange={(e) => setRating(e.target.value as FeedbackRating | '')}>
             <option value="">全部</option>
             <option value="up">赞同</option>
             <option value="down">不满意</option>
             <option value="correction">更正</option>
-          </select>
+          </SelectField>
         </label>
       </div>
       <DataTable
@@ -376,14 +376,14 @@ function EvalDraftDialog({
               </p>
             )}
             <FormField label="目标套件" htmlFor="feedback-eval-suite">
-              <select id="feedback-eval-suite" value={draft.suiteId} onChange={(event) => updateDraft({ suiteId: event.target.value })}>
+              <SelectField id="feedback-eval-suite" value={draft.suiteId} onChange={(event) => updateDraft({ suiteId: event.target.value })}>
                 <option value="">选择评测套件</option>
                 {draft.suites.map((suite) => (
                   <option key={suite.id} value={suite.id}>
                     {suite.name} ({suite.suiteKey})
                   </option>
                 ))}
-              </select>
+              </SelectField>
             </FormField>
             <FormField label="Case Key" htmlFor="feedback-eval-case-key">
               <input

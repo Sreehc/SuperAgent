@@ -48,22 +48,22 @@ describe('AppShell responsive navigation', () => {
     expect(activeLink.className).toContain('global-rail__item--active')
   })
 
-  it('opens and closes the mobile navigation drawer', () => {
+  it('expands the rail instead of opening a separate navigation drawer', () => {
     renderShell('/tools')
 
+    const desktopNav = screen.getByTestId('desktop-nav')
+
+    expect(desktopNav.className).not.toContain('global-rail--expanded')
     expect(screen.queryByRole('dialog', { name: '主导航' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '打开导航' }))
 
-    const drawer = screen.getByRole('dialog', { name: '主导航' })
-    const drawerNav = within(drawer).getByRole('navigation', { name: '移动端主导航' })
-    const activeLink = within(drawerNav).getByRole('link', { name: 'Tools' })
-
-    expect(activeLink.getAttribute('aria-current')).toBe('page')
-    expect(activeLink.className).toContain('mobile-nav__item--active')
-
-    fireEvent.click(screen.getByRole('button', { name: '关闭主导航' }))
-
     expect(screen.queryByRole('dialog', { name: '主导航' })).toBeNull()
+    expect(desktopNav.className).toContain('global-rail--expanded')
+    expect(screen.getByRole('button', { name: '收起导航' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '收起导航' }))
+
+    expect(desktopNav.className).not.toContain('global-rail--expanded')
   })
 })

@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ChangeEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 export interface KnowledgeBaseOption {
   id: number
@@ -18,92 +18,151 @@ function uniqueIds(ids: number[]) {
 
 export function KnowledgeBasePicker({ options, selectedIds, disabled = false, onChange }: KnowledgeBasePickerProps) {
   const searchId = useId()
+  const panelId = useId()
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
   const normalizedSelectedIds = uniqueIds(selectedIds)
-  const selectedSet = new Set(normalizedSelectedIds)
+  const selectedId = normalizedSelectedIds[0] ?? null
+  const selectedOption = options.find((option) => option.id === selectedId) ?? null
   const normalizedQuery = query.trim().toLowerCase()
   const filteredOptions = useMemo(() => {
     if (!normalizedQuery) return options
     return options.filter((option) => option.name.toLowerCase().includes(normalizedQuery))
   }, [normalizedQuery, options])
-  const selectedOptions = normalizedSelectedIds.map((id) => options.find((option) => option.id === id) ?? { id, name: `#${id}` })
-  const visibleSelectedOptions = selectedOptions.slice(0, 5)
-  const hiddenCount = Math.max(0, selectedOptions.length - visibleSelectedOptions.length)
 
-  function handleSelectChange(event: ChangeEvent<HTMLSelectElement>) {
-    const values = Array.from(event.currentTarget.selectedOptions).map((option) => option.value)
-    if (values.includes('')) {
-      onChange([])
-      return
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
     }
-    onChange(uniqueIds(values.map((value) => Number(value))))
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [])
+
+  function chooseOption(option: KnowledgeBaseOption | null) {
+    if (disabled) return
+    onChange(option ? [option.id] : [])
+    setOpen(false)
+    setQuery(option?.name ?? '')
   }
 
   return (
-    <div className="knowledge-picker" aria-label="知识库范围">
-      <div className="knowledge-picker__header">
-        <span>知识库</span>
-        <strong>{selectedOptions.length > 0 ? `已选 ${selectedOptions.length} 个知识库` : '不限定'}</strong>
-        {selectedOptions.length > 0 && (
-          <button
-            type="button"
-            className="btn-text knowledge-picker__clear"
-            disabled={disabled}
-            aria-label="清空知识库选择"
-            onClick={() => onChange([])}
-          >
-            清空
-          </button>
-        )}
-      </div>
-
-      <label className="sr-only" htmlFor={searchId}>
-        搜索知识库
-      </label>
-      <input
-        id={searchId}
-        className="knowledge-picker__search"
-        placeholder="搜索知识库"
-        value={query}
+    <div ref={rootRef} className="knowledge-picker" aria-label="知识库范围">
+      <button
+        type="button"
+        className="knowledge-picker__trigger"
         disabled={disabled}
-        onChange={(event) => setQuery(event.target.value)}
-      />
-
-      <select
-        multiple
-        size={Math.min(6, Math.max(3, filteredOptions.length + 1))}
-        className="knowledge-picker__select"
-        data-testid="chat-knowledge-base"
-        value={selectedOptions.length > 0 ? normalizedSelectedIds.map(String) : ['']}
-        disabled={disabled}
-        onChange={handleSelectChange}
-        aria-label="知识库"
+        aria-label="选择知识库"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((current) => !current)}
       >
-        <option value="">不限定</option>
-        {filteredOptions.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
+        <span className="knowledge-picker__trigger-copy">
+          <span className="knowledge-picker__eyebrow">知识库</span>
+          <span className="knowledge-picker__summary">{selectedOption ? selectedOption.name : '不限定'}</span>
+        </span>
+        <span className="knowledge-picker__trigger-meta">
+          {selectedOption ? <span className="knowledge-picker__badge">已选</span> : <span className="knowledge-picker__meta">全部</span>}
+          <span className="knowledge-picker__caret" aria-hidden="true" />
+        </span>
+      </button>
 
-      <div className="knowledge-picker__selected" role="status" aria-label="已选知识库">
-        {visibleSelectedOptions.length > 0 ? (
-          <>
-            {visibleSelectedOptions.map((option) => (
-              <span key={option.id} className="knowledge-picker__chip">
-                {option.name}
-              </span>
-            ))}
-            {hiddenCount > 0 && <span className="knowledge-picker__chip">另 {hiddenCount} 个</span>}
-          </>
-        ) : (
-          <span className="knowledge-picker__empty">未限定知识库</span>
-        )}
-      </div>
+      {open && (
+        <div id={panelId} className="knowledge-picker__panel" role="dialog" aria-label="知识库选择面板">
+          <div className="knowledge-picker__panel-header">
+            <div className="knowledge-picker__panel-title">
+              <strong>搜索知识库</strong>
+              <span>单选优先，不选则表示不限定。</span>
+            </div>
+            <div className="knowledge-picker__panel-actions">
+              {selectedOption && (
+                <button
+                  type="button"
+                  className="btn-text knowledge-picker__clear"
+                  disabled={disabled}
+                  aria-label="清空知识库选择"
+                  onClick={() => chooseOption(null)}
+                >
+                  清空
+                </button>
+              )}
+              <button type="button" className="knowledge-picker__panel-close" onClick={() => setOpen(false)} aria-label="关闭知识库选择">
+                收起
+              </button>
+            </div>
+          </div>
 
-      {selectedSet.size > 1 && (
-        <p className="knowledge-picker__notice">当前后端暂不支持多知识库发送，保留 1 个知识库或选择不限定后再发送。</p>
+          <label className="sr-only" htmlFor={searchId}>
+            搜索知识库
+          </label>
+          <input
+            id={searchId}
+            className="knowledge-picker__search"
+            placeholder="搜索知识库"
+            value={query}
+            disabled={disabled}
+            autoFocus
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setOpen(true)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown' && filteredOptions.length > 0) {
+                event.preventDefault()
+                setOpen(true)
+              }
+            }}
+            aria-controls={panelId}
+            role="combobox"
+            aria-expanded={open}
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+          />
+
+          <div className="knowledge-picker__options" role="listbox" aria-label="知识库候选">
+            <button
+              type="button"
+              role="option"
+              className="knowledge-picker__option knowledge-picker__option--unrestricted"
+              aria-selected={selectedOption == null}
+              onClick={() => chooseOption(null)}
+            >
+              <span>不限定</span>
+              {selectedOption == null && <span className="knowledge-picker__check">✓</span>}
+            </button>
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option) => {
+                const selected = selectedOption?.id === option.id
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="option"
+                    className="knowledge-picker__option"
+                    aria-selected={selected}
+                    onClick={() => chooseOption(option)}
+                  >
+                    <span className="knowledge-picker__option-label">{option.name}</span>
+                    {selected && <span className="knowledge-picker__check">✓</span>}
+                  </button>
+                )
+              })
+            ) : (
+              <div className="knowledge-picker__empty">没有匹配的知识库。</div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

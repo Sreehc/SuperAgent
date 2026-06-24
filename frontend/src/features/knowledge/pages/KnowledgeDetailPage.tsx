@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { DragEvent, KeyboardEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   deleteKnowledgeDocument,
@@ -21,6 +21,7 @@ import { ConsolePage } from '../../../shared/ui/console-page'
 import { Badge } from '../../../shared/ui/badge'
 import { Button } from '../../../shared/ui/button'
 import { ConfirmDialog } from '../../../shared/ui/dialog'
+import { FileTrigger, SelectField } from '@/shared/ui'
 import { toast } from '../../../utils/toast'
 import { formatDateTime, formatFileSize } from '@/shared/lib/format'
 
@@ -29,9 +30,11 @@ type UploadQueueStatus = 'queued' | 'uploading' | 'submitted' | 'processing' | '
 
 interface UploadQueueItem {
   localId: string
+  file: File
   fileName: string
   fileSize: number
   status: UploadQueueStatus
+  progress?: number
   documentId?: number
   title?: string
   message?: string
@@ -72,9 +75,11 @@ function normalizeUploadStatus(status: string | undefined): UploadQueueStatus {
 function queueItemFromFile(file: File, index: number): UploadQueueItem {
   return {
     localId: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+    file,
     fileName: file.name,
     fileSize: file.size,
     status: 'queued',
+    progress: 0,
   }
 }
 
@@ -104,13 +109,13 @@ export function KnowledgeDetailPage() {
   const [error, setError] = useState('')
 
   const [title, setTitle] = useState('')
-  const [files, setFiles] = useState<File[]>([])
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
   const [uploadError, setUploadError] = useState('')
   const [domainId, setDomainId] = useState<number | null>(null)
   const [profileId, setProfileId] = useState<number | null>(null)
   const [uploading, setUploading] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; title: string } | null>(null)
+  const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pollRef = useRef<number | null>(null)
 
@@ -202,24 +207,50 @@ export function KnowledgeDetailPage() {
 
   function handleFilesChange(selectedFiles: FileList | null) {
     const nextFiles = Array.from(selectedFiles ?? [])
-    setFiles(nextFiles)
     setUploadError('')
     setUploadQueue(nextFiles.map(queueItemFromFile))
   }
 
+  function removeQueuedFile(localId: string) {
+    setUploadQueue((items) => items.filter((item) => item.localId !== localId))
+    setUploadError('')
+  }
+
+  function clearUploadQueue() {
+    setUploadQueue([])
+    setUploadError('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setDragActive(false)
+    if (uploading) return
+    handleFilesChange(event.dataTransfer.files)
+  }
+
+  const selectedFiles = uploadQueue.map((item) => item.file)
+  const fileSummary =
+    selectedFiles.length === 0
+      ? ''
+      : selectedFiles.length === 1
+        ? selectedFiles[0]?.name ?? ''
+        : `${selectedFiles[0]?.name ?? '已选择文件'} + ${selectedFiles.length - 1} 个文件`
+
   async function handleUpload() {
-    if (files.length === 0) {
+    if (uploadQueue.length === 0) {
       setUploadError('请选择要上传的文件。')
       toast.error('请选择要上传的文件。')
       return
     }
     setUploading(true)
     setUploadError('')
-    setUploadQueue((items) => items.map((item) => ({ ...item, status: 'uploading', message: undefined })))
+    const currentFiles = uploadQueue.map((item) => item.file)
+    setUploadQueue((items) => items.map((item) => ({ ...item, status: 'uploading', message: undefined, progress: 20 })))
     try {
-      if (files.length === 1) {
+      if (currentFiles.length === 1) {
         const response = await uploadKnowledgeDocument(knowledgeBaseId, {
-          file: files[0],
+          file: currentFiles[0],
           title: title.trim() || undefined,
           knowledgeDomainId: domainId,
           chunkingProfileId: profileId,
@@ -227,20 +258,19 @@ export function KnowledgeDetailPage() {
         setUploadQueue((items) => items.map((item, index) => (index === 0 ? queueItemFromUpload(item, response.data) : item)))
       } else {
         const response = await uploadKnowledgeDocumentsBatch(knowledgeBaseId, {
-          files,
+          files: currentFiles,
           knowledgeDomainId: domainId,
           chunkingProfileId: profileId,
         })
         setUploadQueue((items) =>
           items.map((item, index) => {
             const uploaded = response.data.items[index]
-            return uploaded ? queueItemFromUpload(item, uploaded) : { ...item, status: 'submitted' }
+            return uploaded ? queueItemFromUpload(item, uploaded) : { ...item, status: 'submitted', progress: 100 }
           }),
         )
       }
-      toast.success(files.length === 1 ? '文档已提交，正在解析。' : `已提交 ${files.length} 个文档，正在解析。`)
+      toast.success(currentFiles.length === 1 ? '文档已提交，正在解析。' : `已提交 ${currentFiles.length} 个文档，正在解析。`)
       setTitle('')
-      setFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
       await loadDocuments()
     } catch {
@@ -295,6 +325,32 @@ export function KnowledgeDetailPage() {
     >
       <section className="surface-box" style={{ display: 'grid', gap: 12 }}>
         <p className="section-label">上传文档</p>
+        <div
+          className={`upload-dropzone${dragActive ? ' upload-dropzone--active' : ''}`}
+          onDragEnter={(event) => {
+            event.preventDefault()
+            setDragActive(true)
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={handleDrop}
+        >
+          <div className="upload-dropzone__copy">
+            <strong>拖放文件到这里</strong>
+            <span>支持多文件批量上传，或点击按钮选择文件。</span>
+          </div>
+          <div className="upload-dropzone__actions">
+            <FileTrigger
+              ref={fileInputRef}
+              multiple
+              data-testid="document-upload-file"
+              buttonLabel={uploadQueue.length > 0 ? '重新选择' : '选择文件'}
+              placeholder="支持批量选择文档"
+              summary={fileSummary}
+              onChange={(event) => handleFilesChange(event.target.files)}
+            />
+          </div>
+        </div>
         <div className="filter-row">
           <label className="field" style={{ flex: '1 1 220px' }}>
             <span>标题（可选）</span>
@@ -302,7 +358,7 @@ export function KnowledgeDetailPage() {
           </label>
           <label className="field" style={{ flex: '1 1 160px' }}>
             <span>知识域</span>
-            <select
+            <SelectField
               value={domainId ?? ''}
               onChange={(event) => setDomainId(event.target.value ? Number(event.target.value) : null)}
             >
@@ -312,11 +368,11 @@ export function KnowledgeDetailPage() {
                   {domain.name}
                 </option>
               ))}
-            </select>
+            </SelectField>
           </label>
           <label className="field" style={{ flex: '1 1 160px' }}>
             <span>切块策略</span>
-            <select
+            <SelectField
               value={profileId ?? ''}
               onChange={(event) => setProfileId(event.target.value ? Number(event.target.value) : null)}
             >
@@ -326,17 +382,7 @@ export function KnowledgeDetailPage() {
                   {profile.name}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="field" style={{ flex: '1 1 220px' }}>
-            <span>文件</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              data-testid="document-upload-file"
-              onChange={(event) => handleFilesChange(event.target.files)}
-            />
+            </SelectField>
           </label>
         </div>
         {uploadError && (
@@ -345,7 +391,13 @@ export function KnowledgeDetailPage() {
           </p>
         )}
         {uploadQueue.length > 0 && (
-          <div className="upload-queue" role="list" aria-label="上传队列">
+          <div className="upload-queue" role="list" aria-label="上传队列" data-testid="upload-queue">
+            <div className="upload-queue__header">
+              <strong>上传队列</strong>
+              <button type="button" className="btn-text" disabled={uploading} onClick={clearUploadQueue}>
+                清空全部
+              </button>
+            </div>
             {uploadQueue.map((item) => (
               <div
                 key={item.localId}
@@ -358,16 +410,25 @@ export function KnowledgeDetailPage() {
                   <strong>{item.fileName}</strong>
                   <span>{formatFileSize(item.fileSize)}</span>
                   {item.title && item.title !== item.fileName ? <span>{item.title}</span> : null}
+                  <span>{item.progress != null ? `进度 ${item.progress}%` : ''}</span>
                 </div>
-                <Badge className={uploadStatusBadge(item.status)}>{UPLOAD_STATUS_LABEL[item.status]}</Badge>
+                <div className="upload-queue__actions">
+                  <Badge className={uploadStatusBadge(item.status)}>{UPLOAD_STATUS_LABEL[item.status]}</Badge>
+                  <button type="button" className="btn-text" disabled={uploading} onClick={() => removeQueuedFile(item.localId)}>
+                    移除
+                  </button>
+                </div>
                 {item.message ? <span className="field-error upload-queue__message">{item.message}</span> : null}
               </div>
             ))}
           </div>
         )}
         <div className="action-row">
+          <Button variant="ghost" disabled={uploading || uploadQueue.length === 0} onClick={clearUploadQueue}>
+            清空队列
+          </Button>
           <Button data-testid="document-upload-submit" loading={uploading} onClick={handleUpload}>
-            {files.length > 1 ? `批量上传 ${files.length} 个文档` : '上传文档'}
+            {selectedFiles.length > 1 ? `批量上传 ${selectedFiles.length} 个文档` : '上传文档'}
           </Button>
         </div>
       </section>
@@ -385,25 +446,25 @@ export function KnowledgeDetailPage() {
           </label>
           <label className="field" style={{ flex: '1 1 160px' }}>
             <span>状态</span>
-            <select value={documentStatusFilter} onChange={(event) => setDocumentStatusFilter(event.target.value)}>
+            <SelectField value={documentStatusFilter} onChange={(event) => setDocumentStatusFilter(event.target.value)}>
               <option value="">全部状态</option>
               {documentStatusOptions.map((status) => (
                 <option key={status} value={status}>
                   {status}
                 </option>
               ))}
-            </select>
+            </SelectField>
           </label>
           <label className="field" style={{ flex: '1 1 160px' }}>
             <span>文件类型</span>
-            <select value={documentTypeFilter} onChange={(event) => setDocumentTypeFilter(event.target.value)}>
+            <SelectField value={documentTypeFilter} onChange={(event) => setDocumentTypeFilter(event.target.value)}>
               <option value="">全部类型</option>
               {documentTypeOptions.map((fileType) => (
                 <option key={fileType} value={fileType}>
                   {fileType}
                 </option>
               ))}
-            </select>
+            </SelectField>
           </label>
         </div>
         <div className="table-wrap">

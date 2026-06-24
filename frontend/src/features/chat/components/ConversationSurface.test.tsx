@@ -7,8 +7,14 @@ import { ConversationSurface } from './ConversationSurface'
 vi.mock('@assistant-ui/react', () => ({
   AssistantRuntimeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   ComposerPrimitive: {
-    Root: ({ children, className }: { children: React.ReactNode; className?: string }) => (
-      <form className={className}>{children}</form>
+    Root: ({
+      children,
+      className,
+      ...props
+    }: React.FormHTMLAttributes<HTMLFormElement> & { children: React.ReactNode; className?: string }) => (
+      <form className={className} {...props}>
+        {children}
+      </form>
     ),
     Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
     Send: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
@@ -141,5 +147,83 @@ describe('ConversationSurface stream status', () => {
     fireEvent.click(screen.getByTestId('chat-stop'))
 
     expect(stopStreaming).toHaveBeenCalledTimes(1)
+  })
+
+  it('groups composer controls into top bar, input area, and action footer', () => {
+    useChatStore.setState({
+      availableKnowledgeBases: [{ id: 7, name: '产品知识库' }],
+      toolCapabilities: [
+        {
+          toolId: 'web_search',
+          name: 'Web Search',
+          kind: 'SEARCH',
+          riskLevel: 'LOW',
+          enabled: true,
+          executable: true,
+          requiresConfirmation: false,
+          reason: '',
+          description: '联网搜索',
+          configuredSecrets: [],
+        },
+      ],
+    })
+
+    render(<ConversationSurface />)
+
+    const composer = screen.getByTestId('chat-composer-shell')
+
+    expect(within(composer).getByTestId('chat-composer-top')).toBeTruthy()
+    expect(within(composer).getByTestId('chat-composer-input-row')).toBeTruthy()
+    expect(within(composer).getByTestId('chat-composer-footer')).toBeTruthy()
+    expect(within(composer).getByTestId('chat-send')).toBeTruthy()
+  })
+
+  it('compresses tool capabilities into a single summary entry', () => {
+    useChatStore.setState({
+      toolCapabilities: [
+        {
+          toolId: 'web_search',
+          name: 'Web Search',
+          kind: 'SEARCH',
+          riskLevel: 'LOW',
+          enabled: true,
+          executable: true,
+          requiresConfirmation: false,
+          reason: '',
+          description: '联网搜索',
+          configuredSecrets: [],
+        },
+        {
+          toolId: 'browser',
+          name: 'Browser',
+          kind: 'BROWSER',
+          riskLevel: 'MEDIUM',
+          enabled: true,
+          executable: true,
+          requiresConfirmation: false,
+          reason: '',
+          description: '浏览器控制',
+          configuredSecrets: [],
+        },
+      ],
+    })
+
+    render(<ConversationSurface />)
+
+    const summary = document.querySelector('.tool-capability-strip')
+    expect(summary?.textContent).toContain('工具')
+    expect(summary?.textContent).toContain('2')
+    expect(screen.queryByText('Web Search')).toBeNull()
+    expect(screen.queryByText('Browser')).toBeNull()
+  })
+
+  it('opens the mode selector upward so the full menu remains visible near the bottom composer', () => {
+    render(<ConversationSurface />)
+
+    fireEvent.click(screen.getByRole('combobox'))
+
+    const panel = document.querySelector('.select-control__panel')
+    expect(panel?.getAttribute('data-placement')).toBe('top')
+    expect(screen.getByRole('option', { name: 'ReAct Agent' })).toBeTruthy()
   })
 })

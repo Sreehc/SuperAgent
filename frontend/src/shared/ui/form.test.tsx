@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Button } from './button'
-import { FormField, SaveBar } from './form'
+import { FileTrigger, FormField, SaveBar, SelectField } from './form'
 
 describe('FormField', () => {
   it('associates label, hint, and error text with the control', () => {
@@ -67,5 +67,47 @@ describe('SaveBar', () => {
       </SaveBar>,
     )
     expect(screen.getByRole('alert').textContent).toContain('模型配置保存失败')
+  })
+})
+
+describe('SelectField', () => {
+  it('wraps the native select in a custom chrome shell while preserving selection behavior', () => {
+    render(
+      <label>
+        执行模式
+        <SelectField defaultValue="RAG_QA">
+          <option value="AUTO">自动</option>
+          <option value="RAG_QA">RAG 问答</option>
+        </SelectField>
+      </label>,
+    )
+
+    const selectButton = screen.getByRole('combobox')
+    expect(selectButton.parentElement?.className).toContain('select-control')
+    expect(selectButton.textContent).toContain('RAG 问答')
+
+    fireEvent.click(selectButton)
+    fireEvent.click(screen.getByRole('option', { name: '自动' }))
+
+    expect(selectButton.textContent).toContain('自动')
+  })
+})
+
+describe('FileTrigger', () => {
+  it('shows a custom upload shell while keeping the native file input accessible', () => {
+    render(
+      <label>
+        文件
+        <FileTrigger data-testid="doc-upload" buttonLabel="选择文档" placeholder="未选择文件" summary="refund-guide.txt + 1 个文件" multiple />
+      </label>,
+    )
+
+    const input = screen.getByTestId('doc-upload') as HTMLInputElement
+
+    expect(input.type).toBe('file')
+    expect(input.multiple).toBe(true)
+    expect(input.parentElement?.className).toContain('file-trigger')
+    expect(screen.getByText('选择文档')).toBeTruthy()
+    expect(screen.getByText('refund-guide.txt + 1 个文件')).toBeTruthy()
   })
 })
