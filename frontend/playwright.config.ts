@@ -26,5 +26,23 @@ export default defineConfig({
         viewport: { width: 820, height: 1180 },
       },
     },
+    {
+      name: 'visual-desktop',
+      use: {
+        viewport: { width: 1440, height: 960 },
+      },
+    },
+    {
+      name: 'visual-tablet',
+      use: {
+        viewport: { width: 820, height: 1180 },
+      },
+    },
+    {
+      name: 'visual-mobile',
+      use: {
+        viewport: { width: 390, height: 844 },
+      },
+    },
   ],
 })

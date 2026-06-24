@@ -22,11 +22,11 @@ test('E2E-001 登录和路由守卫', async ({ page }) => {
 test('E2E-002 发起 RAG 对话并停止生成', async ({ page, request }) => {
   const admin = await loginByApi(request, 'admin', 'password123')
   const knowledgeBaseId = await prepareReadyKnowledgeBase(request, admin, `RAG 对话库 ${Date.now()}`)
+  const conversationId = await createConversationForE2E(request, admin, 'E2E RAG 对话', knowledgeBaseId)
 
   await loginByUi(page, 'admin', 'password123')
-  await page.goto('/chat')
-  await page.getByTestId('chat-new-conversation').click()
-  await page.getByTestId('chat-knowledge-base').selectOption(`${knowledgeBaseId}`)
+  await page.goto(`/chat/${conversationId}`)
+  await expect(page.getByTestId('chat-knowledge-base')).toHaveValues([`${knowledgeBaseId}`])
   await page.getByTestId('chat-composer').fill('请基于文档总结退款规则，并补充适用条件。为了保证流式输出时间足够，请详细解释每个要点。')
   await page.getByTestId('chat-send').click()
   const stopButton = page.getByTestId('chat-stop')
@@ -35,7 +35,7 @@ test('E2E-002 发起 RAG 对话并停止生成', async ({ page, request }) => {
     // A short response may complete between the visibility check and click.
   })
   await expect(stopButton).toBeHidden()
-  await expect(page.getByText('消息发送失败，请稍后重试。')).toBeHidden()
+  await expect(page.locator('.stream-status--error')).toBeHidden()
   await expect(page).toHaveURL(/\/chat\/\d+$/)
 })
 
@@ -57,11 +57,11 @@ test('E2E-003 上传文档', async ({ page, request }) => {
 test('E2E-004 查看 Trace', async ({ page, request }) => {
   const admin = await loginByApi(request, 'admin', 'password123')
   const knowledgeBaseId = await prepareReadyKnowledgeBase(request, admin, `Trace 验证库 ${Date.now()}`)
+  const conversationId = await createConversationForE2E(request, admin, 'E2E Trace 对话', knowledgeBaseId)
 
   await loginByUi(page, 'admin', 'password123')
-  await page.goto('/chat')
-  await page.getByTestId('chat-new-conversation').click()
-  await page.getByTestId('chat-knowledge-base').selectOption(`${knowledgeBaseId}`)
+  await page.goto(`/chat/${conversationId}`)
+  await expect(page.getByTestId('chat-knowledge-base')).toHaveValues([`${knowledgeBaseId}`])
   await page.getByTestId('chat-composer').fill('退款规则是什么？')
   await page.getByTestId('chat-send').click()
   await expect(page.getByTestId('chat-stop')).toBeVisible()
@@ -74,9 +74,9 @@ test('E2E-004 查看 Trace', async ({ page, request }) => {
   await traceRow.click()
   await expect(page).toHaveURL(/\/traces\/\d+$/)
   await expect(page.getByRole('heading', { name: '阶段时间线', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '详情检查器', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '关联检索结果', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '关联模型调用', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '阶段详情', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '关联检索', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '模型调用', exact: true })).toBeVisible()
 })
 
 test('E2E-005 文档详情展示解析文本和任务日志', async ({ page, request }) => {
@@ -94,6 +94,7 @@ test('E2E-005 文档详情展示解析文本和任务日志', async ({ page, req
   await expect(page.getByText('解析文本')).toBeVisible()
   await expect(page.getByText('任务日志')).toBeVisible()
   await expect(page.locator('.parsed-text')).toContainText('退款申请需要在 7 日内提交')
+  await page.getByRole('tab', { name: '任务日志' }).click()
   await expect(page.getByText('parse · success')).toBeVisible()
   await expect(page.getByRole('button', { name: '重处理' })).toBeVisible()
 })
@@ -101,11 +102,11 @@ test('E2E-005 文档详情展示解析文本和任务日志', async ({ page, req
 test('E2E-006 引用来源侧栏可打开并跳转文档详情', async ({ page, request }) => {
   const admin = await loginByApi(request, 'admin', 'password123')
   const prepared = await prepareReadyKnowledgeBaseWithDocument(request, admin, `引用来源验证库 ${Date.now()}`)
+  const conversationId = await createConversationForE2E(request, admin, 'E2E 引用来源对话', prepared.knowledgeBaseId)
 
   await loginByUi(page, 'admin', 'password123')
-  await page.goto('/chat')
-  await page.getByTestId('chat-new-conversation').click()
-  await page.getByTestId('chat-knowledge-base').selectOption(`${prepared.knowledgeBaseId}`)
+  await page.goto(`/chat/${conversationId}`)
+  await expect(page.getByTestId('chat-knowledge-base')).toHaveValues([`${prepared.knowledgeBaseId}`])
   await page.getByTestId('chat-composer').fill('退款规则是什么？')
   await page.getByTestId('chat-send').click()
   await expect(page.getByTestId('chat-stop')).toBeVisible()
@@ -117,7 +118,7 @@ test('E2E-006 引用来源侧栏可打开并跳转文档详情', async ({ page, 
   const referencePanel = page.locator('.reference-panel')
   await expect(referencePanel.getByText('引用来源')).toBeVisible()
   await expect(referencePanel.getByRole('heading', { name: '退款说明' })).toBeVisible()
-  await referencePanel.getByRole('button', { name: '查看文档' }).click()
+  await referencePanel.getByRole('link', { name: '查看文档' }).click()
   await expect(page).toHaveURL(/\/documents\/\d+$/)
   await expect(page.getByText('解析文本')).toBeVisible()
 })
@@ -126,18 +127,18 @@ test('E2E-007 设置页支持字段级校验和保存', async ({ page }) => {
   await loginByUi(page, 'admin', 'password123')
   await page.goto('/settings')
 
-  await page.getByRole('button', { name: 'RAG' }).click()
+  await page.getByRole('tab', { name: 'RAG' }).click()
   await page.getByTestId('settings-rag-vector-top-k').fill('0')
-  page.once('dialog', (dialog) => dialog.accept())
   await page.getByTestId('settings-save-rag').click()
+  await page.getByRole('dialog', { name: '保存 RAG 配置' }).getByRole('button', { name: '确认保存并记录审计' }).click()
   await expect(page.getByTestId('settings-error-vector-top-k')).toBeVisible()
 
   await page.getByTestId('settings-rag-vector-top-k').fill('12')
-  page.once('dialog', (dialog) => dialog.accept())
   await page.getByTestId('settings-save-rag').click()
-  await expect(page.getByText('RAG 设置已保存。')).toBeVisible()
+  await page.getByRole('dialog', { name: '保存 RAG 配置' }).getByRole('button', { name: '确认保存并记录审计' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'RAG 设置已保存。已记录审计。' })).toBeVisible()
 
-  await page.getByRole('button', { name: '模型' }).click()
+  await page.getByRole('tab', { name: '模型' }).click()
   const apiKeyInput = page.getByTestId('settings-model-api-key')
   await expect(apiKeyInput).toHaveValue('')
   await expect(page.getByText('API Key 已设置')).toBeVisible()
@@ -191,6 +192,25 @@ async function createPublishedKnowledgeBase(
   })
   expect(publishResponse.ok()).toBeTruthy()
   return knowledgeBaseId
+}
+
+async function createConversationForE2E(
+  request: APIRequestContext,
+  admin: { accessToken: string; tenantId: number },
+  title: string,
+  knowledgeBaseId: number,
+) {
+  const response = await request.post(`${backendBaseUrl}/conversations`, {
+    headers: authHeaders(admin),
+    data: {
+      title,
+      knowledgeBaseId,
+      memoryStrategy: 'SLIDING_WINDOW',
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+  const json = await response.json()
+  return json.data.id as number
 }
 
 async function prepareReadyKnowledgeBase(

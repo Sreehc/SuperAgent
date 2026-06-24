@@ -1,0 +1,114 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+body {
+  margin: 0;
+  color: var(--text-main);
+  background:
+    linear-gradient(115deg, rgba(47, 111, 94, 0.08), transparent 34%),
+    linear-gradient(180deg, transparent, rgba(16, 20, 23, 0.03)),
+    var(--bg-canvas);
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(21, 25, 21, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(21, 25, 21, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.76), rgba(0, 0, 0, 0.08));
+  content: "";
+}
+
+:root[data-theme="dark"] body::before {
+  background-image:
+    linear-gradient(rgba(238, 242, 236, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(238, 242, 236, 0.032) 1px, transparent 1px);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:where(
+  button,
+  a,
+  [role="button"],
+  [role="menuitem"],
+  [role="option"],
+  [role="tab"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"],
+  summary
+) {
+  touch-action: manipulation;
+}
+
+::selection {
+  color: #ffffff;
+  background: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ui-icon {
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+}

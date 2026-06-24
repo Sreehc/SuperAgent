@@ -14,6 +14,7 @@ import {
 } from '../api'
 
 export type SettingsTab = 'model' | 'rag' | 'rerank' | 'agent' | 'tools'
+type DirtyTabs = Record<SettingsTab, boolean>
 
 export interface ModelForm {
   provider: string
@@ -74,6 +75,8 @@ export interface ToolForm {
 interface SettingsState {
   loading: boolean
   savingTab: SettingsTab | null
+  dirtyTabs: DirtyTabs
+  lastSavedTab: SettingsTab | null
   errorMessage: string
   successMessage: string
   fieldErrors: Record<string, string>
@@ -103,6 +106,8 @@ export type SettingsStore = SettingsState & SettingsActions
 const initialState: SettingsState = {
   loading: false,
   savingTab: null,
+  dirtyTabs: createCleanDirtyTabs(),
+  lastSavedTab: null,
   errorMessage: '',
   successMessage: '',
   fieldErrors: {},
@@ -145,6 +150,27 @@ const initialState: SettingsState = {
   },
 }
 
+function createCleanDirtyTabs(): DirtyTabs {
+  return { model: false, rag: false, rerank: false, agent: false, tools: false }
+}
+
+function markDirty<T extends object>(state: SettingsState, tab: SettingsTab, key: keyof SettingsState, patch: Partial<T>) {
+  return {
+    [key]: { ...(state[key] as T), ...patch },
+    dirtyTabs: { ...state.dirtyTabs, [tab]: true },
+    lastSavedTab: null,
+    successMessage: '',
+  } as Partial<SettingsState>
+}
+
+function markSaved(state: SettingsState, tab: SettingsTab, patch: Partial<SettingsState> = {}) {
+  return {
+    ...patch,
+    dirtyTabs: { ...state.dirtyTabs, [tab]: false },
+    lastSavedTab: tab,
+  } as Partial<SettingsState>
+}
+
 function parseDomainLines(value: string) {
   return value
     .split(/\r?\n|,/)
@@ -152,17 +178,22 @@ function parseDomainLines(value: string) {
     .filter(Boolean)
 }
 
+function normalizeFieldKey(value: string) {
+  const pathSegment = value.split('.').filter(Boolean).pop() ?? value
+  return pathSegment.replace(/[_-]([a-zA-Z0-9])/g, (_, character: string) => character.toUpperCase())
+}
+
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
   ...initialState,
 
-  patchModel: (patch) => set((s) => ({ modelForm: { ...s.modelForm, ...patch } })),
-  patchRag: (patch) => set((s) => ({ ragForm: { ...s.ragForm, ...patch } })),
-  patchRerank: (patch) => set((s) => ({ rerankForm: { ...s.rerankForm, ...patch } })),
-  patchAgent: (patch) => set((s) => ({ agentForm: { ...s.agentForm, ...patch } })),
-  patchTool: (patch) => set((s) => ({ toolForm: { ...s.toolForm, ...patch } })),
+  patchModel: (patch) => set((s) => markDirty<ModelForm>(s, 'model', 'modelForm', patch)),
+  patchRag: (patch) => set((s) => markDirty<RagForm>(s, 'rag', 'ragForm', patch)),
+  patchRerank: (patch) => set((s) => markDirty<RerankForm>(s, 'rerank', 'rerankForm', patch)),
+  patchAgent: (patch) => set((s) => markDirty<AgentForm>(s, 'agent', 'agentForm', patch)),
+  patchTool: (patch) => set((s) => markDirty<ToolForm>(s, 'tools', 'toolForm', patch)),
 
   async loadAll() {
-    set({ loading: true, errorMessage: '', successMessage: '', fieldErrors: {} })
+    set({ loading: true, errorMessage: '', successMessage: '', fieldErrors: {}, lastSavedTab: null })
     try {
       const [modelResponse, ragResponse, rerankResponse, agentResponse, toolResponse] = await Promise.all([
         getModelSettings(),
@@ -202,6 +233,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           ...toolResponse.data,
           allowedHttpDomainsText: toolResponse.data.allowedHttpDomains.join('\n'),
         },
+        dirtyTabs: createCleanDirtyTabs(),
+        lastSavedTab: null,
       }))
     } catch {
       set({ errorMessage: '设置加载失败，请刷新后重试。' })
@@ -212,7 +245,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   async saveModel() {
-    set({ savingTab: 'model', errorMessage: '', successMessage: '', fieldErrors: {} })
+    set({ savingTab: 'model', errorMessage: '', successMessage: '', fieldErrors: {}, lastSavedTab: null })
     try {
       const { modelForm } = get()
       const response = await updateModelSettings({
@@ -221,7 +254,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         embeddingModel: modelForm.embeddingModel,
         apiKey: modelForm.apiKey.trim() || undefined,
       })
-      set((s) => ({ modelForm: { ...s.modelForm, apiKey: '', apiKeySet: response.data.apiKeySet }, successMessage: '模型设置已保存。' }))
+      set((s) =>
+        markSaved(s, 'model', {
+          modelForm: { ...s.modelForm, apiKey: '', apiKeySet: response.data.apiKeySet },
+          successMessage: '模型设置已保存。',
+        }),
+      )
     } catch (error) {
       handleSaveError(set, error, '模型设置校验失败，请修正高亮字段。', '模型设置保存失败，请检查输入后重试。')
     } finally {
@@ -230,11 +268,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   async saveRag() {
-    set({ savingTab: 'rag', errorMessage: '', successMessage: '', fieldErrors: {} })
+    set({ savingTab: 'rag', errorMessage: '', successMessage: '', fieldErrors: {}, lastSavedTab: null })
     try {
       const { ragForm } = get()
       await updateRagSettings({ ...ragForm })
-      set({ successMessage: 'RAG 设置已保存。' })
+      set((s) => markSaved(s, 'rag', { successMessage: 'RAG 设置已保存。' }))
     } catch (error) {
       handleSaveError(set, error, 'RAG 设置校验失败，请修正高亮字段。', 'RAG 设置保存失败，请稍后重试。')
     } finally {
@@ -243,7 +281,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   async saveRerank() {
-    set({ savingTab: 'rerank', errorMessage: '', successMessage: '', fieldErrors: {} })
+    set({ savingTab: 'rerank', errorMessage: '', successMessage: '', fieldErrors: {}, lastSavedTab: null })
     try {
       const { rerankForm } = get()
       const response = await updateRerankSettings({
@@ -253,7 +291,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         model: rerankForm.model.trim() || undefined,
         apiKey: rerankForm.apiKey.trim() || undefined,
       })
-      set((s) => ({ rerankForm: { ...s.rerankForm, apiKey: '', apiKeySet: response.data.apiKeySet }, successMessage: 'Rerank 设置已保存。' }))
+      set((s) =>
+        markSaved(s, 'rerank', {
+          rerankForm: { ...s.rerankForm, apiKey: '', apiKeySet: response.data.apiKeySet },
+          successMessage: 'Rerank 设置已保存。',
+        }),
+      )
     } catch (error) {
       handleSaveError(set, error, 'Rerank 设置校验失败，请修正高亮字段。', 'Rerank 设置保存失败，请稍后重试。')
     } finally {
@@ -262,7 +305,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   async saveAgent() {
-    set({ savingTab: 'agent', errorMessage: '', successMessage: '', fieldErrors: {} })
+    set({ savingTab: 'agent', errorMessage: '', successMessage: '', fieldErrors: {}, lastSavedTab: null })
     try {
       const { agentForm } = get()
       await updateAgentSettings({
@@ -278,7 +321,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         toolTimeoutMs: agentForm.toolTimeoutMs,
         allowedHttpDomains: parseDomainLines(agentForm.allowedHttpDomainsText),
       })
-      set({ successMessage: 'Agent 设置已保存。' })
+      set((s) => markSaved(s, 'agent', { successMessage: 'Agent 设置已保存。' }))
     } catch (error) {
       handleSaveError(set, error, 'Agent 设置校验失败，请修正高亮字段。', 'Agent 设置保存失败，请稍后重试。')
     } finally {
@@ -287,7 +330,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   async saveTools() {
-    set({ savingTab: 'tools', errorMessage: '', successMessage: '', fieldErrors: {} })
+    set({ savingTab: 'tools', errorMessage: '', successMessage: '', fieldErrors: {}, lastSavedTab: null })
     try {
       const { toolForm } = get()
       await updateToolSettings({
@@ -299,7 +342,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         searchProvider: toolForm.searchProvider,
         allowedHttpDomains: parseDomainLines(toolForm.allowedHttpDomainsText),
       })
-      set({ successMessage: 'Tools 设置已保存。' })
+      set((s) => markSaved(s, 'tools', { successMessage: 'Tools 设置已保存。' }))
     } catch (error) {
       handleSaveError(set, error, 'Tools 设置校验失败，请修正高亮字段。', 'Tools 设置保存失败，请稍后重试。')
     } finally {
@@ -319,7 +362,7 @@ function handleSaveError(
     for (const item of error.fieldErrors) {
       const key = item.field ?? item.parameter
       if (key) {
-        fieldErrors[key] = item.message
+        fieldErrors[normalizeFieldKey(key)] = item.message
       }
     }
     if (Object.keys(fieldErrors).length > 0) {

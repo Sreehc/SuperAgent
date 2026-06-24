@@ -1,9 +1,10 @@
 import { useState, type ChangeEvent } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Command, MagnifyingGlass, SidebarSimple, SignOut } from '@phosphor-icons/react'
+import { Command, MagnifyingGlass, SidebarSimple, SignOut, X } from '@phosphor-icons/react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { selectCurrentRole, useAuthStore } from '@/features/auth/store/auth'
+import { SelectField } from '@/shared/ui'
 import { NAV_ITEMS } from '../nav'
 
 export function AppShell() {
@@ -21,6 +22,7 @@ export function AppShell() {
 
   function openCommand() {
     document.dispatchEvent(new CustomEvent('open-command-palette'))
+    setNavOpen(false)
   }
 
   async function onSwitchTenant(event: ChangeEvent<HTMLSelectElement>) {
@@ -40,11 +42,21 @@ export function AppShell() {
   }
 
   return (
-    <div className={`console-shell${navOpen ? ' console-shell--nav-open' : ''}`}>
-      <aside className="global-rail" aria-label="主导航">
-        <NavLink className="global-rail__mark" to="/chat" aria-label="SuperAgent 对话">
-          <BrandLogo size="small" />
-        </NavLink>
+    <div className="console-shell">
+      {navOpen ? <button className="console-shell__overlay" type="button" aria-label="关闭导航遮罩" onClick={() => setNavOpen(false)} /> : null}
+
+      <aside className={`global-rail${navOpen ? ' global-rail--expanded' : ''}`} aria-label="主导航" data-testid="desktop-nav">
+        <div className="global-rail__head">
+          <NavLink className="global-rail__mark" to="/chat" aria-label="SuperAgent 对话" onClick={() => setNavOpen(false)}>
+            <BrandLogo size="small" />
+            <span className="global-rail__brand-label">SuperAgent</span>
+          </NavLink>
+          {navOpen ? (
+            <button className="icon-button global-rail__collapse" type="button" aria-label="收起导航" onClick={() => setNavOpen(false)}>
+              <X size={16} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
 
         <nav className="global-rail__nav" aria-label="主导航">
           {visibleItems.map((item) => {
@@ -74,23 +86,27 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="console-shell__overlay" aria-hidden="true" onClick={() => setNavOpen(false)} />
-
       <section className="console-workspace">
         <header className="utility-bar">
           <div className="utility-bar__left">
-            <button className="utility-bar__menu icon-button" type="button" aria-label="打开导航" onClick={() => setNavOpen(true)}>
-              <SidebarSimple size={18} aria-hidden="true" />
+            <button
+              className="utility-bar__menu icon-button"
+              type="button"
+              aria-label={navOpen ? '关闭导航' : '打开导航'}
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen((open) => !open)}
+            >
+              {navOpen ? <X size={18} aria-hidden="true" /> : <SidebarSimple size={18} aria-hidden="true" />}
             </button>
             <div className="tenant-chip">
               <span>Tenant</span>
-              <select value={currentTenantId ?? ''} disabled={switching} onChange={onSwitchTenant}>
+              <SelectField value={currentTenantId ?? ''} disabled={switching} onChange={onSwitchTenant}>
                 {tenants.map((tenant) => (
                   <option key={tenant.id} value={tenant.id}>
                     {tenant.name} / {tenant.role}
                   </option>
                 ))}
-              </select>
+              </SelectField>
             </div>
             <span className="role-chip">{role ?? '未加载'}</span>
           </div>

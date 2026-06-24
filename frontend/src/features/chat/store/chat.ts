@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import {
+  buildStreamMessageRequest,
   createConversation,
   deleteConversation,
   deleteMessageFeedback,
@@ -7,8 +8,10 @@ import {
   listConversationFeedbacks,
   listConversations,
   listMessages,
+  normalizeKnowledgeBaseIds,
   openMessageStream,
   resumeConversation,
+  resolveLegacyKnowledgeBaseId,
   stopConversation,
   updateConversation,
   upsertMessageFeedback,
@@ -22,6 +25,7 @@ import type {
   FeedbackRating,
   MemoryStrategy,
   RequestedExecutionMode,
+  StreamLifecycleStatus,
   StreamState,
 } from '../types'
 import { applyStreamEvent, consumeSseText, createEmptyStreamState, type SseParserState } from './streamRuntime'
@@ -42,6 +46,7 @@ interface ChatState {
   loadingConversations: boolean
   loadingMessages: boolean
   streaming: boolean
+  streamStatus: StreamLifecycleStatus
   streamState: StreamState
   selectedReference: DisplayReference | null
   keyword: string
@@ -52,6 +57,7 @@ interface ChatState {
   executionMode: RequestedExecutionMode
   availableKnowledgeBases: KnowledgeOption[]
   selectedKnowledgeBaseId: number | null
+  selectedKnowledgeBaseIds: number[]
   toolCapabilities: ToolCapabilityItem[]
 }
 
@@ -62,16 +68,18 @@ interface ChatActions {
   selectConversation: (sessionId: number) => Promise<void>
   sendMessage: (text?: string) => Promise<void>
   stopStreaming: () => Promise<void>
+  retryLastMessage: () => Promise<void>
   resumeConversationRun: () => Promise<void>
   renameConversation: (sessionId: number, title: string) => Promise<void>
   archiveConversation: (sessionId: number) => Promise<void>
   removeConversation: (sessionId: number) => Promise<void>
   setMessageFeedback: (message: DisplayMessage, rating: FeedbackRating) => Promise<void>
-  correctMessageFeedback: (message: DisplayMessage) => Promise<void>
+  correctMessageFeedback: (message: DisplayMessage, correction: string) => Promise<void>
   clearMessageFeedback: (message: DisplayMessage) => Promise<void>
   setKeyword: (value: string) => void
   setMessage: (value: string) => void
   setSelectedKnowledgeBaseId: (value: number | null) => void
+  setSelectedKnowledgeBaseIds: (value: number[]) => void
   setExecutionMode: (value: RequestedExecutionMode) => void
   useRecommendation: (question: string) => void
   clearOnRouteLeave: () => void
@@ -83,9 +91,18 @@ export type ChatStore = ChatState & ChatActions
 let abortController: AbortController | null = null
 let stopRequested = false
 const parser: SseParserState = { offset: 0, buffer: '' }
+
 function resetParser() {
   parser.offset = 0
   parser.buffer = ''
+}
+
+function setKnowledgeBaseSelection(set: SetState, ids: number[]) {
+  const normalized = normalizeKnowledgeBaseIds(ids)
+  set({
+    selectedKnowledgeBaseIds: normalized,
+    selectedKnowledgeBaseId: resolveLegacyKnowledgeBaseId(normalized),
+  })
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -96,6 +113,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   loadingConversations: false,
   loadingMessages: false,
   streaming: false,
+  streamStatus: 'idle',
   streamState: createEmptyStreamState(),
   selectedReference: null,
   keyword: '',
@@ -105,13 +123,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   executionMode: 'AUTO',
   availableKnowledgeBases: [],
   selectedKnowledgeBaseId: null,
+  selectedKnowledgeBaseIds: [],
   toolCapabilities: [],
 
   async bootstrap(sessionId) {
     await Promise.all([fetchKnowledgeBaseOptions(set), fetchToolCapabilities(set)])
     await get().fetchConversations()
     const conversations = get().conversations
-    const preferred = sessionId ?? get().selectedSessionId
+    if (sessionId) {
+      try {
+        await get().selectConversation(sessionId)
+        return
+      } catch {
+        set({ selectedSessionId: null, selectedConversation: null, messages: [] })
+      }
+    }
+    const preferred = get().selectedSessionId
     if (preferred && conversations.some((c) => c.id === preferred)) {
       await get().selectConversation(preferred)
       return
@@ -138,7 +165,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   async createAndSelectConversation(title) {
     const response = await createConversation({
       title,
-      knowledgeBaseId: get().selectedKnowledgeBaseId,
+      knowledgeBaseId: resolveLegacyKnowledgeBaseId(get().selectedKnowledgeBaseIds),
       memoryStrategy: get().memoryStrategy,
     })
     await get().fetchConversations()
@@ -162,6 +189,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         selectedConversation: conversationResponse.data,
         memoryStrategy: conversationResponse.data.memoryStrategy,
         selectedKnowledgeBaseId: conversationResponse.data.knowledgeBaseId,
+        selectedKnowledgeBaseIds:
+          conversationResponse.data.knowledgeBaseId == null ? [] : [conversationResponse.data.knowledgeBaseId],
         messages: messagesResponse.data.items.map((message) => ({
           ...message,
           references: [],
@@ -178,12 +207,34 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   async sendMessage(text) {
     const body = (text ?? get().message).trim()
     if (!body) return
+    const selectedKnowledgeBaseIds = normalizeKnowledgeBaseIds(get().selectedKnowledgeBaseIds)
+    const request = buildStreamMessageRequest({
+      message: body,
+      knowledgeBaseIds: selectedKnowledgeBaseIds,
+      memoryStrategy: get().memoryStrategy,
+      executionMode: get().executionMode,
+    })
 
-    if (!get().selectedSessionId) {
-      await get().createAndSelectConversation(body.slice(0, 24))
+    if (!request.ok) {
+      set({ streamStatus: 'error', streamState: { ...get().streamState, error: request.error } })
+      return
+    }
+
+    set({ streamStatus: 'submitting', streamState: { ...get().streamState, error: '' } })
+
+    try {
+      if (!get().selectedSessionId) {
+        await get().createAndSelectConversation(body.slice(0, 24))
+      }
+    } catch (error) {
+      set({ streamStatus: 'error', streamState: { ...get().streamState, error: '新建会话失败，请稍后重试。' } })
+      throw error
     }
     const sessionId = get().selectedSessionId
-    if (!sessionId) return
+    if (!sessionId) {
+      set({ streamStatus: 'error', streamState: { ...get().streamState, error: '会话未就绪，请稍后重试。' } })
+      return
+    }
 
     resetParser()
     stopRequested = false
@@ -200,7 +251,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       },
     ]
     const workingState = createEmptyStreamState()
-    set({ messages: draft, message: '', streaming: true, streamState: workingState, selectedReference: null })
+    set({ messages: draft, message: '', streaming: true, streamStatus: 'streaming', streamState: workingState, selectedReference: null })
 
     function ensureAssistantMessage(): DisplayMessage {
       const last = draft[draft.length - 1]
@@ -224,12 +275,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     try {
       await openMessageStream(
         sessionId,
-        {
-          message: body,
-          knowledgeBaseId: get().selectedKnowledgeBaseId,
-          memoryStrategy: get().memoryStrategy,
-          executionMode: get().executionMode,
-        },
+        request.payload,
         (raw) => {
           consumeSseText(raw, parser, (eventName, data) => {
             applyStreamEvent(workingState, eventName, data, {
@@ -252,15 +298,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         selectedConversation: conversationResponse.data,
         memoryStrategy: conversationResponse.data.memoryStrategy,
         selectedKnowledgeBaseId: conversationResponse.data.knowledgeBaseId,
+        selectedKnowledgeBaseIds:
+          conversationResponse.data.knowledgeBaseId == null ? [] : [conversationResponse.data.knowledgeBaseId],
+        streamStatus: workingState.error ? 'error' : 'done',
       })
     } catch (error) {
+      if (workingState.completed) {
+        set({ messages: [...draft], streamStatus: workingState.error ? 'error' : 'done', streamState: { ...workingState } })
+        return
+      }
       const stopped = stopRequested || workingState.stopped
+      workingState.stopped = stopped
       const assistant = [...draft].reverse().find((m) => m.role === 'assistant')
       if (assistant) assistant.status = stopped ? 'stopped' : 'error'
       if (!stopped && !workingState.error) {
         workingState.error = '消息发送失败，请稍后重试。'
       }
-      set({ messages: [...draft], streamState: { ...workingState } })
+      set({ messages: [...draft], streamStatus: stopped ? 'done' : 'error', streamState: { ...workingState } })
       if (!stopped) throw error
     } finally {
       set({ streaming: false })
@@ -270,16 +324,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   async stopStreaming() {
     const sessionId = get().selectedSessionId
-    if (!sessionId || !get().streaming) return
+    if (!sessionId || !get().streaming || get().streamStatus === 'stopping') return
     stopRequested = true
-    set({ streamState: { ...get().streamState, stopped: true } })
+    set({ streamStatus: 'stopping', streamState: { ...get().streamState, stopped: true } })
     abortController?.abort()
     try {
       await stopConversation(sessionId)
     } catch {
       const current = get().streamState
       if (!current.error) set({ streamState: { ...current, error: '停止生成失败，请稍后重试。' } })
+      if (get().streaming) set({ streamStatus: 'streaming' })
     }
+  },
+
+  async retryLastMessage() {
+    if (get().streaming) return
+    const latestUserMessage = [...get().messages].reverse().find((message) => message.role === 'user')
+    const body = latestUserMessage?.content.trim()
+    if (!body) return
+    await get().sendMessage(body)
   },
 
   async resumeConversationRun() {
@@ -342,10 +405,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  async correctMessageFeedback(message) {
+  async correctMessageFeedback(message, correction) {
     if (message.role !== 'assistant' || message.id <= 0) return
-    const correction = window.prompt('请输入更正建议，将用于后续评测和质量改进。', message.feedback?.correction ?? '')
-    if (correction === null) return
     const trimmed = correction.trim()
     if (!trimmed) return
     set({ updatingFeedbackMessageId: message.id })
@@ -370,7 +431,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setKeyword: (value) => set({ keyword: value }),
   setMessage: (value) => set({ message: value }),
-  setSelectedKnowledgeBaseId: (value) => set({ selectedKnowledgeBaseId: value }),
+  setSelectedKnowledgeBaseId: (value) => setKnowledgeBaseSelection(set, value == null ? [] : [value]),
+  setSelectedKnowledgeBaseIds: (value) => setKnowledgeBaseSelection(set, value),
   setExecutionMode: (value) => set({ executionMode: value }),
   useRecommendation: (question) => set({ message: question }),
 
@@ -378,7 +440,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     abortController?.abort()
     abortController = null
     resetParser()
-    set({ streaming: false })
+    set({ streaming: false, streamStatus: 'idle' })
   },
 }))
 

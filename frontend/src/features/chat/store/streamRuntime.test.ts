@@ -49,6 +49,65 @@ describe('stream runtime', () => {
     expect(harness.assistant.status).toBe('success')
     expect(harness.references).toHaveLength(1)
     expect(state.runId).toBe(9)
-    expect(state.timeline[0]).toMatchObject({ type: 'tool_start', title: 'search' })
+    expect(state.timeline[0]).toMatchObject({ type: 'tool_start', title: '工具 · search' })
+  })
+
+  it('maps execution SSE events to compact timeline summaries', () => {
+    const state = createEmptyStreamState()
+    const harness = createHarness()
+    const ensureAssistantMessage = vi.fn(harness.handlers.ensureAssistantMessage)
+
+    applyStreamEvent(state, 'trace_stage', '{"stage":"retrieve","status":"running","durationMs":1234}', {
+      ...harness.handlers,
+      ensureAssistantMessage,
+    })
+    applyStreamEvent(state, 'trace_stage', '{"stage":"retrieve","status":"running","durationMs":1234}', {
+      ...harness.handlers,
+      ensureAssistantMessage,
+    })
+    applyStreamEvent(state, 'agent_step', '{"runId":9,"stepNo":1,"phase":"plan","status":"success","summary":"规划工具调用"}', {
+      ...harness.handlers,
+      ensureAssistantMessage,
+    })
+    applyStreamEvent(state, 'tool_start', '{"runId":9,"toolId":"search","stepNo":2,"summary":"检索退款规则"}', {
+      ...harness.handlers,
+      ensureAssistantMessage,
+    })
+    applyStreamEvent(state, 'tool_result', '{"runId":9,"toolId":"search","status":"success","summary":"找到 3 条证据"}', {
+      ...harness.handlers,
+      ensureAssistantMessage,
+    })
+    applyStreamEvent(state, 'checkpoint', '{"runId":9,"checkpointNo":2,"phase":"answer","stable":true}', {
+      ...harness.handlers,
+      ensureAssistantMessage,
+    })
+    applyStreamEvent(state, 'resume', '{"runId":9,"status":"running"}', {
+      ...harness.handlers,
+      ensureAssistantMessage,
+    })
+
+    expect(state.timeline.map((item) => item.type)).toEqual([
+      'trace_stage',
+      'agent_step',
+      'tool_start',
+      'tool_result',
+      'checkpoint',
+      'resume',
+    ])
+    expect(state.timeline[0]).toMatchObject({ title: 'Trace · retrieve', summary: 'running · 1.2s' })
+    expect(state.timeline[3]).toMatchObject({ title: '工具 · search', summary: 'success · 找到 3 条证据' })
+    expect(ensureAssistantMessage).toHaveBeenCalledTimes(6)
+  })
+
+  it('maps stream error events to the inspector state and failed assistant message', () => {
+    const state = createEmptyStreamState()
+    const harness = createHarness()
+
+    applyStreamEvent(state, 'error', '{"code":"MODEL_TIMEOUT","message":"模型调用超时","exchangeId":5001,"runId":9}', harness.handlers)
+
+    expect(state.error).toBe('模型调用超时')
+    expect(state.exchangeId).toBe(5001)
+    expect(state.runId).toBe(9)
+    expect(harness.assistant.status).toBe('error')
   })
 })

@@ -10,9 +10,79 @@ import type {
   FeedbackRequest,
   MemoryStrategy,
   PagedResult,
+  RequestedExecutionMode,
   StreamMessageRequest,
   UpdateConversationRequest,
 } from './types'
+
+export const MULTI_KNOWLEDGE_BASE_UNSUPPORTED_MESSAGE =
+  '当前后端暂不支持多知识库会话，请保留 1 个知识库或选择不限定后再发送。'
+
+interface BuildStreamMessageRequestInput {
+  message: string
+  knowledgeBaseIds: number[]
+  memoryStrategy?: MemoryStrategy
+  executionMode?: RequestedExecutionMode
+  multiKnowledgeBaseEnabled?: boolean
+}
+
+type BuildStreamMessageRequestResult =
+  | {
+      ok: true
+      payload: StreamMessageRequest
+    }
+  | {
+      ok: false
+      error: string
+    }
+
+export function normalizeKnowledgeBaseIds(ids: number[]) {
+  return Array.from(new Set(ids.filter((id) => Number.isFinite(id))))
+}
+
+export function resolveLegacyKnowledgeBaseId(ids: number[]) {
+  const normalized = normalizeKnowledgeBaseIds(ids)
+  return normalized.length === 1 ? normalized[0] : null
+}
+
+export function isChatMultiKnowledgeBaseStreamEnabled() {
+  return import.meta.env.VITE_CHAT_MULTI_KB_STREAM_ENABLED === 'true'
+}
+
+export function buildStreamMessageRequest({
+  message,
+  knowledgeBaseIds,
+  memoryStrategy,
+  executionMode,
+  multiKnowledgeBaseEnabled = isChatMultiKnowledgeBaseStreamEnabled(),
+}: BuildStreamMessageRequestInput): BuildStreamMessageRequestResult {
+  const normalizedIds = normalizeKnowledgeBaseIds(knowledgeBaseIds)
+
+  if (normalizedIds.length > 1) {
+    if (!multiKnowledgeBaseEnabled) {
+      return { ok: false, error: MULTI_KNOWLEDGE_BASE_UNSUPPORTED_MESSAGE }
+    }
+    return {
+      ok: true,
+      payload: {
+        message,
+        knowledgeBaseIds: normalizedIds,
+        memoryStrategy,
+        executionMode,
+      },
+    }
+  }
+
+  return {
+    ok: true,
+    payload: {
+      message,
+      knowledgeBaseId: normalizedIds[0] ?? null,
+      memoryStrategy,
+      executionMode,
+    },
+  }
+}
 
 function buildQuery(params?: Record<string, string | number | undefined>) {
   if (!params) {
