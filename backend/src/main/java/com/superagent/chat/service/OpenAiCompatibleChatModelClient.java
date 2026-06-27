@@ -4,19 +4,24 @@ import com.superagent.auth.security.TenantContext;
 import com.superagent.auth.security.TenantContextHolder;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.superagent.infra.ai.SpringAiOpenAiModelFactory;
 import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.settings.domain.ModelSettings;
 import com.superagent.settings.service.RuntimeSettingsService;
+import io.micrometer.observation.ObservationRegistry;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.Locale;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 @Component
 @ConditionalOnProperty(name = "super-agent.ai.chat-provider", havingValue = "openai-compatible")
@@ -24,58 +29,87 @@ public class OpenAiCompatibleChatModelClient implements ChatModelClient {
 
     private final SuperAgentProperties properties;
     private final RuntimeSettingsService runtimeSettingsService;
+    private final ChatModelFactory chatModelFactory;
+
+    @Autowired
+    public OpenAiCompatibleChatModelClient(
+            SuperAgentProperties properties,
+            RuntimeSettingsService runtimeSettingsService,
+            ObservationRegistry observationRegistry
+    ) {
+        this(properties, runtimeSettingsService, observationRegistry, settings -> SpringAiOpenAiModelFactory.createChatModel(
+                new SpringAiOpenAiModelFactory.ChatModelSettings(
+                        settings.baseUrl(),
+                        settings.apiKey(),
+                        settings.model(),
+                        settings.connectTimeoutMillis(),
+                        settings.readTimeoutMillis()
+                ),
+                observationRegistry
+        ));
+    }
 
     public OpenAiCompatibleChatModelClient(
             SuperAgentProperties properties,
             RuntimeSettingsService runtimeSettingsService
     ) {
+        this(properties, runtimeSettingsService, ObservationRegistry.NOOP);
+    }
+
+    public OpenAiCompatibleChatModelClient(
+            SuperAgentProperties properties,
+            RuntimeSettingsService runtimeSettingsService,
+            ChatModelFactory chatModelFactory
+    ) {
+        this(properties, runtimeSettingsService, ObservationRegistry.NOOP, chatModelFactory);
+    }
+
+    public OpenAiCompatibleChatModelClient(
+            SuperAgentProperties properties,
+            RuntimeSettingsService runtimeSettingsService,
+            ObservationRegistry observationRegistry,
+            ChatModelFactory chatModelFactory
+    ) {
         this.properties = properties;
         this.runtimeSettingsService = runtimeSettingsService;
+        this.chatModelFactory = chatModelFactory;
     }
 
     @Override
     public ModelResponse generateReply(ModelRequest request) {
         ModelSettings settings = resolveSettings();
         validateSettings(settings);
-
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Math.toIntExact(properties.getAi().getHttpConnectTimeoutMillis()));
-        requestFactory.setReadTimeout(Math.toIntExact(properties.getAi().getHttpReadTimeoutMillis()));
-        RestClient client = RestClient.builder()
-                .requestFactory(requestFactory)
-                .baseUrl(settings.baseUrl())
-                .defaultHeader("Authorization", "Bearer " + settings.apiKey())
-                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-                .build();
+        ChatModelSettings chatSettings = new ChatModelSettings(
+                settings.baseUrl(),
+                settings.apiKey(),
+                settings.chatModel(),
+                Math.toIntExact(Math.max(1L, properties.getAi().getHttpConnectTimeoutMillis())),
+                Math.toIntExact(Math.max(1L, properties.getAi().getHttpReadTimeoutMillis()))
+        );
         try {
-            ChatCompletionResponse response = client.post()
-                    .uri("/chat/completions")
-                    .body(new ChatCompletionRequest(
-                            settings.chatModel(),
-                            List.of(new ChatCompletionMessage("user", request.userMessage()))
-                    ))
-                    .retrieve()
-                    .body(ChatCompletionResponse.class);
-            if (response == null || response.choices() == null || response.choices().isEmpty()) {
-                throw new AppException(ErrorCode.MODEL_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY, "Chat provider returned empty response");
-            }
-            ChatCompletionChoice choice = response.choices().getFirst();
-            String content = choice.message() == null || choice.message().content() == null
+            ChatResponse response = chatModelFactory.create(chatSettings)
+                    .call(new Prompt(request.userMessage(), OpenAiChatOptions.builder().model(chatSettings.model()).build()));
+            Generation generation = response == null ? null : response.getResult();
+            String content = generation == null || generation.getOutput() == null
                     ? ""
-                    : choice.message().content().trim();
+                    : generation.getOutput().getText().trim();
             if (content.isBlank()) {
                 throw new AppException(ErrorCode.MODEL_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY, "Chat provider returned empty content");
             }
-            Usage usage = response.usage();
+            Usage usage = response.getMetadata() == null ? null : response.getMetadata().getUsage();
+            String model = response.getMetadata() == null || response.getMetadata().getModel() == null || response.getMetadata().getModel().isBlank()
+                    ? chatSettings.model()
+                    : response.getMetadata().getModel();
+            String finishReason = generation.getMetadata() == null ? null : normalizeFinishReason(generation.getMetadata().getFinishReason());
             return new ModelResponse(
                     content,
                     slice(content, 24),
                     List.of(),
                     "openai-compatible",
-                    response.model() == null || response.model().isBlank() ? settings.chatModel() : response.model(),
-                    usage == null ? null : usage.promptTokens(),
-                    usage == null ? null : usage.completionTokens(),
-                    choice.finishReason()
+                    model,
+                    usage == null ? null : usage.getPromptTokens(),
+                    usage == null ? null : usage.getCompletionTokens(),
+                    finishReason
             );
         } catch (AppException exception) {
             throw exception;
@@ -108,33 +142,21 @@ public class OpenAiCompatibleChatModelClient implements ChatModelClient {
         return chunks;
     }
 
-    public record ChatCompletionRequest(String model, List<ChatCompletionMessage> messages) {
+    private String normalizeFinishReason(String finishReason) {
+        return finishReason == null || finishReason.isBlank() ? finishReason : finishReason.toLowerCase(Locale.ROOT);
     }
 
-    public record ChatCompletionMessage(String role, String content) {
-    }
-
-    public record ChatCompletionResponse(
-            String id,
+    public record ChatModelSettings(
+            String baseUrl,
+            String apiKey,
             String model,
-            List<ChatCompletionChoice> choices,
-            Usage usage
+            int connectTimeoutMillis,
+            int readTimeoutMillis
     ) {
     }
 
-    public record ChatCompletionChoice(
-            int index,
-            ChatCompletionMessage message,
-            @JsonProperty("finish_reason") String finishReason
-    ) {
-    }
-
-    public record Usage(
-            @JsonProperty("prompt_tokens") Integer promptTokens,
-            @JsonProperty("completion_tokens") Integer completionTokens,
-            @JsonProperty("total_tokens") Integer totalTokens
-    ) {
-        public Usage {
-        }
+    @FunctionalInterface
+    public interface ChatModelFactory {
+        ChatModel create(ChatModelSettings settings);
     }
 }

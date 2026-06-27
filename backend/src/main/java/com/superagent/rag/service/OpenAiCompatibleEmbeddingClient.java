@@ -4,28 +4,65 @@ import com.superagent.auth.security.TenantContext;
 import com.superagent.auth.security.TenantContextHolder;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
+import com.superagent.infra.ai.SpringAiOpenAiModelFactory;
 import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.settings.domain.ModelSettings;
 import com.superagent.settings.service.RuntimeSettingsService;
+import io.micrometer.observation.ObservationRegistry;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.http.MediaType;
+import org.springframework.ai.document.MetadataMode;
+import org.springframework.ai.embedding.Embedding;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.embedding.EmbeddingRequest;
+import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.openai.OpenAiEmbeddingModel;
+import org.springframework.ai.openai.OpenAiEmbeddingOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
 
 @Component
 public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
 
     private final SuperAgentProperties properties;
     private final RuntimeSettingsService runtimeSettingsService;
+    private final EmbeddingModelFactory embeddingModelFactory;
 
     public OpenAiCompatibleEmbeddingClient(SuperAgentProperties properties, RuntimeSettingsService runtimeSettingsService) {
+        this(properties, runtimeSettingsService, ObservationRegistry.NOOP);
+    }
+
+    @Autowired
+    public OpenAiCompatibleEmbeddingClient(
+            SuperAgentProperties properties,
+            RuntimeSettingsService runtimeSettingsService,
+            ObservationRegistry observationRegistry
+    ) {
+        this(properties, runtimeSettingsService, observationRegistry, settings -> createSpringAiEmbeddingModel(settings, observationRegistry));
+    }
+
+    public OpenAiCompatibleEmbeddingClient(
+            SuperAgentProperties properties,
+            RuntimeSettingsService runtimeSettingsService,
+            EmbeddingModelFactory embeddingModelFactory
+    ) {
+        this(properties, runtimeSettingsService, ObservationRegistry.NOOP, embeddingModelFactory);
+    }
+
+    public OpenAiCompatibleEmbeddingClient(
+            SuperAgentProperties properties,
+            RuntimeSettingsService runtimeSettingsService,
+            ObservationRegistry observationRegistry,
+            EmbeddingModelFactory embeddingModelFactory
+    ) {
         this.properties = properties;
         this.runtimeSettingsService = runtimeSettingsService;
+        this.embeddingModelFactory = embeddingModelFactory;
     }
 
     @Override
@@ -52,31 +89,40 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
             );
         }
         validateSettings(settings);
-        RestClient client = buildRestClient(settings);
+        EmbeddingModelSettings embeddingSettings = new EmbeddingModelSettings(
+                settings.baseUrl(),
+                settings.apiKey(),
+                resolveEmbeddingModel(settings),
+                properties.getAi().getEmbeddingDimension(),
+                Math.toIntExact(Math.max(1L, properties.getAi().getHttpConnectTimeoutMillis())),
+                Math.toIntExact(Math.max(1L, properties.getAi().getHttpReadTimeoutMillis()))
+        );
+        EmbeddingModel embeddingModel = embeddingModelFactory.create(embeddingSettings);
         int maxAttempts = Math.max(1, properties.getAi().getEmbeddingMaxAttempts());
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                EmbeddingApiResponse response = client.post()
-                        .uri("/embeddings")
-                        .body(new EmbeddingApiRequest(resolveEmbeddingModel(settings), inputs))
-                        .retrieve()
-                        .body(EmbeddingApiResponse.class);
-                if (response == null || response.data() == null || response.data().size() != inputs.size()) {
+                EmbeddingResponse response = embeddingModel.call(new EmbeddingRequest(
+                        inputs,
+                        OpenAiEmbeddingOptions.builder()
+                                .model(embeddingSettings.model())
+                                .dimensions(embeddingSettings.dimension())
+                                .build()
+                ));
+                if (response == null || response.getResults() == null || response.getResults().size() != inputs.size()) {
                     throw new AppException(ErrorCode.MODEL_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY, "Embedding provider returned invalid response");
                 }
-                List<List<Double>> vectors = response.data().stream()
-                        .map(EmbeddingVector::embedding)
+                List<List<Double>> vectors = response.getResults().stream()
+                        .map(Embedding::getOutput)
+                        .map(this::toDoubleList)
                         .toList();
                 int dimension = vectors.getFirst().size();
                 if (dimension != properties.getAi().getEmbeddingDimension()) {
                     throw new AppException(ErrorCode.MODEL_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY, "Embedding dimension does not match configured dimension");
                 }
-                return new EmbeddingResult(
-                        resolveEmbeddingProvider(),
-                        response.model() == null || response.model().isBlank() ? resolveEmbeddingModel(settings) : response.model(),
-                        dimension,
-                        vectors
-                );
+                String model = response.getMetadata() == null || response.getMetadata().getModel() == null || response.getMetadata().getModel().isBlank()
+                        ? embeddingSettings.model()
+                        : response.getMetadata().getModel();
+                return new EmbeddingResult(resolveEmbeddingProvider(), model, dimension, vectors);
             } catch (AppException exception) {
                 throw exception;
             } catch (Exception exception) {
@@ -89,16 +135,28 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
         throw new AppException(ErrorCode.MODEL_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY, "Failed to call embedding provider after retries");
     }
 
-    private RestClient buildRestClient(ModelSettings settings) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Math.toIntExact(Math.max(1L, properties.getAi().getHttpConnectTimeoutMillis())));
-        requestFactory.setReadTimeout(Math.toIntExact(Math.max(1L, properties.getAi().getHttpReadTimeoutMillis())));
-        return RestClient.builder()
-                .requestFactory(requestFactory)
+    private static EmbeddingModel createSpringAiEmbeddingModel(EmbeddingModelSettings settings) {
+        return createSpringAiEmbeddingModel(settings, ObservationRegistry.NOOP);
+    }
+
+    private static EmbeddingModel createSpringAiEmbeddingModel(EmbeddingModelSettings settings, ObservationRegistry observationRegistry) {
+        OpenAiApi api = OpenAiApi.builder()
                 .baseUrl(settings.baseUrl())
-                .defaultHeader("Authorization", "Bearer " + settings.apiKey())
-                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .apiKey(settings.apiKey())
+                .embeddingsPath("/embeddings")
+                .restClientBuilder(SpringAiOpenAiModelFactory.restClientBuilder(settings.connectTimeoutMillis(), settings.readTimeoutMillis()))
+                .webClientBuilder(WebClient.builder())
                 .build();
+        return new OpenAiEmbeddingModel(
+                api,
+                MetadataMode.EMBED,
+                OpenAiEmbeddingOptions.builder()
+                        .model(settings.model())
+                        .dimensions(settings.dimension())
+                        .build(),
+                SpringAiOpenAiModelFactory.singleAttemptRetryTemplate(),
+                observationRegistry == null ? ObservationRegistry.NOOP : observationRegistry
+        );
     }
 
     private void validateSettings(ModelSettings settings) {
@@ -122,6 +180,14 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
 
     private boolean isLocalDeterministicProvider(ModelSettings settings) {
         return "local-deterministic".equalsIgnoreCase(resolveEmbeddingProvider());
+    }
+
+    private List<Double> toDoubleList(float[] values) {
+        List<Double> vector = new ArrayList<>(values.length);
+        for (float value : values) {
+            vector.add((double) value);
+        }
+        return vector;
     }
 
     private List<Double> toDeterministicVector(String input) {
@@ -190,12 +256,18 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
         }
     }
 
-    public record EmbeddingApiRequest(String model, List<String> input) {
+    public record EmbeddingModelSettings(
+            String baseUrl,
+            String apiKey,
+            String model,
+            int dimension,
+            int connectTimeoutMillis,
+            int readTimeoutMillis
+    ) {
     }
 
-    public record EmbeddingApiResponse(List<EmbeddingVector> data, String model) {
-    }
-
-    public record EmbeddingVector(List<Double> embedding, int index) {
+    @FunctionalInterface
+    public interface EmbeddingModelFactory {
+        EmbeddingModel create(EmbeddingModelSettings settings);
     }
 }

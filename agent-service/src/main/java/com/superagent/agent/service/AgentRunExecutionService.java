@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -42,31 +42,8 @@ public class AgentRunExecutionService {
             TenantRuntimeSettingsService runtimeSettingsService,
             AgentAnswerComposer answerComposer,
             AgentPlanner agentPlanner,
-            ObjectMapper objectMapper
-    ) {
-        this(
-                agentRunRepository,
-                streamRegistry,
-                toolRegistryService,
-                toolExecutionService,
-                runtimeSettingsService,
-                answerComposer,
-                agentPlanner,
-                objectMapper,
-                new SimpleAsyncTaskExecutor("agent-run-")
-        );
-    }
-
-    AgentRunExecutionService(
-            AgentRunRepository agentRunRepository,
-            AgentRunStreamRegistry streamRegistry,
-            ToolRegistryService toolRegistryService,
-            ToolExecutionService toolExecutionService,
-            TenantRuntimeSettingsService runtimeSettingsService,
-            AgentAnswerComposer answerComposer,
-            AgentPlanner agentPlanner,
             ObjectMapper objectMapper,
-            Executor executor
+            @Qualifier("agentRunExecutor") Executor executor
     ) {
         this.agentRunRepository = agentRunRepository;
         this.streamRegistry = streamRegistry;
@@ -203,9 +180,17 @@ public class AgentRunExecutionService {
 
         AgentDecision decision;
         if (context.toolCalls == 0) {
-            decision = agentPlanner.decideInitial(context.request, enabledTools);
+            decision = agentPlanner.decideInitial(context.request, enabledTools, context.runId, 0L);
         } else {
-            decision = agentPlanner.decideNext(context.request, enabledTools, context.selectedToolId, context.toolResult, context.toolCalls);
+            decision = agentPlanner.decideNext(
+                    context.request,
+                    enabledTools,
+                    context.selectedToolId,
+                    context.toolResult,
+                    context.toolCalls,
+                    context.runId,
+                    0L
+            );
         }
         context.lastDecision = decision;
 
@@ -425,7 +410,9 @@ public class AgentRunExecutionService {
                 enabledTools,
                 context.selectedToolId,
                 context.toolResult,
-                context.toolCalls
+                context.toolCalls,
+                context.runId,
+                0L
         );
         context.lastDecision = decision;
 

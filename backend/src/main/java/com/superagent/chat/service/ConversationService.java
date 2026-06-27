@@ -31,7 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
-import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -51,7 +51,7 @@ public class ConversationService {
     private final ConversationExecutionPlanner conversationExecutionPlanner;
     private final AgentGatewayClient agentGatewayClient;
     private final ObjectMapper objectMapper;
-    private final Executor conversationExecutor = new SimpleAsyncTaskExecutor("conversation-stream-");
+    private final Executor conversationExecutor;
 
     public ConversationService(
             CurrentAuthenticatedUser currentAuthenticatedUser,
@@ -62,7 +62,8 @@ public class ConversationService {
             ConversationRunLockManager conversationRunLockManager,
             ConversationExecutionPlanner conversationExecutionPlanner,
             AgentGatewayClient agentGatewayClient,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            @Qualifier("conversationExecutor") Executor conversationExecutor
     ) {
         this.currentAuthenticatedUser = currentAuthenticatedUser;
         this.conversationRepository = conversationRepository;
@@ -73,6 +74,7 @@ public class ConversationService {
         this.conversationExecutionPlanner = conversationExecutionPlanner;
         this.agentGatewayClient = agentGatewayClient;
         this.objectMapper = objectMapper;
+        this.conversationExecutor = conversationExecutor;
     }
 
     public ConversationSession createConversation(String title, Long knowledgeBaseId, MemoryStrategy memoryStrategy) {

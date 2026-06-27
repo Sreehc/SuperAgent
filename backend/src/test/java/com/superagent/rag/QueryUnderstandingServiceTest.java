@@ -16,8 +16,13 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.Prompt;
 
 class QueryUnderstandingServiceTest {
 
@@ -104,6 +109,37 @@ class QueryUnderstandingServiceTest {
         assertThat(result.confidence()).isEqualTo(0.91d);
         assertThat(result.rewrittenQuestion()).isEqualTo("退款规则和申请材料分别是什么？");
         assertThat(result.subQuestions()).containsExactly("退款规则是什么？", "申请材料需要什么？");
+    }
+
+    @Test
+    void shouldPromptProviderWithSpringAiStructuredOutputFormat() {
+        SuperAgentProperties properties = properties("openai-compatible", 3_000L, 10_000L);
+        TenantContextHolder.set(new TenantContext(10001L, TenantRole.OWNER));
+        AtomicReference<Prompt> capturedPrompt = new AtomicReference<>();
+        QueryUnderstandingService service = new QueryUnderstandingService(
+                properties,
+                runtimeSettings("https://tenant.example/v1", "sk-test"),
+                new ObjectMapper(),
+                settings -> prompt -> {
+                    capturedPrompt.set(prompt);
+                    return new ChatResponse(List.of(new Generation(new AssistantMessage("""
+                            {"rewrittenQuestion":"退款规则是什么？","subQuestions":["退款规则是什么？"],"answerMode":"single_question","confidence":0.88}
+                            """))));
+                }
+        );
+        RagSupportService supportService = new RagSupportService(properties, null);
+
+        QueryUnderstandingService.QueryUnderstandingResult result = service.understand(
+                "退款规则是什么？",
+                List.of("请按知识库回答"),
+                settings(),
+                supportService
+        );
+
+        assertThat(capturedPrompt.get().getContents()).contains("JSON Schema");
+        assertThat(capturedPrompt.get().getContents()).contains("rewrittenQuestion");
+        assertThat(result.source()).isEqualTo("model");
+        assertThat(result.confidence()).isEqualTo(0.88d);
     }
 
     @Test

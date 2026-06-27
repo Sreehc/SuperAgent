@@ -20,6 +20,7 @@ public class AgentServiceProperties {
     private final Search search = new Search();
     private final Fetch fetch = new Fetch();
     private final Graph graph = new Graph();
+    private final Ai ai = new Ai();
 
     public String getPluginManifestRoot() {
         return pluginManifestRoot;
@@ -47,6 +48,10 @@ public class AgentServiceProperties {
 
     public Graph getGraph() {
         return graph;
+    }
+
+    public Ai getAi() {
+        return ai;
     }
 
     public Search getSearch() {
@@ -168,6 +173,61 @@ public class AgentServiceProperties {
 
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+    }
+
+    public static class Ai {
+
+        @NotBlank
+        private String baseUrl = "https://api.example.com/v1";
+
+        private String apiKey = "";
+
+        @NotBlank
+        private String chatModel = "gpt-4.1-mini";
+
+        private int connectTimeoutMillis = 3_000;
+
+        private int readTimeoutMillis = 10_000;
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getChatModel() {
+            return chatModel;
+        }
+
+        public void setChatModel(String chatModel) {
+            this.chatModel = chatModel;
+        }
+
+        public int getConnectTimeoutMillis() {
+            return connectTimeoutMillis;
+        }
+
+        public void setConnectTimeoutMillis(int connectTimeoutMillis) {
+            this.connectTimeoutMillis = connectTimeoutMillis;
+        }
+
+        public int getReadTimeoutMillis() {
+            return readTimeoutMillis;
+        }
+
+        public void setReadTimeoutMillis(int readTimeoutMillis) {
+            this.readTimeoutMillis = readTimeoutMillis;
         }
     }
 }

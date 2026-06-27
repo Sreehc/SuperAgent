@@ -59,7 +59,18 @@ class AgentRunExecutionServiceTest {
                     @Override
                     public AgentPlanner.ChatModelClient getIfUnique() { return null; }
                 };
-        AgentPlanner planner = new AgentPlanner(emptyProvider, new ObjectMapper(), false);
+        org.springframework.beans.factory.ObjectProvider<SpringAiToolCallbackRegistry> emptyToolCallbackProvider =
+                new org.springframework.beans.factory.ObjectProvider<>() {
+                    @Override
+                    public SpringAiToolCallbackRegistry getObject(Object... args) { return null; }
+                    @Override
+                    public SpringAiToolCallbackRegistry getObject() { return null; }
+                    @Override
+                    public SpringAiToolCallbackRegistry getIfAvailable() { return null; }
+                    @Override
+                    public SpringAiToolCallbackRegistry getIfUnique() { return null; }
+                };
+        AgentPlanner planner = new AgentPlanner(emptyProvider, emptyToolCallbackProvider, new ObjectMapper(), false);
         executionService = new AgentRunExecutionService(
                 repository,
                 streamRegistry,

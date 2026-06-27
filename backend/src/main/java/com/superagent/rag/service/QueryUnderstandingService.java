@@ -6,6 +6,7 @@ import com.superagent.auth.security.TenantContext;
 import com.superagent.auth.security.TenantContextHolder;
 import com.superagent.common.api.ErrorCode;
 import com.superagent.common.exception.AppException;
+import com.superagent.infra.ai.SpringAiOpenAiModelFactory;
 import com.superagent.infra.config.SuperAgentProperties;
 import com.superagent.settings.domain.ModelSettings;
 import com.superagent.settings.service.RuntimeSettingsService;
@@ -13,11 +14,16 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.converter.StructuredOutputConverter;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
 @Service
 public class QueryUnderstandingService {
@@ -25,15 +31,40 @@ public class QueryUnderstandingService {
     private final SuperAgentProperties properties;
     private final RuntimeSettingsService runtimeSettingsService;
     private final ObjectMapper objectMapper;
+    private final ChatModelFactory chatModelFactory;
+    private final StructuredOutputConverter<ModelPayload> outputConverter;
 
+    @Autowired
     public QueryUnderstandingService(
             SuperAgentProperties properties,
             RuntimeSettingsService runtimeSettingsService,
             ObjectMapper objectMapper
     ) {
+        this(
+                properties,
+                runtimeSettingsService,
+                objectMapper,
+                settings -> SpringAiOpenAiModelFactory.createChatModel(new SpringAiOpenAiModelFactory.ChatModelSettings(
+                        settings.baseUrl(),
+                        settings.apiKey(),
+                        settings.model(),
+                        settings.connectTimeoutMillis(),
+                        settings.readTimeoutMillis()
+                ))
+        );
+    }
+
+    public QueryUnderstandingService(
+            SuperAgentProperties properties,
+            RuntimeSettingsService runtimeSettingsService,
+            ObjectMapper objectMapper,
+            ChatModelFactory chatModelFactory
+    ) {
         this.properties = properties;
         this.runtimeSettingsService = runtimeSettingsService;
         this.objectMapper = objectMapper;
+        this.chatModelFactory = chatModelFactory;
+        this.outputConverter = new BeanOutputConverter<>(ModelPayload.class, objectMapper);
     }
 
     public QueryUnderstandingResult understand(
@@ -117,37 +148,29 @@ public class QueryUnderstandingService {
     private ModelPayload callProvider(String question, List<String> recentMessages) throws Exception {
         ModelSettings settings = resolveSettings();
         validateSettings(settings);
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Math.toIntExact(properties.getAi().getHttpConnectTimeoutMillis()));
-        requestFactory.setReadTimeout(Math.toIntExact(properties.getAi().getHttpReadTimeoutMillis()));
-        RestClient client = RestClient.builder()
-                .requestFactory(requestFactory)
-                .baseUrl(settings.baseUrl())
-                .defaultHeader("Authorization", "Bearer " + settings.apiKey())
-                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-                .build();
-        ChatCompletionResponse response = client.post()
-                .uri("/chat/completions")
-                .body(new ChatCompletionRequest(
-                        settings.chatModel(),
-                        List.of(new ChatCompletionMessage("user", buildPrompt(question, recentMessages)))
-                ))
-                .retrieve()
-                .body(ChatCompletionResponse.class);
-        if (response == null || response.choices() == null || response.choices().isEmpty()) {
+        ChatModelSettings chatSettings = new ChatModelSettings(
+                settings.baseUrl(),
+                settings.apiKey(),
+                settings.chatModel(),
+                Math.toIntExact(Math.max(1L, properties.getAi().getHttpConnectTimeoutMillis())),
+                Math.toIntExact(Math.max(1L, properties.getAi().getHttpReadTimeoutMillis()))
+        );
+        ChatResponse response = chatModelFactory.create(chatSettings)
+                .call(new Prompt(
+                        buildPrompt(question, recentMessages),
+                        OpenAiChatOptions.builder().model(chatSettings.model()).build()
+                ));
+        Generation generation = response == null ? null : response.getResult();
+        String content = generation == null || generation.getOutput() == null ? "" : generation.getOutput().getText();
+        if (content == null || content.isBlank()) {
             throw new AppException(ErrorCode.MODEL_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY, "Query understanding provider returned empty response");
         }
-        ChatCompletionChoice choice = response.choices().getFirst();
-        if (choice.message() == null || choice.message().content() == null || choice.message().content().isBlank()) {
-            throw new AppException(ErrorCode.MODEL_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY, "Query understanding provider returned empty content");
-        }
-        return objectMapper.readValue(extractJson(choice.message().content()), ModelPayload.class);
+        return convertPayload(content);
     }
 
     private String buildPrompt(String question, List<String> recentMessages) {
         StringBuilder builder = new StringBuilder();
         builder.append("你是企业知识问答系统的 query understanding 模块。")
-                .append("输出严格 JSON，不要输出解释。")
                 .append("字段必须包含 rewrittenQuestion、subQuestions、answerMode、confidence。")
                 .append("answerMode 只能是 single_question 或 decomposed_multi_question。")
                 .append("如果无需拆分，subQuestions 只返回一个元素。")
@@ -160,9 +183,16 @@ public class QueryUnderstandingService {
             }
         }
         builder.append("当前问题:\n").append(question == null ? "" : question.trim()).append("\n");
-        builder.append("输出示例:\n")
-                .append("{\"rewrittenQuestion\":\"...\",\"subQuestions\":[\"...\"],\"answerMode\":\"single_question\",\"confidence\":0.86}");
+        builder.append("输出格式:\n").append(outputConverter.getFormat());
         return builder.toString();
+    }
+
+    private ModelPayload convertPayload(String content) throws Exception {
+        try {
+            return outputConverter.convert(content);
+        } catch (Exception exception) {
+            return objectMapper.readValue(extractJson(content), ModelPayload.class);
+        }
     }
 
     private String extractJson(String content) {
@@ -240,27 +270,6 @@ public class QueryUnderstandingService {
         }
     }
 
-    public record ChatCompletionRequest(String model, List<ChatCompletionMessage> messages) {
-    }
-
-    public record ChatCompletionMessage(String role, String content) {
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ChatCompletionResponse(
-            String id,
-            String model,
-            List<ChatCompletionChoice> choices
-    ) {
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ChatCompletionChoice(
-            int index,
-            ChatCompletionMessage message
-    ) {
-    }
-
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ModelPayload(
             String rewrittenQuestion,
@@ -268,5 +277,19 @@ public class QueryUnderstandingService {
             String answerMode,
             Double confidence
     ) {
+    }
+
+    public record ChatModelSettings(
+            String baseUrl,
+            String apiKey,
+            String model,
+            int connectTimeoutMillis,
+            int readTimeoutMillis
+    ) {
+    }
+
+    @FunctionalInterface
+    public interface ChatModelFactory {
+        ChatModel create(ChatModelSettings settings);
     }
 }
