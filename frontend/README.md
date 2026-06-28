@@ -1,17 +1,20 @@
 # Frontend
 
-前端基于 `Vue 3 + Vite + TypeScript + Pinia + Vue Router`，是 SuperAgent 的 Web 控制台。当前已经接通登录、会话工作台、知识库、文档详情、Trace、Settings、Tools 和 Governance 等页面。
+前端基于 `React 19 + Vite 8 + TypeScript + React Router + Zustand + TanStack Query/Table + assistant-ui`，是 SuperAgent 的 Web 控制台。
 
 ## 技术栈
 
-- Vue 3
-- Vite
+- React 19
+- Vite 8
 - TypeScript
-- Pinia
-- Vue Router
+- React Router 7
+- Zustand
+- TanStack Query
+- TanStack Table
+- assistant-ui
 - Axios
 - marked + DOMPurify
-- Phosphor Icons
+- Phosphor Icons / lucide-react
 - Vitest
 - Playwright
 
@@ -28,6 +31,12 @@
 - `/settings`
 - `/tools`
 - `/governance`
+- `/members`
+- `/audit-logs`
+- `/feedback`
+- `/evals`
+- `/evals/:suiteId`
+- `/evals/runs/:runId`
 - `/forbidden`
 
 ## 权限与路由守卫
@@ -35,7 +44,7 @@
 - `/login` 为公开登录页。
 - 业务页面需要已登录用户。
 - `/chat`、`/knowledge`、`/documents/:documentId` 面向 OWNER、ADMIN、MEMBER。
-- `/traces`、`/settings`、`/tools`、`/governance` 面向 OWNER、ADMIN。
+- `/traces`、`/settings`、`/tools`、`/governance`、`/members`、`/audit-logs`、`/feedback`、`/evals` 面向 OWNER、ADMIN。
 - 无权限访问管理路由时跳转 `/forbidden`。
 - Axios 请求会自动附加 Access Token 和 `X-Tenant-Id`，并启用 `withCredentials` 发送 Refresh Cookie。
 
@@ -44,8 +53,9 @@
 ### Chat Workspace
 
 - 会话列表、搜索、创建、选择、重命名、归档、删除。
+- assistant-ui 接入现有后端 SSE 协议。
 - SSE 流式回答、停止生成、恢复 Agent Run。
-- 知识库选择和记忆策略选择：`NONE`、`SLIDING_WINDOW`、`SUMMARY_WINDOW`、`SUMMARY_PLUS_WINDOW`。
+- 知识库选择、执行模式选择和记忆策略选择。
 - Markdown 安全渲染。
 - 推荐追问、引用来源侧栏、文档跳转。
 - 管理员 Trace 跳转。
@@ -66,23 +76,20 @@
 - OWNER 可编辑敏感配置；ADMIN 可查看或编辑非敏感运行时配置。
 - Agent/Tools 配置包括 web search、HTTP、graph、code execution、超时、allowed domains 等开关。
 
-### Traces
+### Traces / Tools / Governance
 
 - Trace 列表支持 status、execution mode、user ID 和分页过滤。
 - Trace 详情展示 exchange 状态、stage timeline、model calls、retrievals、reranks。
 - 当 exchange 关联 Agent Run 时展示 agent steps、tool calls、checkpoints 和 resume chain。
+- Tools Console 管理 plugin registry、plugin enable/disable、recent tool calls、manifest permissions、secret refs。
+- Governance Console 管理 knowledge domains、chunking profiles 和 graph document entrypoints。
 
-### Tools Console
+### Admin Consoles
 
-- Plugin registry 与插件启用/禁用状态。
-- Recent tool calls、request/response summary、metadata、latency、errors。
-- Manifest permissions、enabled tools、secret refs 和 installation config。
-
-### Governance Console
-
-- Knowledge domains 创建和编辑。
-- Chunking profiles 创建和编辑，包括 strategy、default flag 和 config JSON。
-- Graph document entrypoints，可跳转文档详情或触发 graph rebuild。
+- Members：成员、邀请、角色、停用/恢复、移除。
+- Audit：审计日志查询和详情。
+- Feedback：反馈筛选、详情、关联会话/Trace。
+- Evals：评测集、用例、运行记录和 case 结果。
 
 ## 本地开发
 
@@ -91,15 +98,13 @@
 3. 执行 `npm run dev`。
 4. 打开 `http://localhost:5173`。
 
-`.env.example` 中的关键变量：
+关键变量：
 
 ```env
 VITE_API_BASE_URL=http://localhost:8080/api/v1
 VITE_SSE_TIMEOUT_SECONDS=120
 VITE_APP_NAME=SuperAgent
 ```
-
-`VITE_API_BASE_URL` 未配置时回退到 `http://localhost:8080/api/v1`。
 
 如果后端运行在 `18080`：
 
@@ -116,20 +121,20 @@ npm run preview
 npm run typecheck
 npm test
 npm run e2e
+npm run test:visual
 ```
 
 ## E2E 说明
 
-- 先手动启动后端 `18080` 和前端 `4173`。
-- 后端本地验证建议加上 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true EMBEDDING_PROVIDER=local-deterministic`，这样上传文档后能直接完成解析、切块和本地 deterministic embedding。
+- 先启动后端和前端 preview/dev server。
+- 后端本地验证建议加上 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true EMBEDDING_PROVIDER=local-deterministic`。
 - 默认本地/测试账号：`admin / password123`、`member / password123`。
-- Playwright 使用本机已安装的 `Google Chrome`。
-- 当前 E2E 覆盖登录守卫、文档上传、发起 RAG 对话、停止生成、Trace 查看、文档详情、引用来源跳转、设置页保存，以及登录后 refresh token 不落入 `localStorage`，并在桌面/平板宽度下运行。
+- Playwright 使用本机已安装的 Google Chrome。
 
 ## 联调说明
 
 - Refresh Token 通过后端 HttpOnly Cookie 传输，前端不会在 `localStorage` 中保存长期 refresh token。
-- 当前 Axios client 会使用 `withCredentials: true`，并在请求中附加 `Authorization` 与 `X-Tenant-Id`。
-- 当后端未开启 Kafka 且未启用 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true` 时，上传后的文档会停留在 `uploaded` 或 `pending` 状态。
+- Axios client 使用 `withCredentials: true`，并在请求中附加 `Authorization` 与 `X-Tenant-Id`。
+- 当后端未开启 Kafka 且未启用 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true` 时，上传后的文档不会自动完成完整处理。
 - `EMBEDDING_PROVIDER=local-deterministic` 只适合本地联调，不代表真实召回质量。
 - SSE 请求超时由 `VITE_SSE_TIMEOUT_SECONDS` 控制。

@@ -1,11 +1,12 @@
 # Backend
 
-后端基于 `Spring Boot 3.3.5 + Java 21 + Flyway + PostgreSQL/pgvector`，提供 SuperAgent 的认证、租户、知识库、文档处理、会话、RAG、Trace、运行时设置、Agent 管理和治理 API。
+后端基于 `Spring Boot 3.5.16 + Spring AI 1.1.8 + Java 21 + Flyway + PostgreSQL/pgvector`，提供 SuperAgent 的认证、租户、知识库、文档处理、会话、RAG、Trace、运行时设置、Agent 管理和治理 API。
 
 ## 技术栈
 
 - Java 21
-- Spring Boot 3.3.5
+- Spring Boot 3.5.16
+- Spring AI 1.1.8
 - Maven Wrapper
 - PostgreSQL、Flyway、pgvector、pg_trgm
 - Redis
@@ -153,6 +154,8 @@ INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true
 
 `EMBEDDING_PROVIDER=local-deterministic` 仅用于本地验证和 E2E，不代表生产召回质量。
 
+当前 Chat 和 Embedding 调用通过 Spring AI `ChatModel` / `EmbeddingModel` 接入 OpenAI-compatible provider。Query Understanding 使用 Spring AI structured output。Rerank 仍保留自研 OpenAI-compatible 客户端。
+
 ### 安全、Cookie 与 CORS
 
 - `JWT_SECRET`
@@ -250,6 +253,8 @@ Agent Service 负责 Agent Run、SSE stream、resume、cancel 和工具执行编
 
 其中 Web Search、HTTP、Graph、Python Sandbox 需要对应运行时开关、外部依赖、域名白名单或租户工具绑定。
 
+Agent Service 内部使用 Spring AI 负责模型调用、tool-calling 协议和 structured output，但 checkpoint、resume、cancel、SSE、工具权限、审计和持久化仍由自研运行时负责。
+
 ## 认证说明
 
 - 登录接口返回 Access Token，并通过 HttpOnly Cookie 下发 Refresh Token。
@@ -275,4 +280,4 @@ http://localhost:8080/swagger-ui.html
 - 生产级文档处理建议使用 Kafka 异步链路；本地可用 `INLINE_DOCUMENT_PROCESSING_WHEN_KAFKA_DISABLED=true` 同步处理文档。
 - `local-deterministic` embedding 仅用于本地验证和 E2E。
 - 外部工具默认关闭，尤其是 HTTP 请求和代码执行，应结合运行时设置、工具绑定、角色权限、域名白名单和审计记录使用。
-- 运行时设置已经可持久化并写审计；具体生效范围取决于当前后端客户端和 Agent Service 的装配路径。
+- 运行时设置已经可持久化并写审计；模型、RAG、Rerank、Agent 和 Tools 配置分别在对应运行链路中生效。
